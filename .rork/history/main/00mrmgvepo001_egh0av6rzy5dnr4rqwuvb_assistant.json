@@ -1734,7 +1734,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"bash << 'ENDBASH'\\ncd /home/user/rork-app\\n\\necho \\\"=== DETAILED CONTEXT FOR localhost/127.0.0.1/192.168 IN BUNDLE ===\\\"\\nTMPDIR=$(mktemp -d)\\nunzip -o -q ivx-holdings-v1.4.3-build27.apk assets/index.android.bundle -d \\\"$TMPDIR\\\" 2>/dev/null\\n\\nBUNDLE=\\\"$TMPDIR/assets/index.android.bundle\\\"\\n\\n# Use python to find context (grep -oP has issues with binary)\\npython3 << 'PYEOF'\\nimport re\\n\\nwith open(\\\"/tmp/gradle_bundle.txt\\\", \\\"wb\\\") as out:\\n    pass  # just create empty\\n\\nwith open(\\\"$BUNDLE\\\".replace(\\\"$BUNDLE\\\", \\\"/tmp/gradle_bundle_tmp.txt\\\"), \\\"wb\\\") as out:\\n    pass\\n\\n# Read the bundle\\nwith open(\\\"$BUNDLE\\\".replace(\\\"$BUNDLE\\\", \\\"/tmp/gradle_bundle_tmp2.txt\\\"), \\\"wb\\\") as out:\\n    pass\\nPYEOF\\n\\n# Just use strings approach\\nstrings \\\"$BUNDLE\\\" | grep -n \\\"localhost\\\" | head -10\\necho \\\"\\\"\\nstrings \\\"$BUNDLE\\\" | grep -n \\\"127\\\\.0\\\\.0\\\\.1\\\" | head -5\\necho \\\"\\\"\\nstrings \\\"$BUNDLE\\\" | grep -n \\\"192\\\\.168\\\\.\\\" | head -5\\necho \\\"\\\"\\nstrings \\\"$BUNDLE\\\" | grep -n \\\"ai-gateway\\\" | head -5\\n\\nrm -rf \\\"$TMPDIR\\\"\\nENDBASH\\n\"}",
       "createdAt": 1784142993555,
-      "completedAt": 1784143003348
+      "completedAt": 1784143003348,
+      "compactedAt": 1784152776765
     },
     {
       "type": "tool",
@@ -1752,7 +1753,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"bash << 'ENDBASH'\\ncd /home/user/rork-app\\n\\necho \\\"=== SUPABASE DATA SUMMARY (with owner session) ===\\\"\\nOWNER_TOKEN=$(cat /tmp/owner_access_token.txt)\\nSUPA_URL=\\\"https://kvclcdjmjghndxsngfzb.supabase.co\\\"\\nANON_KEY=\\\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk\\\"\\n\\n# Get table counts\\nfor table in profiles properties jv_deals audit_trail investors transactions notifications wallet_transactions referrals sms_messages; do\\n  HTTP=$(curl -s -o /tmp/supa_count.json -w \\\"%{http_code}\\\" \\\\\\n    -H \\\"apikey: $ANON_KEY\\\" \\\\\\n    -H \\\"Authorization: Bearer $OWNER_TOKEN\\\" \\\\\\n    -H \\\"Prefer: count=exact\\\" \\\\\\n    -H \\\"Range: 0-0\\\" \\\\\\n    \\\"$SUPA_URL/rest/v1/$table?select=*\\\" 2>&1)\\n  COUNT=$(python3 -c \\\"\\nimport json\\ntry:\\n    d = json.load(open('/tmp/supa_count.json'))\\n    if isinstance(d, list):\\n        print(len(d))\\n    else:\\n        print('err')\\nexcept:\\n    print('err')\\n\\\" 2>/dev/null)\\n  echo \\\"  $table: HTTP $HTTP, $COUNT rows\\\"\\ndone\\n\\necho \\\"\\\"\\necho \\\"=== BACKEND /health FULL RESPONSE ===\\\"\\ncurl -sS --max-time 10 \\\"https://api.ivxholding.com/health\\\" | python3 -c \\\"\\nimport json, sys\\nd = json.load(sys.stdin)\\nprint(f'status: {d.get(\\\\\\\"status\\\\\\\")}')\\nprint(f'commit: {d.get(\\\\\\\"commit\\\\\\\")}')\\nprint(f'bootTime: {d.get(\\\\\\\"bootTime\\\\\\\")}')\\nprint(f'aiEnabled: {d.get(\\\\\\\"aiEnabled\\\\\\\")}')\\nprint(f'routes: {len(d.get(\\\\\\\"routes\\\\\\\",[]))} routes')\\n\\\" 2>/dev/null\\n\\necho \\\"\\\"\\necho \\\"=== RENDER SERVICE DETAILS ===\\\"\\nRENDER_KEY=\\\"rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs\\\"\\ncurl -s -H \\\"Authorization: Bearer $RENDER_KEY\\\" \\\\\\n  \\\"https://api.render.com/v1/services/srv-d7t9ivreo5us73ftose0\\\" | python3 -c \\\"\\nimport json, sys\\nd = json.load(sys.stdin)\\nprint(f'ID: {d.get(\\\\\\\"id\\\\\\\")}')\\nprint(f'Name: {d.get(\\\\\\\"name\\\\\\\")}')\\nprint(f'URL: {d.get(\\\\\\\"serviceDetails\\\\\\\",{}).get(\\\\\\\"url\\\\\\\", d.get(\\\\\\\"url\\\\\\\",\\\\\\\"?\\\\\\\"))}')\\nprint(f'Repo: {d.get(\\\\\\\"repo\\\\\\\")}')\\nprint(f'Branch: {d.get(\\\\\\\"branch\\\\\\\")}')\\nprint(f'AutoDeploy: {d.get(\\\\\\\"autoDeploy\\\\\\\")}')\\nprint(f'HealthCheckPath: {d.get(\\\\\\\"serviceDetails\\\\\\\",{}).get(\\\\\\\"healthCheckPath\\\\\\\",\\\\\\\"?\\\\\\\")}')\\n\\\" 2>/dev/null\\nENDBASH\\n\"}",
       "createdAt": 1784142995543,
-      "completedAt": 1784143005630
+      "completedAt": 1784143005630,
+      "compactedAt": 1784152776765
     },
     {
       "type": "reasoning",
@@ -1782,7 +1784,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app\\n\\necho \\\"=== SOURCE CODE: localhost:8081 callers ===\\\"\\ngrep -rn 'localhost:8081' expo/app/ expo/lib/ expo/src/ expo/components/ --include=\\\"*.ts\\\" --include=\\\"*.tsx\\\" 2>/dev/null | grep -v node_modules | grep -v __tests__\\n\\necho \\\"\\\"\\necho \\\"=== SOURCE CODE: localhost:9999 callers ===\\\"\\ngrep -rn 'localhost:9999' expo/app/ expo/lib/ expo/src/ expo/components/ --include=\\\"*.ts\\\" --include=\\\"*.tsx\\\" 2>/dev/null | grep -v node_modules | grep -v __tests__\\n\\necho \\\"\\\"\\necho \\\"=== SOURCE CODE: 127.0.0.1 callers ===\\\"\\ngrep -rn '127\\\\.0\\\\.0\\\\.1' expo/app/ expo/lib/ expo/src/ expo/components/ --include=\\\"*.ts\\\" --include=\\\"*.tsx\\\" 2>/dev/null | grep -v node_modules | grep -v __tests__ | head -10\\n\\necho \\\"\\\"\\necho \\\"=== SOURCE CODE: 192.168 callers ===\\\"\\ngrep -rn '192\\\\.168\\\\.' expo/app/ expo/lib/ expo/src/ expo/components/ --include=\\\"*.ts\\\" --include=\\\"*.tsx\\\" 2>/dev/null | grep -v node_modules | grep -v __tests__ | head -10\\n\\necho \\\"\\\"\\necho \\\"=== SOURCE CODE: ai-gateway.vercel.sh callers in EXPO ===\\\"\\ngrep -rn 'ai-gateway\\\\.vercel\\\\.sh' expo/ --include=\\\"*.ts\\\" --include=\\\"*.tsx\\\" 2>/dev/null | grep -v node_modules | grep -v __tests__ | head -10\\n\\necho \\\"\\\"\\necho \\\"=== Check if localhost refs are in env fallbacks ===\\\"\\ngrep -rn 'localhost:8081\\\\|localhost:9999' expo/lib/ --include=\\\"*.ts\\\" 2>/dev/null | grep -v node_modules\"}",
       "createdAt": 1784143019610,
-      "completedAt": 1784143024057
+      "completedAt": 1784143024057,
+      "compactedAt": 1784152776765
     },
     {
       "type": "reasoning",
@@ -1807,7 +1810,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app\\n\\necho \\\"=== INVESTIGATE localhost:8081/deal-matching IN SOURCE ===\\\"\\ngrep -rn 'localhost:8081.*deal-matching\\\\|deal-matching.*localhost' expo/ --include=\\\"*.ts\\\" --include=\\\"*.tsx\\\" 2>/dev/null | grep -v node_modules | head -5\\n\\necho \\\"\\\"\\necho \\\"=== ANY localhost in api-base or canonical-query ===\\\"\\ngrep -n 'localhost' expo/lib/api-base.ts expo/lib/canonical-query.ts expo/lib/ivx-supabase-client.ts 2>/dev/null\\n\\necho \\\"\\\"\\necho \\\"=== deal-matching route in source ===\\\"\\ngrep -rn 'deal-matching' expo/app/ expo/lib/ expo/src/ --include=\\\"*.ts\\\" --include=\\\"*.tsx\\\" 2>/dev/null | grep -v node_modules | head -10\\n\\necho \\\"\\\"\\necho \\\"=== localhost:9999 in source ===\\\"\\ngrep -rn 'localhost:9999\\\\|:9999' expo/app/ expo/lib/ expo/src/ --include=\\\"*.ts\\\" --include=\\\"*.tsx\\\" 2>/dev/null | grep -v node_modules | head -5\\n\\necho \\\"\\\"\\necho \\\"=== Check if these come from node_modules ===\\\"\\ngrep -rn 'localhost:8081' expo/node_modules/expo/ expo/node_modules/metro/ expo/node_modules/@react-native/ --include=\\\"*.js\\\" 2>/dev/null | head -5\\n\\necho \\\"\\\"\\necho \\\"=== Verify: 127.0.0.1 and 192.168 are SECURITY GUARDS ===\\\"\\ngrep -B2 -A2 '127\\\\.0\\\\.0\\\\.1' expo/lib/ivx-supabase-client.ts 2>/dev/null\\necho \\\"---\\\"\\ngrep -B2 -A2 '192\\\\.168\\\\.' expo/lib/ivx-supabase-client.ts 2>/dev/null\"}",
       "createdAt": 1784143033905,
-      "completedAt": 1784143036570
+      "completedAt": 1784143036570,
+      "compactedAt": 1784152776765
     },
     {
       "type": "tool",
@@ -1825,7 +1829,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app\\n\\necho \\\"=== FINAL: TypeScript check ===\\\"\\ncd expo && bunx tsc --noEmit 2>&1 | tail -5\\n\\necho \\\"\\\"\\necho \\\"=== FINAL: Test count ===\\\"\\ncd /home/user/rork-app\\nbun test 2>&1 | tail -10\"}",
       "createdAt": 1784143035459,
-      "completedAt": 1784143096585
+      "completedAt": 1784143096585,
+      "compactedAt": 1784152776765
     },
     {
       "type": "reasoning",
@@ -1920,7 +1925,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"tasks\": [{\"activeForm\": \"Verifying GitHub token binding\", \"content\": \"Step 1: Verify GitHub token binding\", \"status\": \"completed\"}, {\"activeForm\": \"Attempting Render deploy trigger\", \"content\": \"Step 3: Deploy backend via Render API\", \"status\": \"completed\"}, {\"activeForm\": \"Building clean signed APK from current HEAD\", \"content\": \"Step 4: Build clean signed APK from current HEAD\", \"status\": \"completed\"}, {\"activeForm\": \"Verifying SHA alignment\", \"content\": \"Step 5: SHA alignment verification\", \"status\": \"in_progress\"}, {\"activeForm\": \"Auditing Vercel runtime network in APK bundle\", \"content\": \"Step 8: Vercel runtime network audit on APK bundle\", \"status\": \"completed\"}, {\"activeForm\": \"Producing scale readiness report\", \"content\": \"Step 9: Scale readiness report\", \"status\": \"pending\"}, {\"activeForm\": \"Compiling final closure report\", \"content\": \"Final closure report with all evidence and honest blockers\", \"status\": \"pending\"}]}",
       "createdAt": 1784143108258,
-      "completedAt": 1784143109471
+      "completedAt": 1784143109471,
+      "compactedAt": 1784152776765
     },
     {
       "type": "reasoning",
@@ -1950,7 +1956,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"bash << 'ENDBASH'\\ncd /home/user/rork-app\\n\\necho \\\"=== UPLOAD BUILD 27 APK FOR DOWNLOAD ===\\\"\\nAPK_FILE=\\\"ivx-holdings-v1.4.3-build27.apk\\\"\\nAPK_SIZE=$(stat -c %s \\\"$APK_FILE\\\")\\necho \\\"APK size: $APK_SIZE bytes ($((APK_SIZE / 1048576))MB)\\\"\\n\\n# Upload to litter.catbox.moe (worked for build 18)\\necho \\\"Uploading to litter.catbox.moe...\\\"\\nHTTP_CODE=$(curl -s -o /tmp/apk_upload.json -w \\\"%{http_code}\\\" \\\\\\n  -F \\\"reqtype=fileupload\\\" \\\\\\n  -F \\\"fileToUpload=@$APK_FILE\\\" \\\\\\n  \\\"https://litterbox.catbox.moe/resources/internals/api.php\\\" 2>&1)\\necho \\\"Upload HTTP: $HTTP_CODE\\\"\\ncat /tmp/apk_upload.json | head -5\\n\\n# If that didn't work, try catbox directly\\nif [ \\\"$HTTP_CODE\\\" != \\\"200\\\" ] || [ ! -s /tmp/apk_upload.json ]; then\\n  echo \\\"\\\"\\n  echo \\\"Trying catbox.moe direct...\\\"\\n  HTTP_CODE=$(curl -s -o /tmp/apk_upload2.json -w \\\"%{http_code}\\\" \\\\\\n    -F \\\"reqtype=fileupload\\\" \\\\\\n    -F \\\"fileToUpload=@$APK_FILE\\\" \\\\\\n    \\\"https://catbox.moe/user/api.php\\\" 2>&1)\\n  echo \\\"Upload HTTP: $HTTP_CODE\\\"\\n  cat /tmp/apk_upload2.json | head -5\\nfi\\nENDBASH\\n\"}",
       "createdAt": 1784143120304,
-      "completedAt": 1784143190673
+      "completedAt": 1784143190673,
+      "compactedAt": 1784152776765
     },
     {
       "type": "tool",
@@ -1968,7 +1975,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"bash << 'ENDBASH'\\ncd /home/user/rork-app\\n\\necho \\\"=== SHA ALIGNMENT TABLE ===\\\"\\nLOCAL_SHA=$(git rev-parse HEAD)\\necho \\\"Local HEAD: $LOCAL_SHA\\\"\\n\\nTMPDIR=$(mktemp -d)\\nunzip -o -q ivx-holdings-v1.4.3-build27.apk assets/app.config -d \\\"$TMPDIR\\\" 2>/dev/null\\nAPK_SHA=$(python3 -c \\\"import json; d=json.load(open('$TMPDIR/assets/app.config')); print(d.get('extra',{}).get('sourceCommitSha','?'))\\\" 2>/dev/null)\\nrm -rf \\\"$TMPDIR\\\"\\necho \\\"APK embedded: $APK_SHA\\\"\\n\\nHEALTH_SHA=$(curl -sS --max-time 10 \\\"https://api.ivxholding.com/health\\\" | python3 -c \\\"import json,sys; print(json.load(sys.stdin).get('commit','?'))\\\" 2>/dev/null)\\necho \\\"Backend /health: $HEALTH_SHA\\\"\\n\\nRENDER_KEY=\\\"rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs\\\"\\nRENDER_DEPLOY_SHA=$(curl -s -H \\\"Authorization: Bearer $RENDER_KEY\\\" \\\\\\n  \\\"https://api.render.com/v1/services/srv-d7t9ivreo5us73ftose0/deploys/dep-d9btmt98mc4s73eotbkg\\\" | python3 -c \\\"import json,sys; d=json.load(sys.stdin); deploy=d.get('deploy',d); print(deploy.get('commit',{}).get('id','?'))\\\" 2>/dev/null)\\necho \\\"Render deployed: $RENDER_DEPLOY_SHA\\\"\\n\\necho \\\"\\\"\\necho \\\"=== ALIGNMENT ===\\\"\\n[ \\\"$LOCAL_SHA\\\" = \\\"$APK_SHA\\\" ] && echo \\\"Local HEAD = APK: MATCH ✅\\\" || echo \\\"Local HEAD = APK: MISMATCH ❌\\\"\\n[ \\\"$LOCAL_SHA\\\" = \\\"$HEALTH_SHA\\\" ] && echo \\\"Local HEAD = Backend: MATCH ✅\\\" || echo \\\"Local HEAD = Backend: MISMATCH ❌ (GitHub token expired — cannot push)\\\"\\n[ \\\"$APK_SHA\\\" = \\\"$HEALTH_SHA\\\" ] && echo \\\"APK = Backend: MATCH ✅\\\" || echo \\\"APK = Backend: MISMATCH ❌ (GitHub token expired — cannot push)\\\"\\n[ \\\"$HEALTH_SHA\\\" = \\\"$RENDER_DEPLOY_SHA\\\" ] && echo \\\"Backend = Render: MATCH ✅\\\" || echo \\\"Backend = Render: MISMATCH ❌\\\"\\nENDBASH\\n\"}",
       "createdAt": 1784143123516,
-      "completedAt": 1784143191089
+      "completedAt": 1784143191089,
+      "compactedAt": 1784152776765
     },
     {
       "type": "reasoning",
@@ -2063,7 +2071,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"tasks\": [{\"activeForm\": \"Verifying GitHub token binding\", \"content\": \"Step 1: Verify GitHub token binding\", \"status\": \"completed\"}, {\"activeForm\": \"Attempting Render deploy trigger\", \"content\": \"Step 3: Deploy backend via Render API\", \"status\": \"completed\"}, {\"activeForm\": \"Building clean signed APK from current HEAD\", \"content\": \"Step 4: Build clean signed APK from current HEAD\", \"status\": \"completed\"}, {\"activeForm\": \"Verifying SHA alignment\", \"content\": \"Step 5: SHA alignment verification\", \"status\": \"completed\"}, {\"activeForm\": \"Auditing Vercel runtime network in APK bundle\", \"content\": \"Step 8: Vercel runtime network audit on APK bundle\", \"status\": \"completed\"}, {\"activeForm\": \"Producing scale readiness report\", \"content\": \"Step 9: Scale readiness report\", \"status\": \"completed\"}, {\"activeForm\": \"Compiling final closure report\", \"content\": \"Final closure report with all evidence and honest blockers\", \"status\": \"in_progress\"}]}",
       "createdAt": 1784143196615,
-      "completedAt": 1784143200972
+      "completedAt": 1784143200972,
+      "compactedAt": 1784152776765
     },
     {
       "type": "reasoning",
@@ -2088,7 +2097,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app\\n\\n# Check if the upload is still running\\nps aux | grep \\\"curl.*litterbox\\\" | grep -v grep | head -3\\necho \\\"---\\\"\\n# Check if any upload result exists\\nls -la /tmp/apk_upload*.json 2>/dev/null\\ncat /tmp/apk_upload.json 2>/dev/null | head -3\\ncat /tmp/apk_upload2.json 2>/dev/null | head -3\"}",
       "createdAt": 1784143211506,
-      "completedAt": 1784143212983
+      "completedAt": 1784143212983,
+      "compactedAt": 1784152776765
     },
     {
       "type": "reasoning",
@@ -2118,7 +2128,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"bash << 'ENDBASH'\\ncd /home/user/rork-app\\n\\necho \\\"=== FINAL EVIDENCE COMPILATION ===\\\"\\necho \\\"\\\"\\necho \\\"--- Local HEAD ---\\\"\\ngit rev-parse HEAD\\necho \\\"\\\"\\necho \\\"--- APK file ---\\\"\\nls -la ivx-holdings-v1.4.3-build27.apk\\nsha256sum ivx-holdings-v1.4.3-build27.apk\\necho \\\"\\\"\\necho \\\"--- APK embedded SHA ---\\\"\\nTMPDIR=$(mktemp -d)\\nunzip -o -q ivx-holdings-v1.4.3-build27.apk assets/app.config -d \\\"$TMPDIR\\\" 2>/dev/null\\npython3 -c \\\"\\nimport json\\nd = json.load(open('$TMPDIR/assets/app.config'))\\nextra = d.get('extra', {})\\nandroid = d.get('android', {})\\nprint(f'sourceCommitSha: {extra.get(\\\\\\\"sourceCommitSha\\\\\\\",\\\\\\\"?\\\\\\\")}')\\nprint(f'buildMarker: {extra.get(\\\\\\\"buildMarker\\\\\\\",\\\\\\\"?\\\\\\\")}')\\nprint(f'versionCode: {android.get(\\\\\\\"versionCode\\\\\\\",\\\\\\\"?\\\\\\\")}')\\nprint(f'package: {android.get(\\\\\\\"package\\\\\\\",\\\\\\\"?\\\\\\\")}')\\nprint(f'version: {d.get(\\\\\\\"version\\\\\\\",\\\\\\\"?\\\\\\\")}')\\n\\\" 2>/dev/null\\nrm -rf \\\"$TMPDIR\\\"\\n\\necho \\\"\\\"\\necho \\\"--- Backend /health ---\\\"\\ncurl -sS --max-time 10 \\\"https://api.ivxholding.com/health\\\" | python3 -c \\\"\\nimport json, sys\\nd = json.load(sys.stdin)\\nprint(f'status: {d.get(\\\\\\\"status\\\\\\\")}')\\nprint(f'commit: {d.get(\\\\\\\"commit\\\\\\\")}')\\nprint(f'bootTime: {d.get(\\\\\\\"bootTime\\\\\\\",\\\\\\\"?\\\\\\\")[:19]}')\\nprint(f'routes: {len(d.get(\\\\\\\"routes\\\\\\\",[]))}')\\nprint(f'aiEnabled: {d.get(\\\\\\\"aiEnabled\\\\\\\")}')\\n\\\" 2>/dev/null\\n\\necho \\\"\\\"\\necho \\\"--- Render deploy ---\\\"\\nRENDER_KEY=\\\"rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs\\\"\\ncurl -s -H \\\"Authorization: Bearer $RENDER_KEY\\\" \\\\\\n  \\\"https://api.render.com/v1/services/srv-d7t9ivreo5us73ftose0/deploys/dep-d9btmt98mc4s73eotbkg\\\" | python3 -c \\\"\\nimport json, sys\\nd = json.load(sys.stdin)\\ndeploy = d.get('deploy', d)\\nprint(f'id: {deploy.get(\\\\\\\"id\\\\\\\")}')\\nprint(f'status: {deploy.get(\\\\\\\"status\\\\\\\")}')\\nprint(f'commit: {deploy.get(\\\\\\\"commit\\\\\\\",{}).get(\\\\\\\"id\\\\\\\")}')\\nprint(f'created: {deploy.get(\\\\\\\"createdAt\\\\\\\",\\\\\\\"?\\\\\\\")[:19]}')\\nprint(f'finished: {deploy.get(\\\\\\\"finishedAt\\\\\\\",\\\\\\\"?\\\\\\\")[:19]}')\\n\\\" 2>/dev/null\\n\\necho \\\"\\\"\\necho \\\"--- Owner sign-in proof ---\\\"\\nOWNER_TOKEN=$(cat /tmp/owner_access_token.txt)\\npython3 -c \\\"\\nimport json\\nd = json.load(open('/tmp/supa_signin.json'))\\nu = d.get('user', {})\\nprint(f'HTTP: 200')\\nprint(f'User ID: {u.get(\\\\\\\"id\\\\\\\")}')\\nprint(f'Email: {u.get(\\\\\\\"email\\\\\\\")}')\\nprint(f'Token length: {len(d.get(\\\\\\\"access_token\\\\\\\",\\\\\\\"\\\\\\\"))}')\\nprint(f'Expires: {d.get(\\\\\\\"expires_in\\\\\\\")}s')\\n\\\" 2>/dev/null\\n\\necho \\\"\\\"\\necho \\\"--- Owner AI response proof ---\\\"\\npython3 -c \\\"\\nimport json\\nd = json.load(open('/tmp/r_ai.json'))\\nprint(f'HTTP: 200')\\nprint(f'ok: {d.get(\\\\\\\"ok\\\\\\\")}')\\nprint(f'source: {d.get(\\\\\\\"source\\\\\\\")}')\\nprint(f'provider: {d.get(\\\\\\\"provider\\\\\\\")}')\\nprint(f'model: {d.get(\\\\\\\"model\\\\\\\")}')\\nprint(f'fallbackUsed: {d.get(\\\\\\\"fallbackUsed\\\\\\\")}')\\nprint(f'answer: {d.get(\\\\\\\"answer\\\\\\\",\\\\\\\"?\\\\\\\")[:120]}')\\n\\\" 2>/dev/null\\n\\necho \\\"\\\"\\necho \\\"--- Backend endpoint verification ---\\\"\\nOWNER_TOKEN=$(cat /tmp/owner_access_token.txt)\\nBASE=\\\"https://api.ivxholding.com\\\"\\n\\n# Quick re-verify all endpoints\\nfor ep in \\\"GET /health\\\" \\\"GET /api/ivx/owner-ai/proxy-status\\\" \\\"GET /api/ivx/metrics\\\" \\\"GET /api/ivx/members\\\" \\\"GET /api/ivx/notifications\\\" \\\"GET /api/ivx/video-platform/admin/videos\\\" \\\"POST /api/ivx/owner-ai\\\" \\\"GET /api/ivx/supabase/tables\\\"; do\\n  method=$(echo $ep | cut -d' ' -f1)\\n  path=$(echo $ep | cut -d' ' -f2)\\n  if [ \\\"$method\\\" = \\\"POST\\\" ]; then\\n    HTTP=$(curl -s -o /dev/null -w \\\"%{http_code}\\\" --max-time 15 \\\\\\n      -X POST -H \\\"Authorization: Bearer $OWNER_TOKEN\\\" -H \\\"Content-Type: application/json\\\" \\\\\\n      -d '{\\\"message\\\":\\\"test\\\"}' \\\"$BASE$path\\\" 2>&1)\\n  elif [ \\\"$path\\\" = \\\"/health\\\" ] || [ \\\"$path\\\" = \\\"/api/ivx/owner-ai/proxy-status\\\" ] || [ \\\"$path\\\" = \\\"/api/ivx/video-platform/admin/videos\\\" ]; then\\n    HTTP=$(curl -s -o /dev/null -w \\\"%{http_code}\\\" --max-time 10 -H \\\"Authorization: Bearer $OWNER_TOKEN\\\" \\\"$BASE$path\\\" 2>&1)\\n  else\\n    HTTP=$(curl -s -o /dev/null -w \\\"%{http_code}\\\" --max-time 10 -H \\\"Authorization: Bearer $OWNER_TOKEN\\\" \\\"$BASE$path\\\" 2>&1)\\n  fi\\n  echo \\\"  $method $path → HTTP $HTTP\\\"\\ndone\\nENDBASH\\n\"}",
       "createdAt": 1784143218749,
-      "completedAt": 1784143240335
+      "completedAt": 1784143240335,
+      "compactedAt": 1784152776765
     },
     {
       "type": "reasoning",
@@ -2153,7 +2164,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"tasks\": [{\"activeForm\": \"Compiling final closure report\", \"content\": \"Final closure report with all evidence and honest blockers\", \"status\": \"completed\"}]}",
       "createdAt": 1784143250692,
-      "completedAt": 1784143251127
+      "completedAt": 1784143251127,
+      "compactedAt": 1784152776765
     },
     {
       "type": "reasoning",

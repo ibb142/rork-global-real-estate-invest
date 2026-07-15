@@ -1,6 +1,6 @@
 /**
- * IVX image generation through the Vercel AI Gateway (proven backend path:
- * `AI_GATEWAY_API_KEY` -> `https://ai-gateway.vercel.sh/v3/ai`, the same auth the
+ * IVX image generation through OpenAI API (proven backend path:
+ * `OPENAI_API_KEY` -> `https://api.openai.com/v1`, the same auth the
  * runtime + owner-multimodal analysis already use).
  *
  * The gateway call is INJECTABLE (`GatewayImageGenerator`) so the request
@@ -55,13 +55,14 @@ function readTrimmed(value: unknown): string {
 }
 
 function getGatewayApiKey(): string {
-  return readTrimmed(process.env.AI_GATEWAY_API_KEY);
+  return readTrimmed(process.env.OPENAI_API_KEY) || readTrimmed(process.env.AI_GATEWAY_API_KEY);
 }
 
 function getGatewayBaseUrl(): string {
-  const root = readTrimmed(process.env.IVX_AI_GATEWAY_URL) || 'https://ai-gateway.vercel.sh' /* INTENTIONAL: Vercel AI Gateway is the AI provider (not Vercel hosting). Backend-only, never in APK. */;
-  const trimmed = root.replace(/\/+$/, '');
-  return trimmed.endsWith('/v3/ai') ? trimmed : `${trimmed}/v3/ai`;
+  const root = readTrimmed(process.env.IVX_AI_BASE_URL)
+    || readTrimmed(process.env.IVX_AI_GATEWAY_URL)
+    || 'https://api.openai.com/v1';
+  return root.replace(/\/+$/, '');
 }
 
 /**
@@ -72,7 +73,8 @@ function getGatewayBaseUrl(): string {
 export const defaultGatewayImageGenerator: GatewayImageGenerator = async (input) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const aiModule: any = await import('ai');
-  const provider = aiModule.createGateway({ apiKey: input.apiKey, baseURL: input.baseURL });
+  const { createOpenAI } = await import('@ai-sdk/openai');
+  const provider = createOpenAI({ apiKey: input.apiKey, baseURL: input.baseURL });
 
   const isMultimodalLLM = input.modelId.includes('gemini') || input.modelId.includes('gpt-5');
   if (isMultimodalLLM) {
@@ -97,7 +99,7 @@ export const defaultGatewayImageGenerator: GatewayImageGenerator = async (input)
   }
 
   const result = await aiModule.experimental_generateImage({
-    model: provider.imageModel(input.modelId),
+    model: provider.image(input.modelId.replace(/^openai\//, '')),
     prompt: input.prompt,
   });
   const images = (result.images ?? []) as { base64?: string; mediaType?: string }[];

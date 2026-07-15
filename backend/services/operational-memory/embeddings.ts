@@ -10,14 +10,14 @@ function readTrimmed(value: unknown): string {
 }
 
 function getGatewayBaseUrl(): string {
-  const root = readTrimmed(process.env.EXPO_PUBLIC_IVX_AI_GATEWAY_URL)
+  const root = readTrimmed(process.env.IVX_AI_BASE_URL)
     || readTrimmed(process.env.IVX_AI_GATEWAY_URL)
-    || 'https://ai-gateway.vercel.sh' /* INTENTIONAL: Vercel AI Gateway is the AI provider (not Vercel hosting). Backend-only, never in APK. */;
-  return root.replace(/\/+$/, '') + '/v3/ai';
+    || 'https://api.openai.com/v1';
+  return root.replace(/\/+$/, '');
 }
 
 function getApiKey(): string {
-  return readTrimmed(process.env.AI_GATEWAY_API_KEY);
+  return readTrimmed(process.env.OPENAI_API_KEY) || readTrimmed(process.env.AI_GATEWAY_API_KEY);
 }
 
 function hashEmbedding(input: string, dim: number): number[] {
@@ -58,7 +58,7 @@ export async function embedText(text: string): Promise<EmbedResult> {
     return { vector: hashEmbedding(truncated, MEMORY_EMBEDDING_DIM), model: 'fallback-hash', dim: MEMORY_EMBEDDING_DIM, source: 'fallback_hash' };
   }
   try {
-    const response = await fetch(`${getGatewayBaseUrl()}/openai/text-embedding-3-small/embeddings`, {
+    const response = await fetch(`${getGatewayBaseUrl()}/embeddings`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -1,4 +1,5 @@
-import { createGateway, generateText, streamText } from 'ai';
+import { generateText, streamText } from 'ai';
+import { createOpenAI } from '@ai-sdk/openai';
 import { acquireAIQueueSlot, classifyRequestLane, type IVXAIQueueLane } from './services/ivx-ai-queue';
 import { estimatePromptTokens, recordProviderTelemetry } from './services/ivx-provider-telemetry';
 import { attemptProviderFallback, classifyProviderFailure, isFailureRetryable } from './services/ivx-ai-provider-fallback';
@@ -153,24 +154,16 @@ function getIVXAIGatewayRootUrl(): string {
   if (configured && !isRorkDomain(configured)) {
     return configured;
   }
-  return 'https://ai-gateway.vercel.sh' /* INTENTIONAL: Vercel AI Gateway is the AI provider (not Vercel hosting). Backend-only, never in APK. */;
+  return 'https://api.openai.com/v1';
 }
 
 function getIVXAIGatewayApiKey(): string {
-  return readTrimmed(process.env.AI_GATEWAY_API_KEY);
+  return readTrimmed(process.env.OPENAI_API_KEY) || readTrimmed(process.env.AI_GATEWAY_API_KEY);
 }
 
 function buildGatewayBaseUrl(rootUrl: string): string | null {
-  const gatewayRootUrl = readTrimmed(rootUrl).replace(/\/+$/, '');
-  if (!gatewayRootUrl) {
-    return null;
-  }
-
-  if (gatewayRootUrl.endsWith('/v3/ai') || gatewayRootUrl.endsWith(GATEWAY_BASE_PATH)) {
-    return gatewayRootUrl;
-  }
-
-  return new URL(GATEWAY_BASE_PATH, `${gatewayRootUrl}/`).toString().replace(/\/+$/, '');
+  const trimmed = readTrimmed(rootUrl).replace(/\/+$/, '');
+  return trimmed || null;
 }
 
 function getGatewayBaseUrl(): string | null {
@@ -187,7 +180,7 @@ function isRorkDomain(url: string): boolean {
 
 function getGatewayBaseUrlCandidates(): string[] {
   const configured = getGatewayBaseUrl();
-  const canonical = buildGatewayBaseUrl('https://ai-gateway.vercel.sh' /* INTENTIONAL: Vercel AI Gateway is the AI provider (not Vercel hosting). Backend-only, never in APK. */);
+  const canonical = buildGatewayBaseUrl('https://api.openai.com/v1');
   // Always include the canonical Vercel gateway as a fallback candidate so a
   // misconfigured IVX_AI_GATEWAY_URL cannot strand the backend on a proxy that
   // strips auth headers (which causes free-tier 429s on a paid account).
@@ -402,7 +395,7 @@ export async function requestIVXAIText(input: {
   for (const baseURL of baseUrlCandidates) {
     ensureIVXAIGatewayEnvironment();
     try {
-      const gatewayProvider = createGateway({
+      const gatewayProvider = createOpenAI({
         apiKey: getIVXAIGatewayApiKey(),
         baseURL,
       });
@@ -696,7 +689,7 @@ export async function* streamIVXAIText(input: {
   const timer = setTimeout(() => { timedOut = true; }, adaptiveTimeoutMs);
 
   try {
-    const gatewayProvider = createGateway({ apiKey: getIVXAIGatewayApiKey(), baseURL });
+    const gatewayProvider = createOpenAI({ apiKey: getIVXAIGatewayApiKey(), baseURL });
     const streamResult = streamText({
       model: gatewayProvider(model),
       system: system.length > 0 ? system : undefined,

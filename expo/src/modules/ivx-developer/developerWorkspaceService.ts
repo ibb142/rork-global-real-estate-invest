@@ -228,7 +228,7 @@ export const PROJECT_FILE_REGISTRY: readonly ProjectFileEntry[] = [
     kind: 'config',
     category: 'Config',
     title: 'Metro Bundler Config',
-    summary: 'Plain Expo config (no withRorkMetro).',
+    summary: 'Plain Expo config (standard metro).',
     tags: ['bundler'],
   },
   {

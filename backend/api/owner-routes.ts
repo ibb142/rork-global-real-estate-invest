@@ -1,5 +1,12 @@
 import { IVX_CHAT_UPLOAD_BUCKET, IVX_OWNER_AI_BUCKET } from '../../expo/shared/ivx';
 import { assertIVXOwnerOnly, ownerOnlyJson, ownerOnlyOptions, type IVXOwnerRequestContext } from './owner-only';
+
+const LIVE_COMMIT_SHA = (
+  process.env.RENDER_GIT_COMMIT?.trim() ||
+  process.env.GIT_COMMIT?.trim() ||
+  process.env.SOURCE_VERSION?.trim() ||
+  'unknown'
+);
 import {
   ensureOwnerConversation,
   handleIVXOwnerAIRequest,
@@ -406,6 +413,8 @@ export async function handleDiagnosticsGet(request: Request): Promise<Response> 
     ok: true,
     service: 'ivx-owner-ai-backend',
     deploymentMarker: DEPLOYMENT_MARKER,
+    commit: LIVE_COMMIT_SHA,
+    commitShort: LIVE_COMMIT_SHA === 'unknown' ? 'unknown' : LIVE_COMMIT_SHA.slice(0, 8),
     timestamp: nowIso(),
     env: envAudit,
     routesAvailable,

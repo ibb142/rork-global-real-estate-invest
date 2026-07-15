@@ -457,8 +457,8 @@ export async function loadTodayRecords(): Promise<IntelligenceRecord[]> {
 
 // ── Web Search via AI Gateway ──────────────────────────────────────────────
 
-const AI_GATEWAY_URL = process.env.IVX_AI_GATEWAY_URL || 'https://ai-gateway.vercel.sh' /* INTENTIONAL: Vercel AI Gateway is the AI provider (not Vercel hosting). Backend-only, never in APK. */;
-const AI_GATEWAY_KEY = process.env.AI_GATEWAY_API_KEY || process.env.IVX_AI_GATEWAY_API_KEY || '';
+const AI_GATEWAY_URL = process.env.IVX_AI_BASE_URL || process.env.IVX_AI_GATEWAY_URL || 'https://api.openai.com/v1';
+const AI_GATEWAY_KEY = process.env.OPENAI_API_KEY || process.env.AI_GATEWAY_API_KEY || '';
 
 type WebSearchResult = {
   title: string;
@@ -472,6 +472,11 @@ type WebSearchResult = {
  */
 async function webSearch(query: string): Promise<WebSearchResult[]> {
   try {
+    // Web search is not available via direct OpenAI API; return empty results gracefully.
+    if (!AI_GATEWAY_URL.includes('vercel.sh')) {
+      console.warn(`[GlobalIntelligence] Web search not available via direct OpenAI API for "${query}"`);
+      return [];
+    }
     const response = await fetch(`${AI_GATEWAY_URL}/v3/ai/web-search`, {
       method: 'POST',
       headers: {

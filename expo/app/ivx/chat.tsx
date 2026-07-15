@@ -5601,14 +5601,7 @@ export default function IVXOwnerChatRoute() {
                       <ShieldCheck size={13} color={Colors.black} />
                       <Text style={styles.graphActionButtonText}>Independence</Text>
                     </Pressable>
-                    <Pressable
-                      style={styles.graphActionButton}
-                      onPress={() => router.push('/ivx/rork-independence' as never)}
-                      testID="ivx-owner-open-rork-independence"
-                    >
-                      <Unplug size={13} color={Colors.black} />
-                      <Text style={styles.graphActionButtonText}>Rork Phases</Text>
-                    </Pressable>
+
                     <Pressable
                       style={styles.graphActionButton}
                       onPress={() => router.push('/ivx/variables' as never)}

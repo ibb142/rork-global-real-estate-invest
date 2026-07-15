@@ -20,7 +20,7 @@
  */
 
 import { generateText } from 'ai';
-import { createGateway } from 'ai';
+import { createOpenAI } from '@ai-sdk/openai';
 import { IVX_CHAT_UPLOAD_BUCKET, IVX_OWNER_AI_BUCKET } from '../../expo/shared/ivx';
 import { assertIVXOwnerOnly, ownerOnlyJson, ownerOnlyOptions, type IVXOwnerRequestContext } from './owner-only';
 
@@ -200,20 +200,18 @@ function getGatewayApiKey(): string {
 }
 
 function getGatewayBaseUrl(): string {
-  const root = readTrimmed(process.env.EXPO_PUBLIC_IVX_AI_GATEWAY_URL)
+  const root = readTrimmed(process.env.IVX_AI_BASE_URL)
     || readTrimmed(process.env.IVX_AI_GATEWAY_URL)
-    || 'https://ai-gateway.vercel.sh' /* INTENTIONAL: Vercel AI Gateway is the AI provider (not Vercel hosting). Backend-only, never in APK. */;
-  const trimmed = root.replace(/\/+$/, '');
-  if (trimmed.endsWith('/v3/ai')) return trimmed;
-  return `${trimmed}/v3/ai`;
+    || 'https://api.openai.com/v1';
+  return root.replace(/\/+$/, '');
 }
 
 function getVisionModel(): string {
-  return readTrimmed(process.env.IVX_OWNER_AI_VISION_MODEL) || 'openai/gpt-4o';
+  return (readTrimmed(process.env.IVX_OWNER_AI_VISION_MODEL) || 'gpt-4o').replace(/^openai\//, '');
 }
 
 function getTextModel(): string {
-  return readTrimmed(process.env.IVX_OWNER_AI_MODEL) || 'openai/gpt-4o';
+  return (readTrimmed(process.env.IVX_OWNER_AI_MODEL) || 'gpt-4o').replace(/^openai\//, '');
 }
 
 function ensureGatewayConfigured(): void {
@@ -230,7 +228,7 @@ async function runVisionAnalysis(input: {
   ensureGatewayConfigured();
   const apiKey = getGatewayApiKey();
   const baseURL = getGatewayBaseUrl();
-  const provider = createGateway({ apiKey, baseURL });
+  const provider = createOpenAI({ apiKey, baseURL });
   const model = getVisionModel();
 
   const result = await generateText({
@@ -259,7 +257,7 @@ async function runTextAnalysis(input: { system?: string; prompt: string }): Prom
   ensureGatewayConfigured();
   const apiKey = getGatewayApiKey();
   const baseURL = getGatewayBaseUrl();
-  const provider = createGateway({ apiKey, baseURL });
+  const provider = createOpenAI({ apiKey, baseURL });
   const model = getTextModel();
 
   const result = await generateText({

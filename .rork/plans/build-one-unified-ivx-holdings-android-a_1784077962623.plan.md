@@ -100,6 +100,7 @@ All owner-login persistence / auto-restore / sign-in changes are **paused** unti
 - [x] Push the full codebase to GitHub with the refreshed token (build 30), deploy to Render, and align the APK, GitHub, and Render SHAs.
 - [x] Bump the Android `versionCode` to `31` and rebuild after adding the TypeScript `node` types directive to `app.config.ts`, ensuring `runChecks` passes with zero errors.
 - [x] Final contradiction audit: verify GitHub API, GitHub remote HEAD, Render deployed SHA, /health SHA, APK embedded SHA, and local HEAD are identical.
+- [x] Bump the Android `versionCode` to `32` — Rork removal, Vercel AI Gateway removal, /diagnostics SHA fix, release keystore APK signing, all 6 SHAs aligned.
 
 ## Final acceptance
 
@@ -110,10 +111,14 @@ All owner-login persistence / auto-restore / sign-in changes are **paused** unti
 - [x] Git SHA is not `local` and API environment is not `unknown` in production (build info reads from app.config.ts extra).
 - [x] Owner AI send button is disabled until authentication is ready (explicit auth states + `isAuthBlocked`).
 - [x] Final APK uses `com.ivxholdings.app` and is directly downloadable (build 18 link delivered and verified with HTTP 200 + application/octet-stream + checksum match).
-- [~] Real Android testing passes on the user’s device for build 31: no black screen, Owner Login renders on cold launch, startup trace reaches APP_INTERACTIVE, no hardcoded password auto-login, no forbidden endpoints in bundle.
+- [~] Real Android testing passes on the user’s device for build 32: no black screen, Owner Login renders on cold launch, startup trace reaches APP_INTERACTIVE, no hardcoded password auto-login, no forbidden endpoints in bundle, APK signed with IVX release keystore.
 
 ## Blockers
 
 - `EXPO_TOKEN` / `EXPO_PUBLIC_EAS_PROJECT_ID` are not available in this sandbox, so EAS cloud builds are unavailable. APK will be built locally from the prebuilt Android project.
 - [x] GitHub token was refreshed externally and commits were pushed successfully to `ibb142/rork-global-real-estate-invest@main`. The backend `/version` SHA is now aligned with the new GitHub HEAD.
-- [x] Final contradiction audit resolved: GitHub API returns 200, all six SHAs match at `65922b9ad691ea4fa53f04d5881abdeb170e099d`, and `runChecks` passes.
+- [x] Final contradiction audit resolved: GitHub API returns 200, all six SHAs match at `b6eb80e1c2b486787c593efe419647a8ba4f44d7`, and `runChecks` passes.
+- [x] Rork fully removed: @rork-ai/toolkit-sdk dropped, withRorkMetro removed, EXPO_PUBLIC_RORK_* env vars deleted, 0 rork.com/toolkit.rork.com/rorktest.dev references in APK bundle.
+- [x] Vercel AI Gateway fully removed: createGateway→createOpenAI across all backend files, ai-gateway.vercel.sh→api.openai.com/v1, 0 ai-gateway.vercel.sh/vercel.app references in APK bundle.
+- [x] APK signed with release keystore (apksigner verified, CN=IVX Holdings).
+- [x] /diagnostics endpoint now includes commit SHA field.
