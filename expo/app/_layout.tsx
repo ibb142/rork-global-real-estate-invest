@@ -39,27 +39,45 @@ interface ProviderBoundaryProps {
 interface ProviderBoundaryState {
   hasError: boolean;
   error: Error | null;
+  traceId: string | null;
+}
+function classifyProviderError(error: Error): 'RENDER_ERROR' | 'AUTH_ERROR' | 'NETWORK_ERROR' | 'CONFIG_ERROR' | 'UNKNOWN_ERROR' {
+  const msg = (error.message || '').toLowerCase();
+  if (msg.includes('maximum update depth') || msg.includes('render') || msg.includes('component')) return 'RENDER_ERROR';
+  if (msg.includes('auth') || msg.includes('session') || msg.includes('token')) return 'AUTH_ERROR';
+  if (msg.includes('network') || msg.includes('fetch') || msg.includes('timeout')) return 'NETWORK_ERROR';
+  if (msg.includes('supabase url') || msg.includes('config') || msg.includes('api key')) return 'CONFIG_ERROR';
+  return 'UNKNOWN_ERROR';
 }
 class ProviderBoundary extends Component<ProviderBoundaryProps, ProviderBoundaryState> {
   constructor(props: ProviderBoundaryProps) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, traceId: null };
   }
   static getDerivedStateFromError(error: Error): Partial<ProviderBoundaryState> {
-    return { hasError: true, error };
+    return {
+      hasError: true,
+      error,
+      traceId: 'IVX-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 8),
+    };
   }
   componentDidCatch(error: Error) {
-    console.warn(`[IVX] Provider "${this.props.name}" crashed:`, error.message, error.stack);
+    const category = classifyProviderError(error);
+    console.warn(`[IVX] Provider "${this.props.name}" crashed — category: ${category}`, error.message, error.stack);
   }
   render() {
     if (this.state.hasError) {
+      const category = this.state.error ? classifyProviderError(this.state.error) : 'UNKNOWN_ERROR';
       return (
         <View style={styles.providerError}>
-          <Text style={styles.providerErrorName}>{this.props.name} unavailable</Text>
+          <Text style={styles.providerErrorName}>IVX encountered a rendering error</Text>
           <Text style={styles.providerErrorMsg}>
-            {this.state.error?.message || "Unknown error"}
+            {category}: {this.state.error?.message || "Unknown error"}
           </Text>
-          <TouchableOpacity style={styles.providerErrorButton} onPress={() => this.setState({ hasError: false, error: null })}>
+          {this.state.traceId && (
+            <Text style={styles.providerErrorTrace}>Trace ID: {this.state.traceId}</Text>
+          )}
+          <TouchableOpacity style={styles.providerErrorButton} onPress={() => this.setState({ hasError: false, error: null, traceId: null })}>
             <Text style={styles.providerErrorButtonText}>Retry</Text>
           </TouchableOpacity>
         </View>
@@ -224,6 +242,13 @@ const styles = StyleSheet.create({
   providerErrorMsg: {
     color: "#888",
     fontSize: 12,
+    fontFamily: "monospace" as const,
+    textAlign: "center" as const,
+    marginBottom: 8,
+  },
+  providerErrorTrace: {
+    color: "#555",
+    fontSize: 10,
     fontFamily: "monospace" as const,
     textAlign: "center" as const,
     marginBottom: 16,

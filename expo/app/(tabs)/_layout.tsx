@@ -196,7 +196,7 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="index"
+        name="crm"
         options={{
           title: 'CRM',
           tabBarIcon: ({ color, size }) => <LayoutDashboard color={color} size={size} strokeWidth={2.3} />,

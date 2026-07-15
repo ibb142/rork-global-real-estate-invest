@@ -42,7 +42,6 @@ import { useAuth } from '@/lib/auth-context';
 import { isOpenAccessModeEnabled } from '@/lib/open-access';
 import QuickBuyModal from '@/components/QuickBuyModal';
 import InvestorFirstFeed from '@/components/InvestorFirstFeed';
-import { fetchIvxHomeStats, type IvxHomeStats } from '@/lib/home-stats';
 import type { JVAgreement } from '@/types/jv';
 
 function getPrimaryDealPhoto(deal: JVAgreement): string | undefined {
@@ -128,48 +127,69 @@ const statCardStyles = StyleSheet.create({
   },
 });
 
-function PortfolioSnapshot({
-  stats,
-  isLoading,
+/**
+ * UserActivitySnapshot — shows user-relevant content instead of internal business metrics.
+ * Members, Investors, Live Deals, and Annual Returns have been moved to the
+ * protected Admin Dashboard → Business Overview screen (admin/business-overview.tsx).
+ * Normal users see their own activity, saved deals, and current opportunities.
+ */
+function UserActivitySnapshot({
+  jvDeals,
+  isOwner,
+  router,
 }: {
-  stats: IvxHomeStats | undefined;
-  isLoading: boolean;
+  jvDeals: JVAgreement[];
+  isOwner: boolean;
+  router: ReturnType<typeof useRouter>;
 }) {
+  const activeOpportunities = jvDeals.filter(d => {
+    const s = d.status as string;
+    return s !== 'trashed' && s !== 'archived' && s !== 'permanently_deleted';
+  }).length;
+
   return (
     <View style={psStyles.container}>
       <View style={psStyles.header}>
-        <Text style={psStyles.title}>Your Portfolio</Text>
-        <Text style={psStyles.subtitle}>All time</Text>
+        <Text style={psStyles.title}>Your Activity</Text>
+        <Text style={psStyles.subtitle}>Personalized</Text>
       </View>
       <View style={psStyles.grid}>
         <StatCard
-          icon={<Users size={20} color={Colors.primary} />}
-          value={isLoading ? '—' : stats?.members ?? '—'}
-          label="Members"
-          isLoading={isLoading}
-          tint={Colors.primary}
-        />
-        <StatCard
-          icon={<Users size={20} color={Colors.primary} />}
-          value={isLoading ? '—' : stats?.investors ?? '—'}
-          label="Investors"
-          isLoading={isLoading}
-          tint={Colors.primary}
-        />
-        <StatCard
-          icon={<Building2 size={20} color={Colors.primary} />}
-          value={isLoading ? '—' : stats?.liveDeals ?? '—'}
-          label="Live Deals"
-          isLoading={isLoading}
-          tint={Colors.primary}
-        />
-        <StatCard
           icon={<TrendingUp size={20} color={Colors.primary} />}
-          value={isLoading ? '—' : stats?.annualReturns ?? '—'}
-          label="Annual Returns"
-          isLoading={isLoading}
+          value={activeOpportunities}
+          label="Open Opportunities"
           tint={Colors.primary}
         />
+        <StatCard
+          icon={<Building2 size={20} color={Colors.accent ?? '#3b82f6'} />}
+          value={jvDeals.length}
+          label="Available Deals"
+          tint={Colors.accent ?? '#3b82f6'}
+        />
+        <TouchableOpacity
+          style={psStyles.ctaCard}
+          onPress={() => router.push('/(tabs)/portfolio' as any)}
+          activeOpacity={0.8}
+          testID="home-portfolio-summary"
+        >
+          <View style={[psStyles.ctaIconWrap, { backgroundColor: Colors.primary + '15' }]}>
+            <BarChart3 size={20} color={Colors.primary} />
+          </View>
+          <Text style={psStyles.ctaTitle}>Portfolio</Text>
+          <Text style={psStyles.ctaSubtitle}>Track your investments</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={psStyles.ctaCard}
+          onPress={() => router.push('/(tabs)/chat' as any)}
+          activeOpacity={0.8}
+          testID="home-ai-invest"
+        >
+          <View style={[psStyles.ctaIconWrap, { backgroundColor: (Colors.success ?? '#22c55e') + '15' }]}>
+            <Brain size={20} color={Colors.success ?? '#22c55e'} />
+          </View>
+          <Text style={psStyles.ctaTitle}>AI Advisor</Text>
+          <Text style={psStyles.ctaSubtitle}>Smart deal matching</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -200,6 +220,34 @@ const psStyles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
+  },
+  ctaCard: {
+    flex: 1,
+    minWidth: '46%',
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    padding: 14,
+    gap: 6,
+  },
+  ctaIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  ctaTitle: {
+    color: Colors.text,
+    fontSize: 15,
+    fontWeight: '700' as const,
+  },
+  ctaSubtitle: {
+    color: Colors.textTertiary,
+    fontSize: 12,
+    fontWeight: '600' as const,
   },
 });
 
@@ -514,14 +562,6 @@ export default function HomeScreen() {
     }
   }, [publishedJV.deals]);
 
-  const homeStatsQuery = useQuery({
-    queryKey: ['ivx-home-stats'],
-    queryFn: fetchIvxHomeStats,
-    retry: 1,
-    staleTime: 1000 * 60 * 2,
-    refetchOnWindowFocus: true,
-  });
-
   const queryClient = useQueryClient();
 
   const unreadQuery = useQuery({
@@ -549,7 +589,6 @@ export default function HomeScreen() {
       await Promise.all([
         unreadQuery.refetch(),
         publishedJV.refetch(),
-        homeStatsQuery.refetch(),
         queryClient.invalidateQueries({ queryKey: ['ivx-home-feed'] }),
       ]);
       console.log('[Home] Pull-to-refresh complete — data is fresh from Supabase');
@@ -558,7 +597,7 @@ export default function HomeScreen() {
     } finally {
       setRefreshing(false);
     }
-  }, [unreadQuery, publishedJV, homeStatsQuery, queryClient]);
+  }, [unreadQuery, publishedJV, queryClient]);
 
   const openQuickBuy = useCallback((deal: JVAgreement) => {
     const primaryPhoto = getPrimaryDealPhoto(deal);
@@ -673,7 +712,7 @@ export default function HomeScreen() {
             <InlineTrustBadges t={t} />
           </View>
 
-          <PortfolioSnapshot stats={homeStatsQuery.data} isLoading={homeStatsQuery.isLoading} />
+          <UserActivitySnapshot jvDeals={jvDeals} isOwner={isOwner} router={router} />
 
           <ExploreDealsSection router={router} />
 

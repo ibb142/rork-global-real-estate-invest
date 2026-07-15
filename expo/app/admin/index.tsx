@@ -108,6 +108,7 @@ const ADMIN_MODULES = [
   { id: 'owner-controls', name: 'Owner Controls', icon: Crown, route: '/admin/owner-controls', category: 'Core', keywords: 'owner admin controls master settings' },
   { id: 'access-control', name: 'Access Control', icon: Shield, route: '/admin/access-control', category: 'Core', keywords: 'access control roles permissions users screens rbac security manage assign revoke' },
   { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard, route: '/admin/dashboard', category: 'Core', keywords: 'dashboard overview summary' },
+  { id: 'business-overview', name: 'Business Overview', icon: BarChart3, route: '/admin/business-overview', category: 'Core', keywords: 'business overview members investors deals capital raised kyc system health' },
   { id: 'system-monitor', name: '24/7 Command Center', icon: Monitor, route: '/admin/system-monitor', category: 'Core', keywords: 'monitor command center health live status' },
   { id: 'admin-chat-room', name: 'Message Room', icon: MessageSquare, route: '/admin/chat-room', category: 'Core', keywords: 'chat room realtime supabase shared support messages inbox' },
   { id: 'supabase-scripts', name: 'Supabase SQL', icon: Database, route: '/admin/supabase-scripts', category: 'Core', keywords: 'supabase sql scripts copy paste database tables setup migration' },

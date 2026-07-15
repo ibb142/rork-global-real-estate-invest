@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -83,6 +83,10 @@ export default function MembersScreen() {
   const [verifiedFilter, setVerifiedFilter] = useState<VerifiedFilter>('all');
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
 
+  // Progressive loading: fetch first 20 members, then load more on scroll
+  const [displayCount, setDisplayCount] = useState<number>(20);
+  const PAGE_SIZE = 20;
+
   const membersQuery = useQuery({
     queryKey: ['members.list', { page: 1, limit: 100, search: searchQuery || undefined }],
     queryFn: async () => {
@@ -94,6 +98,11 @@ export default function MembersScreen() {
     staleTime: 3000,
     refetchInterval: 15000,
   });
+
+  // Reset display count when search changes
+  useEffect(() => {
+    setDisplayCount(PAGE_SIZE);
+  }, [searchQuery]);
 
   const statsQuery = useQuery<{ totalMembers: number; activeMembers: number; pendingKyc: number; newMembersToday: number; newMembersThisWeek: number; newMembersThisMonth: number } | null>({
     queryKey: ['members.getStats'],
@@ -710,7 +719,7 @@ export default function MembersScreen() {
         </View>
       ) : (
         <FlatList
-          data={members}
+          data={members.slice(0, displayCount)}
           keyExtractor={keyExtractor}
           renderItem={renderMember}
           style={styles.list}
@@ -720,6 +729,12 @@ export default function MembersScreen() {
           maxToRenderPerBatch={10}
           windowSize={5}
           removeClippedSubviews={true}
+          onEndReached={() => {
+            if (displayCount < members.length) {
+              setDisplayCount(prev => Math.min(prev + PAGE_SIZE, members.length));
+            }
+          }}
+          onEndReachedThreshold={0.5}
           refreshControl={
             <RefreshControl
               refreshing={membersQuery.isRefetching}

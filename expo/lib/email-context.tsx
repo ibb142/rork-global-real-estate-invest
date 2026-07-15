@@ -274,26 +274,19 @@ export const [EmailProvider, useEmail] = createContextHook(() => {
       const API_BASE = getApiBase();
       if (!API_BASE) {
         console.log('[Email] STATUS: no_backend — API_BASE not configured');
-        setInboxStatus('no_backend');
-        setBackendError('Email backend not configured');
-        return { emails: [] as EmailMessage[], source: 'unknown' as EmailSource, fromCache: false };
+        return { emails: [] as EmailMessage[], source: 'unknown' as EmailSource, fromCache: false, status: 'no_backend' as InboxStatus };
       }
 
       const { hasToken } = getAuthHeaders();
       if (!hasToken) {
         console.log('[Email] STATUS: no_auth — missing auth token');
-        setInboxStatus('no_auth');
-        setBackendError('Please log in to access inbox');
-        return { emails: [] as EmailMessage[], source: 'unknown' as EmailSource, fromCache: false };
+        return { emails: [] as EmailMessage[], source: 'unknown' as EmailSource, fromCache: false, status: 'no_auth' as InboxStatus };
       }
 
       const result = await fetchEmailsFromBackend(activeAccountId, 'all');
 
       if (result && result.emails.length > 0) {
         console.log(`[Email] STATUS: ready — ${result.emails.length} emails from source=${result.source}`);
-        setInboxStatus('ready');
-        setLastFetchSource(result.source);
-        setBackendError(null);
 
         try {
           const MAX_CACHE = 500;
@@ -304,7 +297,7 @@ export const [EmailProvider, useEmail] = createContextHook(() => {
           console.log('[Email] Cached', toCache.length, 'verified backend emails');
         } catch {}
 
-        return { emails: result.emails, source: result.source, fromCache: false };
+        return { emails: result.emails, source: result.source, fromCache: false, status: 'ready' as InboxStatus };
       }
 
       console.log('[Email] Backend returned 0 emails — trying cache as fallback');
@@ -315,65 +308,64 @@ export const [EmailProvider, useEmail] = createContextHook(() => {
           const taggedCache = tagEmailSource(parsedCache, 'cache');
           if (taggedCache.length > 0) {
             console.log(`[Email] STATUS: ready (cache fallback) — ${taggedCache.length} cached emails`);
-            setInboxStatus('ready');
-            setLastFetchSource('cache');
-            setBackendError(null);
-            return { emails: taggedCache, source: 'cache' as EmailSource, fromCache: true };
+            return { emails: taggedCache, source: 'cache' as EmailSource, fromCache: true, status: 'ready' as InboxStatus };
           }
         }
       } catch {}
 
       console.log('[Email] STATUS: ready — inbox is empty (no backend emails, no cache)');
-      setInboxStatus('ready');
-      setLastFetchSource('backend');
-      setBackendError(null);
-      return { emails: [] as EmailMessage[], source: 'backend' as EmailSource, fromCache: false };
+      return { emails: [] as EmailMessage[], source: 'backend' as EmailSource, fromCache: false, status: 'ready' as InboxStatus };
     },
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
 
+  // Single unified effect: sync query status into local state.
+  // NEVER call setState inside the queryFn — that causes Maximum update depth exceeded.
+  // This effect runs only when the query data or error changes, and guards against
+  // redundant updates by comparing values before setting.
+  const queryData = backendEmailsQuery.data;
+  const queryError = backendEmailsQuery.error;
   useEffect(() => {
-    if (backendEmailsQuery.error) {
-      console.log('[Email] STATUS: error —', (backendEmailsQuery.error as Error)?.message);
-      setInboxStatus('error');
-      setBackendError((backendEmailsQuery.error as Error)?.message || 'Failed to load emails');
+    if (queryError) {
+      const errMsg = (queryError as Error)?.message || 'Failed to load emails';
+      console.log('[Email] STATUS: error —', errMsg);
+      setInboxStatus(prev => prev === 'error' ? prev : 'error');
+      setBackendError(prev => prev === errMsg ? prev : errMsg);
+      return;
     }
-  }, [backendEmailsQuery.error]);
+    if (!queryData) return;
 
-  useEffect(() => {
-    if (!backendEmailsQuery.data || initialLoadDone.current) return;
-    initialLoadDone.current = true;
+    // Update status from query result
+    const newStatus = queryData.status || 'ready';
+    setInboxStatus(prev => prev === newStatus ? prev : newStatus);
+    const newSource = queryData.source || 'backend';
+    setLastFetchSource(prev => prev === newSource ? prev : newSource);
+    setBackendError(prev => prev === null ? prev : null);
 
-    const backendEmails = backendEmailsQuery.data.emails;
-    setEmails(prev => {
-      const localOnly = prev.filter(e => e.source === 'local-draft' || e.source === 'local-sent');
-      const localIds = new Set(localOnly.map(e => e.id));
-      const nonDuplicate = backendEmails.filter(e => !localIds.has(e.id));
-      const merged = [...nonDuplicate, ...localOnly];
-      console.log(`[Email] Initial load — backend=${nonDuplicate.length} local=${localOnly.length} total=${merged.length}`);
-      return merged;
-    });
-  }, [backendEmailsQuery.data]);
-
-  useEffect(() => {
-    if (!backendEmailsQuery.data || !initialLoadDone.current) return;
-
-    const backendEmails = backendEmailsQuery.data.emails;
+    // Merge backend emails with local-only emails (drafts/sent).
+    // This replaces both the initial-load and refresh-merge effects.
+    const backendEmails = queryData.emails;
     setEmails(prev => {
       const localOnly = prev.filter(e => e.source === 'local-draft' || e.source === 'local-sent');
       const localIds = new Set(localOnly.map(e => e.id));
       const nonDuplicate = backendEmails.filter(e => !localIds.has(e.id));
       const merged = [...nonDuplicate, ...localOnly];
 
+      // Avoid unnecessary re-render: if nothing changed, return prev
       if (merged.length === prev.length && merged.every((e, i) => e.id === prev[i]?.id)) {
         return prev;
       }
 
-      console.log(`[Email] Refresh merge — backend=${nonDuplicate.length} local=${localOnly.length} total=${merged.length}`);
+      if (!initialLoadDone.current) {
+        initialLoadDone.current = true;
+        console.log(`[Email] Initial load — backend=${nonDuplicate.length} local=${localOnly.length} total=${merged.length}`);
+      } else {
+        console.log(`[Email] Refresh merge — backend=${nonDuplicate.length} local=${localOnly.length} total=${merged.length}`);
+      }
       return merged;
     });
-  }, [backendEmailsQuery.data]);
+  }, [queryData, queryError]);
 
   const persistEmails = useCallback(async (updated: EmailMessage[]) => {
     try {

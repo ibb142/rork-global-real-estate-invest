@@ -61,6 +61,7 @@ import ProjectShareSheet from '@/components/ProjectShareSheet';
 import ReelVideoPlayer from '@/components/ReelVideoPlayer';
 import { useReelPlayback } from '@/hooks/useReelPlayback';
 import { useReelEngagement, type EngagementState } from '@/hooks/useReelEngagement';
+import { ModuleErrorBoundary } from '@/components/ModuleErrorBoundary';
 import {
   fetchProjectComments,
   addProjectComment,
@@ -405,13 +406,49 @@ export default function VideosScreen() {
   const [shareVideo, setShareVideo] = useState<FeedVideo | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
+  // Progressive loading: fetch first page of 10, then load more on scroll
+  const [allVideos, setAllVideos] = useState<FeedVideo[]>([]);
+  const [hasMore, setHasMore] = useState<boolean>(true);
+  const [isFetchingMore, setIsFetchingMore] = useState<boolean>(false);
+  const loadedIds = useRef<Set<string>>(new Set());
+
   const feedQuery = useQuery({
     queryKey: ['ivx-video-feed'],
-    queryFn: () => fetchVideoFeed(24),
+    queryFn: () => fetchVideoFeed(10),
     staleTime: 60_000,
+    retry: 2,
   });
 
-  const allVideos: FeedVideo[] = useMemo(() => feedQuery.data ?? [], [feedQuery.data]);
+  // Sync initial query results into local state via guarded effect
+  const queryData = feedQuery.data;
+  useEffect(() => {
+    if (!queryData || queryData.length === 0 || feedQuery.isLoading) return;
+    const seen = new Set<string>();
+    const deduped = queryData.filter((v) => {
+      if (seen.has(v.id)) return false;
+      seen.add(v.id);
+      return true;
+    });
+    for (const v of deduped) loadedIds.current.add(v.id);
+    setAllVideos(deduped);
+  }, [queryData, feedQuery.isLoading]);
+
+  const loadMore = useCallback(() => {
+    if (isFetchingMore || !hasMore || feedQuery.isLoading) return;
+    setIsFetchingMore(true);
+    void fetchVideoFeed(30)
+      .then((more) => {
+        const newItems = more.filter((v) => !loadedIds.current.has(v.id));
+        if (newItems.length === 0) {
+          setHasMore(false);
+        } else {
+          for (const v of newItems) loadedIds.current.add(v.id);
+          setAllVideos((prev) => [...prev, ...newItems]);
+        }
+      })
+      .catch(() => setHasMore(false))
+      .finally(() => setIsFetchingMore(false));
+  }, [isFetchingMore, hasMore, feedQuery.isLoading]);
 
   const filteredVideos = useMemo(() => {
     if (channel === 'all') return allVideos;
@@ -456,6 +493,8 @@ export default function VideosScreen() {
   // Playback lifecycle hooks
   const playback = useReelPlayback();
   const engagement = useReelEngagement();
+  // Destructure stable callbacks to avoid effect dependency loops
+  const { initEngagements, handleView } = engagement;
 
   useEffect(() => {
     let cancelled = false;
@@ -469,17 +508,19 @@ export default function VideosScreen() {
   }, []);
 
   // Initialize engagement state when videos load
+  // Use allVideos.length as dependency, not the engagement object itself
   useEffect(() => {
     if (allVideos.length === 0) return;
-    engagement.initEngagements(allVideos);
-  }, [allVideos, engagement]);
+    initEngagements(allVideos);
+  }, [allVideos, initEngagements]);
 
   // Track view events when active reel changes
+  // Use playback.activeIndex and filteredVideos as deps, not engagement
   useEffect(() => {
     const activeVideo = filteredVideos[playback.activeIndex];
     if (!activeVideo) return;
-    engagement.handleView(activeVideo);
-  }, [playback.activeIndex, filteredVideos, engagement]);
+    handleView(activeVideo);
+  }, [playback.activeIndex, filteredVideos, handleView]);
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -655,6 +696,7 @@ export default function VideosScreen() {
           <Text style={styles.emptyText}>No videos available</Text>
         </View>
       ) : (
+        <ModuleErrorBoundary moduleName="Reels">
         <FlatList
           data={filteredVideos}
           keyExtractor={(v) => v.id}
@@ -668,11 +710,14 @@ export default function VideosScreen() {
           viewabilityConfig={playback.viewabilityConfig}
           initialNumToRender={2}
           maxToRenderPerBatch={3}
-          windowSize={3}
+          windowSize={5}
           removeClippedSubviews
           getItemLayout={(_data, index) => ({ length: itemHeight, offset: itemHeight * index, index })}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.5}
           contentContainerStyle={{ paddingTop: 0 }}
         />
+        </ModuleErrorBoundary>
       )}
 
       {toast && (

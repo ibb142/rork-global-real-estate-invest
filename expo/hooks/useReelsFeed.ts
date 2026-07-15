@@ -7,7 +7,7 @@
  * Returns a stable list with no duplicate IDs, engagement counts,
  * and viewer liked/saved state when authenticated.
  */
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchVideoFeed, type FeedVideo } from '@/lib/video-feed';
 
@@ -52,13 +52,22 @@ export function useReelsFeed(): ReelsFeedState {
     retry: 2,
   });
 
-  // Sync initial query results into local state
-  const data = feedQuery.data ?? [];
-  if (data.length > 0 && allVideos.length === 0 && !feedQuery.isLoading) {
-    for (const v of data) loadedIds.current.add(v.id);
-    // Use a microtask to avoid setState during render
-    queueMicrotask(() => setAllVideos(data));
-  }
+  // Sync initial query results into local state via a guarded useEffect.
+  // NEVER call setState during render — that causes Maximum update depth exceeded.
+  const queryData = feedQuery.data;
+  useEffect(() => {
+    if (!queryData || queryData.length === 0 || feedQuery.isLoading) return;
+    if (allVideos.length > 0) return;
+    // Deduplicate by ID
+    const seen = new Set<string>();
+    const deduped = queryData.filter((v) => {
+      if (seen.has(v.id)) return false;
+      seen.add(v.id);
+      return true;
+    });
+    for (const v of deduped) loadedIds.current.add(v.id);
+    setAllVideos(deduped);
+  }, [queryData, feedQuery.isLoading, allVideos.length]);
 
   const loadMore = useCallback(() => {
     if (isFetchingMore || !hasMore || feedQuery.isLoading) return;

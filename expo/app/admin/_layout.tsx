@@ -127,6 +127,7 @@ export default function AdminLayout() {
       <Stack.Screen name="admin-reels" />
       <Stack.Screen name="restore-center" />
       <Stack.Screen name="access-control" />
+      <Stack.Screen name="business-overview" />
     </Stack>
   );
 }
