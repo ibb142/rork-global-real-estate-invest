@@ -8,11 +8,13 @@ import { DiagnosticErrorBoundary } from '@/components/DiagnosticErrorBoundary';
 export function ErrorBoundary(props: { children: React.ReactNode }) {
   return <DiagnosticErrorBoundary>{props.children}</DiagnosticErrorBoundary>;
 }
-import React, { useMemo } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FloatingChatButton from '@/components/FloatingChatButton';
 import { useAuth } from '@/lib/auth-context';
+import { isOpenAccessModeEnabled } from '@/lib/open-access';
 
 const tabColors = {
   active: '#FFD700',
@@ -23,7 +25,36 @@ const tabColors = {
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
-  const { profileData } = useAuth();
+  const router = useRouter();
+  const { profileData, isAuthenticated, isLoading } = useAuth();
+  const redirectAttemptedRef = useRef(false);
+
+  // Auth guard: redirect to /login when unauthenticated on cold launch.
+  // This is the single router-level gate that ensures the owner login screen
+  // appears every time the app starts. The auth context already signs out
+  // any persisted Supabase session in initAuth(), so isAuthenticated stays
+  // false until the owner manually enters credentials.
+  useEffect(() => {
+    if (isLoading || isOpenAccessModeEnabled()) {
+      return;
+    }
+    if (!isAuthenticated && !redirectAttemptedRef.current) {
+      redirectAttemptedRef.current = true;
+      console.log('[TabsLayout] Unauthenticated on cold launch — redirecting to /login');
+      router.replace('/login');
+    } else if (isAuthenticated && redirectAttemptedRef.current) {
+      redirectAttemptedRef.current = false;
+    }
+  }, [isAuthenticated, isLoading, router]);
+
+  // Show a loading spinner while auth state is being resolved.
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={tabColors.active} />
+      </View>
+    );
+  }
   const isOwner = useMemo(() => {
     const role = ((profileData as { role?: string } | null)?.role ?? '').toLowerCase();
     return role === 'owner' || role === 'admin';
@@ -121,6 +152,12 @@ export default function TabsLayout() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: '#0A0A0F',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   tabBar: {
     backgroundColor: tabColors.background,
