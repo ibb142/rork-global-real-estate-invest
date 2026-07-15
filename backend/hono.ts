@@ -1213,7 +1213,7 @@ const app = new Hono();
 // NOTE: This is a static build label, NOT a deploy timestamp. Do not read freshness
 // from this string. Use the `commit` (RENDER_GIT_COMMIT) and `bootTime` fields on
 // /health for actual deploy verification.
-const DEPLOYMENT_MARKER = 'ivx-owner-ai-hono-autodeploy-live (see commit+bootTime for freshness)';
+const DEPLOYMENT_MARKER = 'ivx-owner-ai-hono-autodeploy-live-2026-07-15 (see commit+bootTime for freshness)';
 /**
  * Live build proof. Render injects RENDER_GIT_COMMIT at deploy time; we surface it on
  * /health so the deployed commit is verifiable from the outside. Falls back to other

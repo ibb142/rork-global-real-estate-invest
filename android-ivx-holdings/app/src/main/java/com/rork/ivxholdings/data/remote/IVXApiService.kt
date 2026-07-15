@@ -1,13 +1,24 @@
 package com.rork.ivxholdings.data.remote
 
 import com.rork.ivxholdings.data.model.AgentsResponse
+import com.rork.ivxholdings.data.model.AnalyticsResponse
+import com.rork.ivxholdings.data.model.BuyersResponse
+import com.rork.ivxholdings.data.model.DealsResponse
+import com.rork.ivxholdings.data.model.FeedResponse
 import com.rork.ivxholdings.data.model.HealthResponse
+import com.rork.ivxholdings.data.model.InvestorsResponse
 import com.rork.ivxholdings.data.model.InventoryResponse
+import com.rork.ivxholdings.data.model.MemberLoginRequest
+import com.rork.ivxholdings.data.model.MemberLoginResponse
+import com.rork.ivxholdings.data.model.MembersResponse
 import com.rork.ivxholdings.data.model.OwnerAIRequestBody
 import com.rork.ivxholdings.data.model.OwnerAIRequestResponse
 import com.rork.ivxholdings.data.model.OwnerAIStatusResponse
 import com.rork.ivxholdings.data.model.PasswordlessLoginRequest
 import com.rork.ivxholdings.data.model.PasswordlessLoginResponse
+import com.rork.ivxholdings.data.model.PropertiesResponse
+import com.rork.ivxholdings.data.model.ReelsResponse
+import com.rork.ivxholdings.data.model.RevenueResponse
 import com.rork.ivxholdings.data.model.VercelExitDashboard
 import com.rork.ivxholdings.data.model.VersionResponse
 import com.rork.ivxholdings.util.AppConfig
@@ -21,14 +32,12 @@ import io.ktor.client.plugins.logging.ANDROID
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
 import io.ktor.client.plugins.logging.Logging
-import io.ktor.client.plugins.logging.LoggingConfig
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
-import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
@@ -69,6 +78,12 @@ class IVXApiService {
         }.body()
     }
 
+    suspend fun memberLogin(email: String, password: String): Result<MemberLoginResponse> = safeCall {
+        client.post("/api/ivx/member-login") {
+            setBody(MemberLoginRequest(email, password))
+        }.body()
+    }
+
     suspend fun fetchDashboard(): Result<VercelExitDashboard> = authorizedCall {
         client.get(AppConfig.VERCEL_EXIT_DASHBOARD_PATH) {
             authHeader()
@@ -96,6 +111,52 @@ class IVXApiService {
 
     suspend fun fetchOwnerAIStatus(traceId: String): Result<OwnerAIStatusResponse> = authorizedCall {
         client.get("${AppConfig.OWNER_AI_REQUEST_PATH}/$traceId/status") {
+            authHeader()
+        }.body()
+    }
+
+    suspend fun fetchFeed(): Result<FeedResponse> = safeCall {
+        client.get(AppConfig.FEED_PATH).body()
+    }
+
+    suspend fun fetchProperties(): Result<PropertiesResponse> = safeCall {
+        client.get(AppConfig.PROPERTIES_PATH).body()
+    }
+
+    suspend fun fetchDeals(): Result<DealsResponse> = safeCall {
+        client.get(AppConfig.DEALS_PATH).body()
+    }
+
+    suspend fun fetchReels(): Result<ReelsResponse> = safeCall {
+        client.get(AppConfig.REELS_PATH).body()
+    }
+
+    suspend fun fetchInvestors(): Result<InvestorsResponse> = authorizedCall {
+        client.get(AppConfig.INVESTORS_PATH) {
+            authHeader()
+        }.body()
+    }
+
+    suspend fun fetchBuyers(): Result<BuyersResponse> = authorizedCall {
+        client.get(AppConfig.BUYERS_PATH) {
+            authHeader()
+        }.body()
+    }
+
+    suspend fun fetchRevenue(): Result<RevenueResponse> = authorizedCall {
+        client.get(AppConfig.REVENUE_PATH) {
+            authHeader()
+        }.body()
+    }
+
+    suspend fun fetchAnalytics(): Result<AnalyticsResponse> = authorizedCall {
+        client.get(AppConfig.ANALYTICS_PATH) {
+            authHeader()
+        }.body()
+    }
+
+    suspend fun fetchMembers(): Result<MembersResponse> = authorizedCall {
+        client.get(AppConfig.MEMBERS_PATH) {
             authHeader()
         }.body()
     }

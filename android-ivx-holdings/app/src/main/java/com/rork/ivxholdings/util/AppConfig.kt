@@ -10,7 +10,18 @@ object AppConfig {
     const val HEALTH_PATH = "/health"
     const val VERSION_PATH = "/version"
 
+    const val FEED_PATH = "/api/ivx/feed"
+    const val PROPERTIES_PATH = "/api/ivx/properties"
+    const val DEALS_PATH = "/api/ivx/deals"
+    const val REELS_PATH = "/api/ivx/videos/feed"
+    const val INVESTORS_PATH = "/api/ivx/investor-crm"
+    const val BUYERS_PATH = "/api/ivx/buyer-discovery"
+    const val REVENUE_PATH = "/api/ivx/treasury/dashboard"
+    const val ANALYTICS_PATH = "/api/ivx/metrics"
+    const val MEMBERS_PATH = "/api/ivx/members"
+
     const val OWNER_EMAIL = "iperez4242@gmail.com"
-    const val APP_VERSION = "1.1.0"
-    const val VERSION_CODE = 2
+    const val APP_VERSION = "1.4.3"
+    const val VERSION_CODE = 12
+    const val GIT_SHA = "f682295"
 }

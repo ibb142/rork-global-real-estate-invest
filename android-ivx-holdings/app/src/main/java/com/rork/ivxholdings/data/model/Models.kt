@@ -18,6 +18,20 @@ data class PasswordlessLoginResponse(
 )
 
 @Serializable
+data class MemberLoginRequest(val email: String, val password: String)
+
+@Serializable
+data class MemberLoginResponse(
+    val success: Boolean,
+    val accessToken: String? = null,
+    val refreshToken: String? = null,
+    val userId: String? = null,
+    val email: String? = null,
+    val role: String? = null,
+    val message: String? = null
+)
+
+@Serializable
 data class OwnerAIRequestBody(
     val message: String,
     val conversationId: String? = null,
@@ -163,4 +177,191 @@ data class VersionResponse(
 data class ApiError(
     val error: String? = null,
     val message: String? = null
+)
+
+@Serializable
+data class FeedItem(
+    val id: String,
+    val title: String,
+    val body: String,
+    val imageUrl: String? = null,
+    val timestamp: String,
+    val category: String,
+    val authorName: String,
+    val likes: Int = 0,
+    val comments: Int = 0
+)
+
+@Serializable
+data class FeedResponse(
+    val items: List<FeedItem> = emptyList(),
+    val totalCount: Int = 0
+)
+
+@Serializable
+data class Property(
+    val id: String,
+    val name: String,
+    val location: String,
+    val description: String,
+    val imageUrl: String? = null,
+    val price: Double,
+    val tokenPrice: Double,
+    val totalTokens: Int,
+    val availableTokens: Int,
+    val projectedReturn: Double,
+    val status: String,
+    val tags: List<String> = emptyList()
+)
+
+@Serializable
+data class PropertiesResponse(
+    val properties: List<Property> = emptyList(),
+    val totalCount: Int = 0
+)
+
+@Serializable
+data class Deal(
+    val id: String,
+    val name: String,
+    val type: String,
+    val stage: String,
+    val value: Double,
+    val projectedReturn: Double,
+    val location: String,
+    val description: String,
+    val status: String,
+    val participants: Int = 0
+)
+
+@Serializable
+data class DealsResponse(
+    val deals: List<Deal> = emptyList(),
+    val totalCount: Int = 0
+)
+
+@Serializable
+data class Reel(
+    val id: String,
+    val title: String,
+    val thumbnailUrl: String? = null,
+    val videoUrl: String? = null,
+    val durationSeconds: Int = 0,
+    val creatorName: String,
+    val views: Int = 0,
+    val likes: Int = 0
+)
+
+@Serializable
+data class ReelsResponse(
+    val reels: List<Reel> = emptyList(),
+    val totalCount: Int = 0
+)
+
+@Serializable
+data class Investor(
+    val id: String,
+    val name: String,
+    val email: String,
+    val phone: String? = null,
+    val status: String,
+    val tier: String = "standard",
+    val invested: Double = 0.0,
+    val returns: Double = 0.0,
+    val joinDate: String? = null
+)
+
+@Serializable
+data class InvestorsResponse(
+    val investors: List<Investor> = emptyList(),
+    val totalCount: Int = 0,
+    val totalInvested: Double = 0.0
+)
+
+@Serializable
+data class Buyer(
+    val id: String,
+    val name: String,
+    val email: String,
+    val phone: String? = null,
+    val status: String,
+    val budget: Double = 0.0,
+    val preferredLocations: List<String> = emptyList(),
+    val dealsClosed: Int = 0,
+    val joinDate: String? = null
+)
+
+@Serializable
+data class BuyersResponse(
+    val buyers: List<Buyer> = emptyList(),
+    val totalCount: Int = 0,
+    val totalBudget: Double = 0.0
+)
+
+@Serializable
+data class RevenueMetric(
+    val label: String,
+    val value: String,
+    val change: String,
+    val trend: String
+)
+
+@Serializable
+data class RevenueResponse(
+    val metrics: List<RevenueMetric> = emptyList(),
+    val totalRevenue: Double = 0.0,
+    val totalDistributions: Double = 0.0,
+    val pendingApprovals: Int = 0
+)
+
+@Serializable
+data class AnalyticsMetric(
+    val label: String,
+    val value: String,
+    val change: String,
+    val trend: String
+)
+
+@Serializable
+data class AnalyticsResponse(
+    val metrics: List<AnalyticsMetric> = emptyList(),
+    val period: String = "30d"
+)
+
+@Serializable
+data class Member(
+    val id: String,
+    val name: String,
+    val email: String,
+    val status: String,
+    val role: String = "member",
+    val joinDate: String? = null
+)
+
+@Serializable
+data class MembersResponse(
+    val members: List<Member> = emptyList(),
+    val totalCount: Int = 0
+)
+
+@Serializable
+data class UserProfile(
+    val id: String,
+    val email: String,
+    val firstName: String = "",
+    val lastName: String = "",
+    val role: String = "member",
+    val walletBalance: Double = 0.0,
+    val totalInvested: Double = 0.0,
+    val totalReturns: Double = 0.0,
+    val kycStatus: String = "pending",
+    val isOwner: Boolean = false
+)
+
+@Serializable
+data class AppSettings(
+    val notificationsEnabled: Boolean = true,
+    val darkMode: Boolean = true,
+    val language: String = "en",
+    val biometricEnabled: Boolean = false
 )

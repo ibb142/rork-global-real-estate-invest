@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -52,7 +54,9 @@ fun LoginScreen(
 ) {
     val viewModel: AuthViewModel = koinViewModel()
     val state by viewModel.state.collectAsState()
+    var isOwnerMode by remember { mutableStateOf(true) }
     var email by remember { mutableStateOf(AppConfig.OWNER_EMAIL) }
+    var password by remember { mutableStateOf("") }
     var showDemo by remember { mutableStateOf(false) }
 
     LaunchedEffect(state) {
@@ -93,7 +97,7 @@ fun LoginScreen(
             color = IVXOnSurface
         )
         Text(
-            "Owner Command Center",
+            "Unified Command Center",
             style = MaterialTheme.typography.titleMedium,
             color = IVXGold
         )
@@ -109,8 +113,29 @@ fun LoginScreen(
                 modifier = Modifier.padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    TextButton(onClick = { isOwnerMode = true }) {
+                        Text(
+                            "Owner",
+                            color = if (isOwnerMode) IVXGold else IVXOnSurfaceMuted,
+                            fontWeight = if (isOwnerMode) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                    TextButton(onClick = { isOwnerMode = false }) {
+                        Text(
+                            "Member",
+                            color = if (!isOwnerMode) IVXGold else IVXOnSurfaceMuted,
+                            fontWeight = if (!isOwnerMode) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "Passwordless Owner Login",
+                    if (isOwnerMode) "Passwordless Owner Login" else "Member Login",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -118,7 +143,7 @@ fun LoginScreen(
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
-                    label = { Text("Owner email") },
+                    label = { Text("Email") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
@@ -128,9 +153,31 @@ fun LoginScreen(
                         unfocusedBorderColor = IVXOnSurfaceMuted
                     )
                 )
+                if (!isOwnerMode) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Password") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = IVXDark,
+                            unfocusedContainerColor = IVXDark,
+                            focusedBorderColor = IVXGold,
+                            unfocusedBorderColor = IVXOnSurfaceMuted
+                        )
+                    )
+                }
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
-                    onClick = { viewModel.login(email) },
+                    onClick = {
+                        if (isOwnerMode) {
+                            viewModel.ownerLogin(email)
+                        } else {
+                            viewModel.memberLogin(email, password)
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = state !is AuthState.Loading,
                     colors = ButtonDefaults.buttonColors(
@@ -146,7 +193,7 @@ fun LoginScreen(
                             strokeWidth = 2.dp
                         )
                     } else {
-                        Text("Send Login Link")
+                        Text(if (isOwnerMode) "Send Login Link" else "Sign In")
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -172,7 +219,7 @@ fun LoginScreen(
                 if (showDemo) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Demo mode uses local data. Backend calls require owner authentication.",
+                        "Demo mode uses local data. Backend calls require authentication.",
                         color = IVXOnSurfaceMuted,
                         style = MaterialTheme.typography.bodySmall,
                         textAlign = TextAlign.Center
@@ -191,7 +238,12 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
         Text(
-            "v${AppConfig.APP_VERSION} · Package com.rork.ivxholdings",
+            "v${AppConfig.APP_VERSION} · Build ${AppConfig.VERSION_CODE} · ${AppConfig.GIT_SHA}",
+            color = IVXOnSurfaceMuted,
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text(
+            "com.rork.ivxholdings",
             color = IVXOnSurfaceMuted,
             style = MaterialTheme.typography.bodySmall
         )

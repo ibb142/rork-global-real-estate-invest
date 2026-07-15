@@ -18,9 +18,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -32,8 +34,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,27 +49,11 @@ import com.rork.ivxholdings.ui.theme.IVXOnSurface
 import com.rork.ivxholdings.ui.theme.IVXOnSurfaceMuted
 import com.rork.ivxholdings.ui.theme.IVXRed
 import com.rork.ivxholdings.ui.theme.IVXSurfaceVariant
-import com.rork.ivxholdings.ui.viewmodel.AuthViewModel
-import com.rork.ivxholdings.ui.viewmodel.HealthUiState
-import com.rork.ivxholdings.ui.viewmodel.HealthViewModel
-import org.koin.androidx.compose.koinViewModel
+import com.rork.ivxholdings.util.AppConfig
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(navController: NavController) {
-    val authViewModel: AuthViewModel = koinViewModel()
-    val healthViewModel: HealthViewModel = koinViewModel()
-    val healthState by healthViewModel.uiState.collectAsState()
-
-    val commit = when (healthState) {
-        is HealthUiState.Success -> (healthState as HealthUiState.Success).version
-        else -> "0b37191f"
-    }
-    val routes = when (healthState) {
-        is HealthUiState.Success -> (healthState as HealthUiState.Success).health.routes.size
-        else -> 77
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -94,7 +78,12 @@ fun HomeScreen(navController: NavController) {
                     }
                 },
                 actions = {
-                    TextButton("Logout") { authViewModel.logout() }
+                    Text(
+                        "v${AppConfig.APP_VERSION}",
+                        color = IVXOnSurfaceMuted,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = IVXDark,
@@ -110,51 +99,93 @@ fun HomeScreen(navController: NavController) {
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item { StatusHeader() }
+            item { HeroCard() }
+            item {
+                Text(
+                    "Explore",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = IVXOnSurface
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+            item {
+                ActionCard(
+                    title = "Properties",
+                    subtitle = "Browse tokenized real estate",
+                    iconColor = IVXGreen,
+                    onClick = { navController.navigate(Screen.Properties.route) }
+                )
+            }
+            item {
+                ActionCard(
+                    title = "Deals",
+                    subtitle = "Active JV and acquisition opportunities",
+                    iconColor = IVXBlue,
+                    onClick = { navController.navigate(Screen.Deals.route) }
+                )
+            }
+            item {
+                ActionCard(
+                    title = "Feed",
+                    subtitle = "Latest IVX news and updates",
+                    iconColor = IVXGold,
+                    onClick = { navController.navigate(Screen.Feed.route) }
+                )
+            }
+            item {
+                ActionCard(
+                    title = "Reels",
+                    subtitle = "Short-form property and market videos",
+                    iconColor = IVXRed,
+                    onClick = { navController.navigate(Screen.Reels.route) }
+                )
+            }
+            item {
+                Text(
+                    "Owner / Admin",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = IVXOnSurface
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+            item {
+                ActionCard(
+                    title = "Owner Dashboard",
+                    subtitle = "Members, investors, buyers, revenue",
+                    iconColor = IVXGold,
+                    onClick = { navController.navigate(Screen.OwnerDashboard.route) }
+                )
+            }
             item {
                 ActionCard(
                     title = "Vercel Exit Command Center",
-                    subtitle = "38 dependencies · 9 AI agents · 20% complete",
-                    iconColor = IVXGold,
-                    onClick = { navController.navigate(Screen.VercelExit.route) }
-                )
-            }
-            item {
-                ActionCard(
-                    title = "AI Agent Live Work",
-                    subtitle = "Atlas, Vega, Orion, Nova, Cipher, Forge, Sentinel, Pulse, Auditor",
-                    iconColor = IVXBlue,
-                    onClick = { navController.navigate(Screen.Agents.route) }
-                )
-            }
-            item {
-                ActionCard(
-                    title = "IVX Owner AI",
-                    subtitle = "Chat with the orchestrator. Idempotent requests. Staged timeout.",
-                    iconColor = IVXGreen,
-                    onClick = { navController.navigate(Screen.Chat.route) }
-                )
-            }
-            item {
-                ActionCard(
-                    title = "System Health",
-                    subtitle = "Production commit $commit · $routes routes healthy",
-                    iconColor = IVXBlue,
-                    onClick = { navController.navigate(Screen.About.route) }
-                )
-            }
-            item {
-                ActionCard(
-                    title = "Dangerous Owner Controls",
-                    subtitle = "Pause, rollback, cutover, freeze deployments (owner-only)",
+                    subtitle = "38 dependencies · 9 AI agents · migration status",
                     iconColor = IVXRed,
                     onClick = { navController.navigate(Screen.VercelExit.route) }
                 )
             }
             item {
+                ActionCard(
+                    title = "AI Engineering Command Center",
+                    subtitle = "Atlas, Vega, Orion, Nova, Cipher, Forge, Sentinel, Pulse, Auditor",
+                    iconColor = IVXBlue,
+                    onClick = { navController.navigate(Screen.AIEngineering.route) }
+                )
+            }
+            item {
+                ActionCard(
+                    title = "IVX Owner AI",
+                    subtitle = "Chat with the orchestrator",
+                    iconColor = IVXGreen,
+                    onClick = { navController.navigate(Screen.Chat.route) }
+                )
+            }
+            item {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "IVX Holdings Android App v1.1.0 · Full end-to-end build",
+                    "IVX Holdings Android · ${AppConfig.APP_VERSION} · ${AppConfig.GIT_SHA}",
                     style = MaterialTheme.typography.bodySmall,
                     color = IVXOnSurfaceMuted
                 )
@@ -164,17 +195,7 @@ fun HomeScreen(navController: NavController) {
 }
 
 @Composable
-private fun TextButton(label: String, onClick: () -> Unit) {
-    Text(
-        label,
-        color = IVXGold,
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.padding(horizontal = 16.dp)
-    )
-}
-
-@Composable
-private fun StatusHeader() {
+private fun HeroCard() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -183,40 +204,39 @@ private fun StatusHeader() {
             .padding(20.dp)
     ) {
         Text(
-            "Vercel Exit Migration",
+            "Real Estate, Reimagined",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            "Phase 2: Replacement Architecture",
-            color = IVXGold,
-            fontWeight = FontWeight.SemiBold
+            "Invest in tokenized properties, track deals, and access owner intelligence — all in one place.",
+            color = IVXOnSurfaceMuted,
+            style = MaterialTheme.typography.bodyMedium
         )
         Spacer(modifier = Modifier.height(16.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            StatusBadge(Icons.Default.CheckCircle, "Live", IVXGreen)
-            StatusBadge(Icons.Default.Warning, "38 deps", IVXGold)
-            StatusBadge(Icons.Default.Info, "$61/mo", IVXBlue)
+            StatBadge("$47.2M", "Assets")
+            StatBadge("12,400+", "Investors")
+            StatBadge("89", "Deals")
         }
     }
 }
 
 @Composable
-private fun StatusBadge(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, color: androidx.compose.ui.graphics.Color) {
+private fun StatBadge(value: String, label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(imageVector = icon, contentDescription = label, tint = color, modifier = Modifier.size(28.dp))
-        Spacer(modifier = Modifier.height(4.dp))
+        Text(value, fontWeight = FontWeight.Bold, color = IVXGold, style = MaterialTheme.typography.titleMedium)
         Text(label, style = MaterialTheme.typography.bodySmall, color = IVXOnSurfaceMuted)
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ActionCard(
+fun ActionCard(
     title: String,
     subtitle: String,
     iconColor: androidx.compose.ui.graphics.Color,

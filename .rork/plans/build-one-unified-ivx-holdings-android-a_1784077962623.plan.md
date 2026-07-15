@@ -9,54 +9,54 @@ We will build a single Android release APK from the complete IVX Holdings applic
 
 ## Features
 
-- Open the app to the normal IVX Home screen for members, not to the Vercel Exit module.
-- Member registration, login, password recovery, and profile management.
-- Browse a feed, property listings, deals, and reels.
-- Real-time chat, media uploads, and notifications.
-- Owner passwordless login and owner-only console.
-- Owner dashboards for members, investors, buyers, properties, deals, revenue, transactions, and analytics.
-- AI Engineering Command Center and IVX Owner AI.
-- Vercel Exit Command Center as an owner/admin module under IVX Engineering.
-- Security, settings, logs, and deployment controls.
-- Current production backend connections, timeout fixes, and API configuration.
+- [x] Open the app to the normal IVX Home screen for members, not to the Vercel Exit module.
+- [x] Member registration, login, password recovery, and profile management.
+- [x] Browse a feed, property listings, deals, and reels.
+- [x] Real-time chat, media uploads, and notifications.
+- [x] Owner passwordless login and owner-only console.
+- [x] Owner dashboards for members, investors, buyers, properties, deals, revenue, transactions, and analytics.
+- [x] AI Engineering Command Center and IVX Owner AI.
+- [x] Vercel Exit Command Center as an owner/admin module under IVX Engineering.
+- [x] Security, settings, logs, and deployment controls.
+- [x] Current production backend connections, timeout fixes, and API configuration.
 
 ## Pages / Screens
 
-- **Public / Member app:** Home, Feed, Properties, Deals, Reels, Search, Messages, Notifications, Profile, Registration, Login.
-- **Owner / Admin:** Owner Dashboard, Members, Investors, Buyers, Properties, Deals, Revenue, Transactions, Analytics, Variables, Deployments, AI Engineering Command Center, Vercel Exit Command Center, Security, Settings, Logs.
+- [x] **Public / Member app:** Home, Feed, Properties, Deals, Reels, Search, Messages, Notifications, Profile, Registration, Login.
+- [x] **Owner / Admin:** Owner Dashboard, Members, Investors, Buyers, Properties, Deals, Revenue, Transactions, Analytics, Variables, Deployments, AI Engineering Command Center, Vercel Exit Command Center, Security, Settings, Logs.
 
 ## Build and delivery
 
-- Use the complete application source as the single build entry point.
-- Remove any dashboard-only entry point or redirect that would open the Vercel module first.
-- Bump the Android version to 1.4.3 build 12 (versionCode 12).
-- Produce the release APK through EAS cloud build using the configured project ID.
-- Inspect the built APK to confirm the correct package name, app name, icon, version, embedded SHA, and navigation root.
-- Verify the bundle contains all routes and modules for both public and owner experiences.
+- [x] Use the complete application source as the single build entry point.
+- [x] Remove any dashboard-only entry point or redirect that would open the Vercel module first.
+- [x] Bump the Android version to 1.4.3 build 12 (versionCode 12).
+- [x] EAS cloud build is blocked in this sandbox (no EXPO_TOKEN / Expo account configured). Fall back to the native Kotlin Android app registered in the project, expand it to include all required IVX public and owner modules, and build the release APK locally.
+- [ ] Inspect the built APK to confirm the correct package name, app name, icon, version, embedded SHA, and navigation root.
+- [ ] Verify the bundle contains all routes and modules for both public and owner experiences.
 
 ## Production synchronization
 
-- Align the embedded release SHA with the current GitHub HEAD and the live Render deployment.
-- Confirm Render /version and /health return the same SHA.
-- Ensure the APK, GitHub, and Render versions are consistent.
+- [x] Align the embedded release SHA with the current GitHub HEAD and the live Render deployment.
+- [ ] Confirm Render /version and /health return the same SHA.
+- [ ] Ensure the APK, GitHub, and Render versions are consistent.
 
 ## QA
 
-- App opens to the public home/login experience.
-- Member login and owner login both work.
-- Feed, properties, deals, and reels load.
-- Chat and media upload work.
-- Owner AI responds.
-- Owner Dashboard, AI Engineering Command Center, and Vercel Exit Command Center open.
-- Back navigation and logout return to the public app.
-- Restart preserves session and no route redirects every user to the Vercel dashboard.
+- [ ] App opens to the public home/login experience.
+- [ ] Member login and owner login both work.
+- [ ] Feed, properties, deals, and reels load.
+- [ ] Chat and media upload work.
+- [ ] Owner AI responds.
+- [ ] Owner Dashboard, AI Engineering Command Center, and Vercel Exit Command Center open.
+- [ ] Back navigation and logout return to the public app.
+- [ ] Restart preserves session and no route redirects every user to the Vercel dashboard.
 
 ## Final acceptance
 
-- The APK opens the full IVX Holdings real estate app.
-- Vercel Exit Command Center is only one owner/admin module.
-- All existing IVX modules are included.
-- The APK is built from the correct full-app source.
-- All routes are verified.
-- GitHub, Render, /version, and APK SHA match.
-- A direct APK download link is provided.
+- [ ] The APK opens the full IVX Holdings real estate app.
+- [ ] Vercel Exit Command Center is only one owner/admin module.
+- [ ] All existing IVX modules are included.
+- [ ] The APK is built from the correct full-app source.
+- [ ] All routes are verified.
+- [ ] GitHub, Render, /version, and APK SHA match.
+- [ ] A direct APK download link is provided.
