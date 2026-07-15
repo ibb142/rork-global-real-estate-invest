@@ -65,8 +65,18 @@ export interface FeedVideo {
  * landing page (ivx-reels.js) and the iOS app (VideoFeedService) consume, so
  * all three platforms show identical videos and property cards.
  */
-export async function fetchVideoFeed(limit = 24): Promise<FeedVideo[]> {
-  const res = await fetch(`${API_BASE}/api/ivx/video-platform/feed?limit=${limit}`);
+/**
+ * Fetches the ranked video feed with deal enrichment — the SAME endpoint the
+ * landing page (ivx-reels.js) and the iOS app (VideoFeedService) consume, so
+ * all three platforms show identical videos and property cards.
+ *
+ * Pass `offset` for cursor-based pagination: the first call fetches `limit`
+ * videos, subsequent calls pass `offset = limit`, `offset = limit * 2`, etc.
+ */
+export async function fetchVideoFeed(limit = 24, offset = 0): Promise<FeedVideo[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (offset > 0) params.set('offset', String(offset));
+  const res = await fetch(`${API_BASE}/api/ivx/video-platform/feed?${params.toString()}`);
   if (!res.ok) {
     throw new Error(`Feed request failed (${res.status})`);
   }

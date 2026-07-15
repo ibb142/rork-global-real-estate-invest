@@ -22,7 +22,7 @@ const config: ExpoConfig = {
     policy: 'appVersion',
   },
   extra: {
-    buildMarker: 'IVX_BUNDLE_2026_07_15_BUILD_33_AI_MODEL_PREFIX_FIX',
+    buildMarker: 'IVX_BUNDLE_2026_07_16_BUILD_34_INSTAGRAM_STYLE_MODULES',
     buildTimestamp: '2026-07-15T22:45:00.000000+00:00',
     sourceCommitSha: _sourceCommitSha,
     watchdogPatchVersion: 'ai-mutation-watchdog-fix-v12-enterprise-verify',
@@ -59,7 +59,7 @@ const config: ExpoConfig = {
       backgroundColor: '#000000',
     },
     package: 'com.ivxholdings.app',
-    versionCode: 33,
+    versionCode: 34,
     softwareKeyboardLayoutMode: 'resize',
   },
   web: {

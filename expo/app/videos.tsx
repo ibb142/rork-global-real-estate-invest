@@ -45,6 +45,8 @@ import {
   Users,
   Home,
 } from 'lucide-react-native';
+import { Image } from 'expo-image';
+import { RefreshControl } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useQuery } from '@tanstack/react-query';
 
@@ -226,12 +228,25 @@ const FeedItem = React.memo(function FeedItem({
             testID={`video-player-${video.id}`}
           />
         ) : (
-          // Unmounted: show poster only to preserve scroll position
+          // Unmounted: show poster image to preserve scroll position and avoid black frame
           <View style={StyleSheet.absoluteFill}>
-            {video.poster_url || video.thumbnail_url || video.preview_blur_url ? (
-              <View style={[StyleSheet.absoluteFill, { backgroundColor: '#111' }]} />
+            {video.poster_url || video.thumbnail_url ? (
+              <Image
+                source={{ uri: video.poster_url || video.thumbnail_url || undefined }}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+                transition={150}
+              />
+            ) : video.preview_blur_url ? (
+              <Image
+                source={{ uri: video.preview_blur_url }}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+                blurRadius={20}
+                transition={100}
+              />
             ) : (
-              <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000' }]} />
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: '#111' }]} />
             )}
           </View>
         )}
@@ -411,10 +426,15 @@ export default function VideosScreen() {
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [isFetchingMore, setIsFetchingMore] = useState<boolean>(false);
   const loadedIds = useRef<Set<string>>(new Set());
+  const offsetRef = useRef<number>(0);
+  const PAGE_SIZE = 10;
 
   const feedQuery = useQuery({
     queryKey: ['ivx-video-feed'],
-    queryFn: () => fetchVideoFeed(10),
+    queryFn: () => {
+      offsetRef.current = 0;
+      return fetchVideoFeed(PAGE_SIZE, 0);
+    },
     staleTime: 60_000,
     retry: 2,
   });
@@ -429,21 +449,34 @@ export default function VideosScreen() {
       seen.add(v.id);
       return true;
     });
-    for (const v of deduped) loadedIds.current.add(v.id);
+    loadedIds.current = new Set(deduped.map((v) => v.id));
+    offsetRef.current = deduped.length;
+    setHasMore(deduped.length >= PAGE_SIZE);
     setAllVideos(deduped);
   }, [queryData, feedQuery.isLoading]);
 
   const loadMore = useCallback(() => {
     if (isFetchingMore || !hasMore || feedQuery.isLoading) return;
     setIsFetchingMore(true);
-    void fetchVideoFeed(30)
+    const currentOffset = offsetRef.current;
+    void fetchVideoFeed(PAGE_SIZE, currentOffset)
       .then((more) => {
         const newItems = more.filter((v) => !loadedIds.current.has(v.id));
         if (newItems.length === 0) {
           setHasMore(false);
         } else {
           for (const v of newItems) loadedIds.current.add(v.id);
-          setAllVideos((prev) => [...prev, ...newItems]);
+          offsetRef.current = currentOffset + newItems.length;
+          setAllVideos((prev) => {
+            // Deduplicate by ID in the combined array
+            const combined = [...prev];
+            for (const v of newItems) {
+              if (!combined.some((existing) => existing.id === v.id)) {
+                combined.push(v);
+              }
+            }
+            return combined;
+          });
         }
       })
       .catch(() => setHasMore(false))
@@ -715,6 +748,25 @@ export default function VideosScreen() {
           getItemLayout={(_data, index) => ({ length: itemHeight, offset: itemHeight * index, index })}
           onEndReached={loadMore}
           onEndReachedThreshold={0.5}
+          ListFooterComponent={
+            isFetchingMore ? (
+              <View style={{ height: windowHeight, alignItems: 'center', justifyContent: 'center' }}>
+                <ActivityIndicator size="large" color={GOLD} />
+              </View>
+            ) : null
+          }
+          refreshControl={
+            <RefreshControl
+              refreshing={feedQuery.isRefetching}
+              onRefresh={() => {
+                loadedIds.current = new Set();
+                offsetRef.current = 0;
+                setHasMore(true);
+                void feedQuery.refetch();
+              }}
+              tintColor={GOLD}
+            />
+          }
           contentContainerStyle={{ paddingTop: 0 }}
         />
         </ModuleErrorBoundary>

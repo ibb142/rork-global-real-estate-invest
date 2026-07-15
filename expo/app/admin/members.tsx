@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -35,6 +35,7 @@ import {
   FileSpreadsheet,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { Image } from 'expo-image';
 import { formatCurrency as _fmtCurr } from '@/lib/formatters';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
@@ -72,59 +73,77 @@ interface MemberItem {
   verificationStatus: string;
   registrySource: string;
   registrationSource: string;
+  avatarUrl?: string;
 }
 
 export default function MembersScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [registryStatus, setRegistryStatus] = useState<RegistryFetchStatus | null>(null);
   const [filter, setFilter] = useState<FilterType>('all');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [verifiedFilter, setVerifiedFilter] = useState<VerifiedFilter>('all');
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
 
-  // Progressive loading: fetch first 20 members, then load more on scroll
+  // Progressive loading: render first 20, then load more on scroll
   const [displayCount, setDisplayCount] = useState<number>(20);
   const PAGE_SIZE = 20;
 
+  // Debounce search by 350ms to avoid refetching on every keystroke
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 350);
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
+  }, [searchQuery]);
+
+  // Reset display count when debounced search changes
+  useEffect(() => {
+    setDisplayCount(PAGE_SIZE);
+  }, [debouncedSearch]);
+
+  // Single query — fetches all members once, filters client-side.
+  // staleTime 30s prevents aggressive refetching; keepPreviousData
+  // ensures cached rows stay visible during background refresh.
   const membersQuery = useQuery({
-    queryKey: ['members.list', { page: 1, limit: 100, search: searchQuery || undefined }],
+    queryKey: ['members.list', { search: debouncedSearch || undefined }],
     queryFn: async () => {
       console.log('[Members] Fetching canonical members registry');
-      const members = await fetchAdminMemberRegistry(searchQuery);
+      const members = await fetchAdminMemberRegistry(debouncedSearch);
       setRegistryStatus(getLastRegistryFetchStatus());
       return { members, total: members.length };
     },
-    staleTime: 3000,
-    refetchInterval: 15000,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   });
 
-  // Reset display count when search changes
-  useEffect(() => {
-    setDisplayCount(PAGE_SIZE);
-  }, [searchQuery]);
+  // Derive stats from the same query — eliminates the duplicate
+  // fetchAdminMemberRegistry() call that statsQuery used to make.
+  const stats = useMemo(() => {
+    const all = membersQuery.data?.members ?? [];
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const weekStart = new Date(now.getTime() - 7 * 86400000).toISOString();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    return {
+      totalMembers: all.length,
+      activeMembers: all.filter((m: any) => (m.status || 'active') === 'active').length,
+      pendingKyc: all.filter((m: any) => {
+        const kyc = m.kycStatus || m.kyc_status || 'pending';
+        return kyc === 'pending' || kyc === 'in_review';
+      }).length,
+      newMembersToday: all.filter((m: any) => (m.createdAt || m.created_at || '') >= todayStart).length,
+      newMembersThisWeek: all.filter((m: any) => (m.createdAt || m.created_at || '') >= weekStart).length,
+      newMembersThisMonth: all.filter((m: any) => (m.createdAt || m.created_at || '') >= monthStart).length,
+    };
+  }, [membersQuery.data?.members]);
 
-  const statsQuery = useQuery<{ totalMembers: number; activeMembers: number; pendingKyc: number; newMembersToday: number; newMembersThisWeek: number; newMembersThisMonth: number } | null>({
-    queryKey: ['members.getStats'],
-    queryFn: async () => {
-      console.log('[Members] Computing durable member stats');
-      const members = await fetchAdminMemberRegistry();
-      const now = new Date();
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-      const weekStart = new Date(now.getTime() - 7 * 86400000).toISOString();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-      return {
-        totalMembers: members.length,
-        activeMembers: members.filter((m) => (m.status || 'active') === 'active').length,
-        pendingKyc: members.filter((m) => (m.kycStatus || 'pending') === 'pending' || m.kycStatus === 'in_review').length,
-        newMembersToday: members.filter((m) => (m.createdAt || '') >= todayStart).length,
-        newMembersThisWeek: members.filter((m) => (m.createdAt || '') >= weekStart).length,
-        newMembersThisMonth: members.filter((m) => (m.createdAt || '') >= monthStart).length,
-      };
-    },
-    staleTime: 30000,
-    refetchInterval: 30000,
-  });
+
 
   const kycMutation = useMutation({
     mutationFn: async (input: { id: string; status: string }) => {
@@ -139,7 +158,6 @@ export default function MembersScreen() {
       }
       void syncMemberRegistryFromSupabase();
       void membersQuery.refetch();
-      void statsQuery.refetch();
     },
   });
 
@@ -156,7 +174,6 @@ export default function MembersScreen() {
       }
       void syncMemberRegistryFromSupabase();
       void membersQuery.refetch();
-      void statsQuery.refetch();
     },
   });
 
@@ -173,7 +190,6 @@ export default function MembersScreen() {
       }
       void syncMemberRegistryFromSupabase();
       void membersQuery.refetch();
-      void statsQuery.refetch();
     },
   });
 
@@ -200,6 +216,7 @@ export default function MembersScreen() {
       verificationStatus: (m.verificationStatus || m.verification_status || 'unverified') as string,
       registrySource: (m.source || '') as string,
       registrationSource: (m.registrationSource || m.source_detail || '') as string,
+      avatarUrl: (m.pictureUrl || m.picture_url || '') as string,
     }));
     let result = items;
 
@@ -240,7 +257,7 @@ export default function MembersScreen() {
     return sorted;
   }, [membersQuery.data?.members, filter, typeFilter, verifiedFilter, sortOrder]);
 
-  const stats = statsQuery.data;
+
 
   const getKycStatusIcon = useCallback((status: string) => {
     switch (status) {
@@ -317,9 +334,19 @@ export default function MembersScreen() {
       onPress={() => router.push(`/admin/member/${member.id}` as any)}
     >
       <View style={styles.memberHeader}>
-        <View style={styles.avatarPlaceholder}>
-          <User size={24} color={Colors.textSecondary} />
-        </View>
+        {member.avatarUrl ? (
+          <Image
+            source={{ uri: member.avatarUrl }}
+            style={styles.avatarPlaceholder}
+            contentFit="cover"
+            transition={200}
+            placeholder={null}
+          />
+        ) : (
+          <View style={styles.avatarPlaceholder}>
+            <User size={24} color={Colors.textSecondary} />
+          </View>
+        )}
         <View style={styles.memberInfo}>
           <Text style={styles.memberName}>
             {member.firstName} {member.lastName}
@@ -524,9 +551,8 @@ export default function MembersScreen() {
   const handleRefresh = useCallback(() => {
     void syncMemberRegistryFromSupabase().finally(() => {
       void membersQuery.refetch();
-      void statsQuery.refetch();
     });
-  }, [membersQuery, statsQuery]);
+  }, [membersQuery]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -698,7 +724,7 @@ export default function MembersScreen() {
         </TouchableOpacity>
       </ScrollView>
 
-      {membersQuery.isLoading ? (
+      {membersQuery.isLoading && !membersQuery.data ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.primary} />
           <Text style={styles.loadingText}>Loading members...</Text>
@@ -709,10 +735,10 @@ export default function MembersScreen() {
             <Users size={48} color={Colors.textTertiary} />
           </View>
           <Text style={styles.emptyTitle}>
-            {searchQuery ? 'No members found' : 'No registered members yet'}
+            {debouncedSearch ? 'No members found' : 'No registered members yet'}
           </Text>
           <Text style={styles.emptySubtitle}>
-            {searchQuery
+            {debouncedSearch
               ? 'Try a different search term'
               : 'New member registrations will appear here automatically'}
           </Text>
@@ -735,6 +761,14 @@ export default function MembersScreen() {
             }
           }}
           onEndReachedThreshold={0.5}
+          ListFooterComponent={
+            displayCount < members.length ? (
+              <View style={styles.loadingFooter}>
+                <ActivityIndicator size="small" color={Colors.primary} />
+                <Text style={styles.loadingFooterText}>Loading more...</Text>
+              </View>
+            ) : null
+          }
           refreshControl={
             <RefreshControl
               refreshing={membersQuery.isRefetching}
@@ -1100,6 +1134,18 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 14,
     color: Colors.textSecondary,
+  },
+  loadingFooter: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 8,
+    paddingVertical: 16,
+  },
+  loadingFooterText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    fontWeight: '600' as const,
   },
   emptyContainer: {
     flex: 1,

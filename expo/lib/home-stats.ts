@@ -58,7 +58,7 @@ export async function fetchIvxHomeStats(): Promise<IvxHomeStats> {
     members: counts.total ?? 0,
     investors: counts.investors ?? 0,
     liveDeals,
-    annualReturns: 'Up to 22%',
+    annualReturns: (deals.count ?? 0) > 0 ? 'Live' : '—',
     ok: counts.ok === true,
     timestamp: counts.timestamp,
   };
