@@ -166,7 +166,7 @@ export async function clearCache(): Promise<void> {
     const keys = await AsyncStorage.getAllKeys();
     const cacheKeys = keys.filter((k) => k.startsWith(CACHE_PREFIX));
     if (cacheKeys.length > 0) {
-      await AsyncStorage.multiRemove(cacheKeys);
+      await AsyncStorage.removeMany(cacheKeys);
     }
     console.log('[Resilience] Cache cleared:', cacheKeys.length, 'entries');
   } catch (err) {

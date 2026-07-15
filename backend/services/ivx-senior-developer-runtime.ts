@@ -1737,9 +1737,7 @@ export async function runIVXSeniorDeveloperTask(input: IVXSeniorDeveloperRunInpu
   const changedRouteVerification = await verifyChangedRouteLive();
   log('production_verified', productionVerification.ok && changedRouteVerification.ok ? 'info' : 'warn', 'Production health and changed-route verification attempted.', { health: productionVerification, changedRoute: changedRouteVerification });
 
-  const endToEndProductionComplete = hasRealChange
-    ? (gitDeployOperator.status === 'executed' && productionVerification.ok && changedRouteVerification.ok)
-    : (validationsOk && productionVerification.ok && changedRouteVerification.ok);
+  const endToEndProductionComplete = hasRealChange && gitDeployOperator.status === 'executed' && productionVerification.ok && changedRouteVerification.ok;
   const localCodingOk = validationsOk && (patchProposal.status === 'not_needed' || changedFiles.length > 0);
   const ok = productionProofRequested ? endToEndProductionComplete : localCodingOk;
   setTaskStatus(taskTree, 37, ok ? 'completed' : 'failed');

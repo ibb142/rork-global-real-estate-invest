@@ -1021,7 +1021,7 @@ class AnalyticsService {
 
   async clearData(): Promise<void> {
     try {
-      await AsyncStorage.multiRemove([ANALYTICS_STORAGE_KEY, SESSION_STORAGE_KEY]);
+      await AsyncStorage.removeMany([ANALYTICS_STORAGE_KEY, SESSION_STORAGE_KEY]);
       this.eventQueue = [];
       this.supabasePendingQueue = [];
       this.performanceMetrics = [];

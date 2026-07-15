@@ -20,6 +20,7 @@ mock.module('react-native', () => ({
     currentState: 'active',
   },
   Platform: { OS: 'ios' },
+  Linking: { canOpenURL: async () => true, openURL: async () => {}, addEventListener: () => ({ remove: () => {} }) },
 }));
 
 mock.module('@react-native-async-storage/async-storage', () => ({

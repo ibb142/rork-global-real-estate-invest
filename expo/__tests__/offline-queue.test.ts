@@ -20,6 +20,7 @@ mock.module('react-native', () => ({
   AppState: {
     addEventListener: () => ({ remove: () => {} }),
   },
+  Linking: { canOpenURL: async () => true, openURL: async () => {}, addEventListener: () => ({ remove: () => {} }) },
 }));
 
 // Mock chatService so we control send behavior per test.
