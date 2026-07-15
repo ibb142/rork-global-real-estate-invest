@@ -1,6 +1,6 @@
 {
-  "generatedBy": "rork-agent Expo build 17 — router auth guard added",
-  "verificationTimestamp": "2026-07-15T05:30:00.000Z",
+  "generatedBy": "rork-agent Expo build 18 — startup black screen / infinite loading fix",
+  "verificationTimestamp": "2026-07-15T06:45:00.000Z",
   "mode": "expo-local-apk-build",
   "approvedApp": "expo/",
   "frozenApps": ["android-ivx-holdings"],
@@ -8,19 +8,18 @@
     "root": "expo/",
     "packageJson": "expo/package.json",
     "appConfig": "expo/app.config.ts",
-    "easConfig": "expo/eas.json",
     "routerRoot": "expo/app/_layout.tsx",
     "entryRoute": "app/(tabs)/(home)/home.tsx",
     "androidPackage": "com.ivxholdings.app",
     "iosBundle": "com.ivxholdings.app",
     "version": "1.4.3",
-    "versionCode": 17,
+    "versionCode": 18,
     "routesCount": 240,
     "easProjectId": "EXPO_PUBLIC_EAS_PROJECT_ID not set (defaults to placeholder)",
     "apiBaseUrl": "https://api.ivxholding.com",
     "sourceCommitSha": "e3149d5c995d8e3d95a205d9d4ce4ae65a0958f3",
-    "buildMarker": "IVX_BUNDLE_2026_07_15_BUILD_17_AUTH_GUARD",
-    "buildTimestamp": "2026-07-15T05:10:00.000000+00:00"
+    "buildMarker": "IVX_BUNDLE_2026_07_15_BUILD_18_STARTUP_FIX",
+    "buildTimestamp": "2026-07-15T06:30:00.000000+00:00"
   },
   "localCommit": "e3149d5c995d8e3d95a205d9d4ce4ae65a0958f3",
   "renderCommit": "0b37191f7b9f61b304351784d3ce78b4bf35df2c",
@@ -28,38 +27,69 @@
   "match": false,
   "matchDetail": "Expo source is at e3149d5. Render live backend reports 0b37191f. GitHub token expired so new commits are not synced to GitHub/Render.",
   "apk": {
-    "filename": "ivx-holdings-v1.4.3-build17.apk",
+    "filename": "ivx-holdings-v1.4.3-build18.apk",
     "package": "com.ivxholdings.app",
     "versionName": "1.4.3",
-    "versionCode": 17,
-    "sizeBytes": 87525908,
-    "downloadUrl": "https://gofile.io/d/V1vw3Y",
+    "versionCode": 18,
+    "sizeBytes": 87529124,
+    "downloadUrl": "https://gofile.io/d/bjK29i",
     "downloadUrlExpiryHours": "indefinite (gofile.io keeps files while accessed)",
     "buildMethod": "expo prebuild --clean + gradlew assembleRelease (local, Watchman disabled)",
     "embeddedApiUrl": "https://api.ivxholding.com",
     "embeddedEnvironment": "production",
     "embeddedRuntime": "standalone",
-    "embeddedAuthFix": "Cold-launch signOut + TabsLayout auth guard confirmed in bundle"
+    "embeddedStartupFix": "preventAutoHideAsync + hideAsync + startup timeout + initAuth withTimeout confirmed in bundle"
   },
-  "authAudit": {
-    "rootCause": "No router-level auth guard. The app opened directly to /(tabs)/(home)/home without checking isAuthenticated. The auth context correctly signed out persisted sessions and blocked onAuthStateChange, but the router never redirected unauthenticated users to /login. The login screen only redirected AWAY from login when authenticated — nothing redirected TO login when unauthenticated.",
-    "rootCauseFile": "expo/app/(tabs)/_layout.tsx",
-    "rootCauseLines": "24-57 (TabsLayout function — no auth guard existed before build 17)",
-    "rootCauseFunction": "TabsLayout",
-    "secondaryCause": "lib/auth-context.tsx initAuth() previously restored persisted Supabase sessions via getSession() — fixed in build 16 with signOut({ scope: 'local' })",
-    "tertiaryCause": "lib/auth-context.tsx onAuthStateChange accepted TOKEN_REFRESHED events without checking manualOwnerLoginRef — fixed in build 16 with manualOwnerLoginRef gate",
-    "fix": "Added useEffect auth guard in TabsLayout that checks isAuthenticated after isLoading resolves. If unauthenticated, redirects to /login via router.replace('/login'). Shows a loading spinner while auth state is being resolved. Skips the guard when isOpenAccessModeEnabled() is true (dev/preview only). The guard resets redirectAttemptedRef when isAuthenticated becomes true so post-login navigation works normally.",
-    "fixFile": "expo/app/(tabs)/_layout.tsx",
-    "fixLines": "11-17 (imports), 26-57 (auth guard useEffect + loading spinner), 158-163 (loadingContainer style)"
+  "startupAudit": {
+    "rootCause1": "No SplashScreen control. expo-splash-screen was installed but never imported or called. On Android, the native splash auto-hides before React renders, producing a black screen between native splash dismissal and first JS paint.",
+    "rootCause1File": "expo/app/_layout.tsx",
+    "rootCause1Lines": "1-20 (no splash import or control existed)",
+    "rootCause1Function": "RootLayout",
+    "rootCause2": "initAuth() had no timeout. supabase.auth.signOut({ scope: 'local' }) at line 1485 does async AsyncStorage operations. If AsyncStorage is slow (large session payloads on Android), isLoading stays true forever. The constant AUTH_BOOTSTRAP_TIMEOUT_MS=3500 existed at line 39 but was never used.",
+    "rootCause2File": "expo/lib/auth-context.tsx",
+    "rootCause2Lines": "1480-1498 (initAuth — signOut with no timeout wrapper)",
+    "rootCause2Function": "initAuth",
+    "rootCause3": "No loading timeout in TabsLayout. The isLoading spinner at line 51-57 showed indefinitely if isLoading never resolved. No safety net to force the auth guard to proceed after 5 seconds.",
+    "rootCause3File": "expo/app/(tabs)/_layout.tsx",
+    "rootCause3Lines": "50-57 (loading spinner with no timeout)",
+    "rootCause3Function": "TabsLayout",
+    "fix1": "Added SplashScreen.preventAutoHideAsync() at module load + SplashScreen.hideAsync() in useEffect after first render. This coordinates splash dismissal with React's first paint, eliminating the black screen gap.",
+    "fix1File": "expo/app/_layout.tsx",
+    "fix1Lines": "12-17 (preventAutoHideAsync at module load), 72-75 (hideAsync in useEffect)",
+    "fix2": "Wrapped initAuth's signOut in withTimeout(AUTH_BOOTSTRAP_TIMEOUT_MS, ...) so that if AsyncStorage is slow, isLoading is still set to false within 3.5 seconds. The finally block always runs setIsLoading(false).",
+    "fix2File": "expo/lib/auth-context.tsx",
+    "fix2Lines": "1480-1510 (initAuth with withTimeout wrapper)",
+    "fix3": "Added 5-second loadingTimedOut safety net in TabsLayout. If isLoading stays true for more than 5 seconds, loadingTimedOut becomes true, effectiveLoading becomes false, and the auth guard proceeds to redirect to /login.",
+    "fix3File": "expo/app/(tabs)/_layout.tsx",
+    "fix3Lines": "32-42 (loadingTimedOut state + useEffect timeout), 44 (effectiveLoading), 55-64 (auth guard uses effectiveLoading), 66-72 (spinner shows while effectiveLoading)",
+    "fix4": "Added startup timeout error screen in RootLayout. If the app hasn't fully rendered within 5 seconds (STARTUP_TIMEOUT_MS), a visible error screen with a Retry button is shown instead of a black screen.",
+    "fix4File": "expo/app/_layout.tsx",
+    "fix4Lines": "62-68 (startupTimedOut state), 79-82 (startup timeout useEffect), 108-135 (timeout/error screen render), 192-210 (styles)",
+    "fix5": "Wrapped injectWebKeyboardCSS in try/catch. Previously an uncaught exception here could crash the root useEffect before SplashScreen.hideAsync() ran.",
+    "fix5File": "expo/app/_layout.tsx",
+    "fix5Lines": "68-71"
+  },
+  "bundleVerification": {
+    "preventAutoHideAsync": "2 occurrences (import + call)",
+    "hideAsync": "2 occurrences (import + call)",
+    "Cold-launch signOut": "1 occurrence (build 16 auth fix preserved)",
+    "TabsLayout": "1 occurrence (build 17 auth guard preserved)",
+    "taking longer than expected": "1 occurrence (startup timeout error screen)",
+    "failed to start": "1 occurrence (startup error screen)",
+    "Startup timeout reached": "1 occurrence (timeout log)"
   },
   "nodes": {
     "expoApp": {
       "ok": true,
-      "detail": "Expo app at expo/ is the only approved app. Android package com.ivxholdings.app, version 1.4.3, versionCode 17, 240 routes."
+      "detail": "Expo app at expo/ is the only approved app. Android package com.ivxholdings.app, version 1.4.3, versionCode 18, 240 routes."
     },
     "typescript": {
       "ok": true,
       "detail": "bunx tsc --noEmit passes with 0 errors."
+    },
+    "gradleBuild": {
+      "ok": true,
+      "detail": "BUILD SUCCESSFUL in 1m 4s, 397 actionable tasks, 57 executed, 11 from cache, 329 up-to-date."
     },
     "easBuild": {
       "ok": false,
@@ -71,12 +101,17 @@
     },
     "litterbox": {
       "ok": false,
-      "detail": "litterbox.catbox.moe returned HTTP 500 Internal Server Error for all upload attempts. APK uploaded to gofile.io instead."
+      "detail": "litterbox.catbox.moe returned HTTP 500 Internal Server Error. APK uploaded to gofile.io instead."
     }
   },
   "fixesApplied": [
-    "BUILD 17 FIX: Added router-level auth guard in app/(tabs)/_layout.tsx — redirects to /login when unauthenticated. This is the root cause fix: the app had no router guard, so the home screen rendered without checking auth state.",
-    "BUILD 16 FIX: initAuth() calls supabase.auth.signOut({ scope: 'local' }) on cold launch — clears persisted Supabase session from AsyncStorage.",
+    "BUILD 18 FIX: Added SplashScreen.preventAutoHideAsync() + hideAsync() to coordinate native splash dismissal with React's first paint — eliminates black screen on Android.",
+    "BUILD 18 FIX: Wrapped initAuth signOut in withTimeout(AUTH_BOOTSTRAP_TIMEOUT_MS=3500) — prevents infinite loading if AsyncStorage is slow.",
+    "BUILD 18 FIX: Added 5-second loadingTimedOut safety net in TabsLayout — forces auth guard to proceed if isLoading never resolves.",
+    "BUILD 18 FIX: Added startup timeout error screen in RootLayout — shows visible Retry screen instead of black screen after 5 seconds.",
+    "BUILD 18 FIX: Wrapped injectWebKeyboardCSS in try/catch — prevents uncaught exception from blocking startup.",
+    "BUILD 17 FIX: Added router-level auth guard in app/(tabs)/_layout.tsx — redirects to /login when unauthenticated.",
+    "BUILD 16 FIX: initAuth() calls supabase.auth.signOut({ scope: 'local' }) on cold launch — clears persisted Supabase session.",
     "BUILD 16 FIX: onAuthStateChange gated by manualOwnerLoginRef — ignores all session events unless manual login set the flag.",
     "BUILD 16 FIX: manualOwnerLoginRef set unconditionally in login(), loginOwnerPasswordless(), verify2FA().",
     "BUILD 14 FIX: Diagnostics banner visible prop bound to state, defaults false.",
@@ -84,11 +119,12 @@
     "BUILD 14 FIX: build-info.ts reads from Constants.expoConfig.extra."
   ],
   "remainingWork": [
-    "Install build 17 APK on real device and verify: cold launch redirects to /login (owner login screen appears), manual login works, post-login navigation to home works, Owner AI works after manual login, diagnostics banner hidden by default."
+    "Install build 18 APK on real device and verify: no black screen on cold launch, splash screen transitions smoothly to first screen, owner login screen appears within 5 seconds, no infinite spinner, manual login works, startup error screen appears if init fails (test with airplane mode)."
   ],
   "blockers": [
     "EXPO_TOKEN / Expo account is not available in the sandbox; APK was built locally instead of via EAS.",
     "GitHub token is expired, so the GitHub repo connected to Render cannot receive new commits.",
-    "litterbox.catbox.moe is experiencing a server-side outage (HTTP 500); APK uploaded to gofile.io as fallback."
+    "litterbox.catbox.moe is experiencing a server-side outage (HTTP 500); APK uploaded to gofile.io as fallback.",
+    "Real-device testing cannot be done in sandbox — user must test installed APK on physical device."
   ]
 }

@@ -8,8 +8,8 @@ import { DiagnosticErrorBoundary } from '@/components/DiagnosticErrorBoundary';
 export function ErrorBoundary(props: { children: React.ReactNode }) {
   return <DiagnosticErrorBoundary>{props.children}</DiagnosticErrorBoundary>;
 }
-import React, { useEffect, useMemo, useRef } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Platform, StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FloatingChatButton from '@/components/FloatingChatButton';
@@ -28,6 +28,24 @@ export default function TabsLayout() {
   const router = useRouter();
   const { profileData, isAuthenticated, isLoading } = useAuth();
   const redirectAttemptedRef = useRef(false);
+  // Safety timeout: if isLoading stays true for more than 5 seconds,
+  // force it to false so the auth guard can proceed. This prevents
+  // an infinite spinner if initAuth hangs on a slow AsyncStorage read.
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
+
+  useEffect(() => {
+    if (!isLoading) {
+      setLoadingTimedOut(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      console.warn('[TabsLayout] Loading exceeded 5s — forcing auth guard to proceed');
+      setLoadingTimedOut(true);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [isLoading]);
+
+  const effectiveLoading = isLoading && !loadingTimedOut;
 
   // Auth guard: redirect to /login when unauthenticated on cold launch.
   // This is the single router-level gate that ensures the owner login screen
@@ -35,7 +53,7 @@ export default function TabsLayout() {
   // any persisted Supabase session in initAuth(), so isAuthenticated stays
   // false until the owner manually enters credentials.
   useEffect(() => {
-    if (isLoading || isOpenAccessModeEnabled()) {
+    if (effectiveLoading || isOpenAccessModeEnabled()) {
       return;
     }
     if (!isAuthenticated && !redirectAttemptedRef.current) {
@@ -45,13 +63,15 @@ export default function TabsLayout() {
     } else if (isAuthenticated && redirectAttemptedRef.current) {
       redirectAttemptedRef.current = false;
     }
-  }, [isAuthenticated, isLoading, router]);
+  }, [isAuthenticated, effectiveLoading, router]);
 
   // Show a loading spinner while auth state is being resolved.
-  if (isLoading) {
+  // The loadingTimedOut safety net above ensures this never shows forever.
+  if (effectiveLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={tabColors.active} />
+        <Text style={styles.loadingText}>Loading IVX…</Text>
       </View>
     );
   }
@@ -158,6 +178,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#0A0A0F',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  loadingText: {
+    color: '#FFD700',
+    fontSize: 14,
+    fontWeight: '600' as const,
+    marginTop: 12,
   },
   tabBar: {
     backgroundColor: tabColors.background,

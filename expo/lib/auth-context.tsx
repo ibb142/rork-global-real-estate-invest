@@ -1482,7 +1482,17 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         // Cold launch: sign out any persisted Supabase session so the owner
         // (and all users) must enter credentials manually every time.
         // This prevents automatic owner sign-in from AsyncStorage.
-        await supabase.auth.signOut({ scope: 'local' }).catch((e: unknown) => {
+        //
+        // Wrapped in withTimeout so that if AsyncStorage is slow (large session
+        // payloads on Android), the app does not hang on the loading spinner.
+        // The AUTH_BOOTSTRAP_TIMEOUT_MS (3500ms) fallback ensures isLoading
+        // is always set to false within a bounded time.
+        await withTimeout(
+          () => supabase.auth.signOut({ scope: 'local' }),
+          AUTH_BOOTSTRAP_TIMEOUT_MS,
+          'initAuth.signOut',
+          undefined,
+        ).catch((e: unknown) => {
           console.log('[Auth] Cold-launch signOut note:', (e as Error)?.message ?? 'unknown');
         });
         if (!cancelled) {
@@ -1491,6 +1501,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       } catch (e) {
         console.log('[Auth] Init error:', (e as Error)?.message);
       } finally {
+        // Always set isLoading to false — even if signOut threw or timed out.
+        // This ensures the router auth guard in TabsLayout can proceed and
+        // redirect to /login. Without this, a hung signOut would leave the
+        // app on a perpetual loading spinner (black screen).
         if (!cancelled) {
           setIsLoading(false);
         }
