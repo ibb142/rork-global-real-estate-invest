@@ -3557,7 +3557,7 @@ function formatIVXBackendAuditAnswer(payload: IVXBackendAuditReportPayload, inte
   const hasGatewayUrl = getBooleanConfig(aiRuntime, 'hasGatewayUrl') === true;
   const hasGatewayApiKey = getBooleanConfig(aiRuntime, 'hasGatewayApiKey') === true;
   const chatGPTInstalledStatus = aiRuntimeConfigured && hasGatewayUrl && hasGatewayApiKey
-    ? `ChatGPT runtime: installed/configured yes. Provider chatgpt via Vercel AI Gateway, model ${aiRuntimeModel}, endpoint ${aiRuntimeEndpointStatus}.`
+    ? `ChatGPT runtime: installed/configured yes. Provider chatgpt via IVX AI Gateway, model ${aiRuntimeModel}, endpoint ${aiRuntimeEndpointStatus}.`
     : `ChatGPT runtime: not fully configured. Provider chatgpt, model ${aiRuntimeModel}, endpoint ${aiRuntimeEndpointStatus}. Gateway URL configured: ${hasGatewayUrl ? 'yes' : 'no'}. Gateway key configured: ${hasGatewayApiKey ? 'yes' : 'no'}.`;
   const chatGPTFreeStatus = 'ChatGPT free status: not guaranteed free or unlimited. IVX has no hardcoded local usage-limit layer in this route, but provider or gateway billing, quotas, and rate limits can still apply outside the IVX codebase.';
   const chatGPTFunctionalityStatus = 'ChatGPT functionality status: text chat and owner-audit/tool routing are wired, but each provider capability must be treated as verified only when its live tool check passes. Supabase/AWS inspection use owner-only backend tools. Destructive writes remain disabled unless explicitly confirmed.';

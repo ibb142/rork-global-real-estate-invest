@@ -73,7 +73,7 @@ export const PROJECT_FILE_REGISTRY: readonly ProjectFileEntry[] = [
     kind: 'route',
     category: 'Backend · Owner AI',
     title: 'POST /api/ivx/owner-ai',
-    summary: 'Owner-authenticated IVX AI proxy via Vercel AI Gateway. Logs to ai_usage_logs.',
+    summary: 'Owner-authenticated IVX AI proxy via IVX AI Gateway. Logs to ai_usage_logs.',
     tags: ['owner', 'chatgpt', 'audit'],
     ownerOnly: true,
   },
@@ -282,7 +282,7 @@ export type DeveloperActionLog = {
 
 const SECRET_PATTERNS: readonly { name: string; rx: RegExp }[] = [
   { name: 'AWS access key', rx: /AKIA[0-9A-Z]{16}/g },
-  { name: 'Vercel AI Gateway key', rx: /vck_[A-Za-z0-9_-]{20,}/g },
+  { name: 'AI Gateway key', rx: /vck_[A-Za-z0-9_-]{20,}/g },
   { name: 'OpenAI key', rx: /sk-[A-Za-z0-9_-]{20,}/g },
   { name: 'Supabase service-role JWT', rx: /eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}/g },
   { name: 'GitHub token', rx: /gh[pousr]_[A-Za-z0-9]{30,}/g },
