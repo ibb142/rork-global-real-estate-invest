@@ -1,6 +1,6 @@
 {
-  "generatedBy": "rork-agent Expo build 18 — startup black screen / infinite loading fix",
-  "verificationTimestamp": "2026-07-15T06:45:00.000Z",
+  "generatedBy": "rork-agent Expo build 18 — startup black screen / infinite loading fix + verified download",
+  "verificationTimestamp": "2026-07-15T11:25:00.000Z",
   "mode": "expo-local-apk-build",
   "approvedApp": "expo/",
   "frozenApps": ["android-ivx-holdings"],
@@ -32,20 +32,41 @@
     "versionName": "1.4.3",
     "versionCode": 18,
     "sizeBytes": 87529124,
-    "downloadUrl": "https://gofile.io/d/bjK29i",
-    "downloadUrlExpiryHours": "indefinite (gofile.io keeps files while accessed)",
+    "downloadUrl": "https://litter.catbox.moe/iin8jx.apk",
+    "downloadUrlHost": "litter.catbox.moe",
+    "downloadUrlExpiryHours": "72",
+    "downloadUrlContentType": "application/octet-stream",
+    "downloadUrlContentLength": 87529124,
+    "downloadUrlVerified": true,
+    "downloadUrlVerificationMethod": "curl HEAD + full 84MB download + sha256 match + aapt2 package check",
+    "downloadUrlFailedHosts": ["gofile.io"],
+    "failedHostReasons": "gofile.io share page returns text/html; browser must click a JavaScript button, so Android cannot download the APK directly from the /d/ URL.",
     "buildMethod": "expo prebuild --clean + gradlew assembleRelease (local, Watchman disabled)",
     "embeddedApiUrl": "https://api.ivxholding.com",
     "embeddedEnvironment": "production",
     "embeddedRuntime": "standalone",
     "embeddedStartupFix": "preventAutoHideAsync + hideAsync + startup timeout + initAuth withTimeout confirmed in bundle"
   },
+  "downloadVerification": {
+    "verifiedAt": "2026-07-15T11:25:53Z",
+    "headStatus": 200,
+    "headContentType": "application/octet-stream",
+    "headContentLength": 87529124,
+    "headAcceptRanges": "bytes",
+    "fullDownloadSha256": "edb9cf86cfa9935e3524389f6cb019dea25932523c08168fe1ff175709fe2cb1",
+    "sourceApkSha256": "edb9cf86cfa9935e3524389f6cb019dea25932523c08168fe1ff175709fe2cb1",
+    "checksumsMatch": true,
+    "firstMegabyteMagic": "Android package (APK), with gradle app-metadata.properties",
+    "packageName": "com.ivxholdings.app",
+    "versionCode": 18,
+    "versionName": "1.4.3"
+  },
   "startupAudit": {
     "rootCause1": "No SplashScreen control. expo-splash-screen was installed but never imported or called. On Android, the native splash auto-hides before React renders, producing a black screen between native splash dismissal and first JS paint.",
     "rootCause1File": "expo/app/_layout.tsx",
     "rootCause1Lines": "1-20 (no splash import or control existed)",
     "rootCause1Function": "RootLayout",
-    "rootCause2": "initAuth() had no timeout. supabase.auth.signOut({ scope: 'local' }) at line 1485 does async AsyncStorage operations. If AsyncStorage is slow (large session payloads on Android), isLoading stays true forever. The constant AUTH_BOOTSTRAP_TIMEOUT_MS=3500 existed at line 39 but was never used.",
+    "rootCause2": "initAuth() had no timeout. supabase.auth.signOut({ scope: 'local' }) at line 1485 does async AsyncStorage operations. If slow on Android, isLoading stays true forever. The constant AUTH_BOOTSTRAP_TIMEOUT_MS=3500 existed at line 39 but was never used.",
     "rootCause2File": "expo/lib/auth-context.tsx",
     "rootCause2Lines": "1480-1498 (initAuth — signOut with no timeout wrapper)",
     "rootCause2Function": "initAuth",
@@ -56,7 +77,7 @@
     "fix1": "Added SplashScreen.preventAutoHideAsync() at module load + SplashScreen.hideAsync() in useEffect after first render. This coordinates splash dismissal with React's first paint, eliminating the black screen gap.",
     "fix1File": "expo/app/_layout.tsx",
     "fix1Lines": "12-17 (preventAutoHideAsync at module load), 72-75 (hideAsync in useEffect)",
-    "fix2": "Wrapped initAuth's signOut in withTimeout(AUTH_BOOTSTRAP_TIMEOUT_MS, ...) so that if AsyncStorage is slow, isLoading is still set to false within 3.5 seconds. The finally block always runs setIsLoading(false).",
+    "fix2": "Wrapped initAuth's signOut in withTimeout(AUTH_BOOTSTRAP_TIMEOUT_MS=3500) so that if AsyncStorage is slow, isLoading is still set to false within 3.5 seconds. The finally block always runs setIsLoading(false).",
     "fix2File": "expo/lib/auth-context.tsx",
     "fix2Lines": "1480-1510 (initAuth with withTimeout wrapper)",
     "fix3": "Added 5-second loadingTimedOut safety net in TabsLayout. If isLoading stays true for more than 5 seconds, loadingTimedOut becomes true, effectiveLoading becomes false, and the auth guard proceeds to redirect to /login.",
@@ -70,13 +91,16 @@
     "fix5Lines": "68-71"
   },
   "bundleVerification": {
-    "preventAutoHideAsync": "2 occurrences (import + call)",
-    "hideAsync": "2 occurrences (import + call)",
+    "preventAutoHideAsync": "2 occurrences",
+    "hideAsync": "2 occurrences",
+    "SplashScreen": "3 occurrences",
     "Cold-launch signOut": "1 occurrence (build 16 auth fix preserved)",
     "TabsLayout": "1 occurrence (build 17 auth guard preserved)",
     "taking longer than expected": "1 occurrence (startup timeout error screen)",
     "failed to start": "1 occurrence (startup error screen)",
-    "Startup timeout reached": "1 occurrence (timeout log)"
+    "Startup timeout reached": "1 occurrence (timeout log)",
+    "initAuth": "1 occurrence",
+    "withTimeout": "1 occurrence"
   },
   "nodes": {
     "expoApp": {
@@ -91,6 +115,14 @@
       "ok": true,
       "detail": "BUILD SUCCESSFUL in 1m 4s, 397 actionable tasks, 57 executed, 11 from cache, 329 up-to-date."
     },
+    "apkIntegrity": {
+      "ok": true,
+      "detail": "ZIP integrity OK. sha256 edb9cf86cfa9935e3524389f6cb019dea25932523c08168fe1ff175709fe2cb1. aapt2 confirms package com.ivxholdings.app, versionCode 18, versionName 1.4.3."
+    },
+    "downloadLink": {
+      "ok": true,
+      "detail": "litter.catbox.moe/iin8jx.apk returns application/octet-stream, 87,529,124 bytes, HTTP 200, accept-ranges: bytes. Full download checksum matches source APK."
+    },
     "easBuild": {
       "ok": false,
       "detail": "EAS CLI requires an Expo user account. EXPO_TOKEN is not set in the sandbox. APK was built locally instead."
@@ -99,9 +131,9 @@
       "ok": false,
       "detail": "GitHub token expired (HTTP 401). GitHub repo has commit 0b37191f. New commits exist only on the Rork git router."
     },
-    "litterbox": {
+    "gofile": {
       "ok": false,
-      "detail": "litterbox.catbox.moe returned HTTP 500 Internal Server Error. APK uploaded to gofile.io instead."
+      "detail": "gofile.io/d/bjK29i serves text/html; requires browser interaction to download. Not a direct APK link."
     }
   },
   "fixesApplied": [
@@ -124,7 +156,6 @@
   "blockers": [
     "EXPO_TOKEN / Expo account is not available in the sandbox; APK was built locally instead of via EAS.",
     "GitHub token is expired, so the GitHub repo connected to Render cannot receive new commits.",
-    "litterbox.catbox.moe is experiencing a server-side outage (HTTP 500); APK uploaded to gofile.io as fallback.",
     "Real-device testing cannot be done in sandbox — user must test installed APK on physical device."
   ]
 }

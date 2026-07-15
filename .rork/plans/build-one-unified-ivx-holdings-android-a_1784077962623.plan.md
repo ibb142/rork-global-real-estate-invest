@@ -79,7 +79,7 @@ The only approved application is the existing Expo React Native project at `expo
 - [x] Build the production APK locally with `expo prebuild` + `gradlew assembleRelease` (EAS cloud is blocked by missing `EXPO_TOKEN` in the sandbox).
 - [x] Rebuild the production APK after the fixes and verify package, versionCode, and embedded identity.
 - [x] Upload the APK to a public HTTPS URL with a direct download link.
-- [x] Re-upload the new build 18 APK and update the direct download link (gofile.io).
+- [x] Re-upload the new build 18 APK and update the direct download link (litter.catbox.moe; gofile.io only served an HTML page).
 - [x] Update `DEPLOYMENT_PROOF.json` with the new build details.
 
 ## Final acceptance
@@ -90,7 +90,7 @@ The only approved application is the existing Expo React Native project at `expo
 - [x] `no_supabase_session` no longer appears after valid owner login (session persists within app session; code verified; real-device confirmation required).
 - [x] Git SHA is not `local` and API environment is not `unknown` in production (build info reads from app.config.ts extra).
 - [x] Owner AI send button is disabled until authentication is ready (explicit auth states + `isAuthBlocked`).
-- [x] Final APK uses `com.ivxholdings.app` and is directly downloadable (build 18 link delivered).
+- [x] Final APK uses `com.ivxholdings.app` and is directly downloadable (build 18 link delivered and verified with HTTP 200 + application/octet-stream + checksum match).
 - [~] Real Android testing passes on the user’s device.
 
 ## Blockers
