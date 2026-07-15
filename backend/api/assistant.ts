@@ -134,7 +134,7 @@ const JSON_HEADERS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 } as const;
 
-const DEFAULT_MODEL = 'openai/gpt-4o';
+const DEFAULT_MODEL = 'gpt-4o';
 const DEFAULT_ROOM_KEY = 'ivx-owner-room';
 const WORKSPACE_PROJECT_ID = (process.env.EXPO_PUBLIC_PROJECT_ID ?? '').trim();
 const WORKSPACE_TEAM_ID = (process.env.EXPO_PUBLIC_TEAM_ID ?? '').trim();

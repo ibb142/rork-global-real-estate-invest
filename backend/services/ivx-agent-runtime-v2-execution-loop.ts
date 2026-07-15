@@ -196,7 +196,7 @@ function readEvidenceFromSource(file: string, source: string): IVXRuntimeV2Sourc
   if (file.endsWith('ivx-ai-runtime.ts')) {
     return {
       reportsAgentRuntimeV2Phase: source.includes("phase: 'agent_runtime_v2'"),
-      defaultModelIsGpt4oMini: source.includes("DEFAULT_IVX_AI_MODEL = 'openai/gpt-4o-mini'"),
+      defaultModelIsGpt4oMini: source.includes("DEFAULT_IVX_AI_MODEL = 'gpt-4o-mini'"),
       throwsOnEmptyResponse: source.includes('returned an empty response'),
       sourceLength: source.length,
     };
@@ -207,7 +207,7 @@ function readEvidenceFromSource(file: string, source: string): IVXRuntimeV2Sourc
       preservesRuntimeV2Payload: source.includes('runtimeV2: data?.runtimeV2 ?? null'),
       hasProviderFallbackType: source.includes("'provider_fallback'"),
       blocksVisibleFallbackText: source.includes('containsBlockedOwnerAIResponseText'),
-      frontendDefaultModelIsGpt4oMini: source.includes("DEFAULT_IVX_OWNER_AI_MODEL = 'openai/gpt-4o-mini'"),
+      frontendDefaultModelIsGpt4oMini: source.includes("DEFAULT_IVX_OWNER_AI_MODEL = 'gpt-4o-mini'"),
       sourceLength: source.length,
     };
   }
@@ -315,7 +315,7 @@ function buildFindings(inspections: IVXRuntimeV2SourceInspection[]): IVXRuntimeV
         `frontend.frontendDefaultModelIsGpt4oMini=${String(frontend.frontendDefaultModelIsGpt4oMini)}`,
       ],
       impact: 'Backend Owner AI currently defaults to GPT-4o, but fallback/runtime wrappers could degrade answer quality if those paths are activated.',
-      recommendedFix: 'Standardize owner-facing Runtime v2 conversational model selection to openai/gpt-4o and keep mini only for explicit low-cost probes.',
+      recommendedFix: 'Standardize owner-facing Runtime v2 conversational model selection to gpt-4o and keep mini only for explicit low-cost probes.',
     },
     {
       priority: 'P2',

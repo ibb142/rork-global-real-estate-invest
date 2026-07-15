@@ -63,7 +63,7 @@ const JSON_HEADERS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 } as const;
 
-const DEFAULT_MODEL = 'openai/gpt-4o';
+const DEFAULT_MODEL = 'gpt-4o';
 const DEPLOYMENT_MARKER = 'p1-plan-creator-2026-04-25t0000z';
 const WORKSPACE_PROJECT_ID = (process.env.EXPO_PUBLIC_PROJECT_ID ?? '').trim();
 const WORKSPACE_TEAM_ID = (process.env.EXPO_PUBLIC_TEAM_ID ?? '').trim();

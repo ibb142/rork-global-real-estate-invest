@@ -63,9 +63,8 @@ export type PublicChatAnswerResult = {
 
 const MAX_HISTORY_ITEMS = 8;
 const MAX_HISTORY_ITEM_LENGTH = 600;
-// Full multimodal model (vision + document analysis) billed against the paid
-// Vercel AI Gateway balance — not the rate-limited free-tier gpt-4o-mini.
-const DEFAULT_PUBLIC_CHAT_MODEL = 'openai/gpt-4o';
+// Full multimodal model (vision + document analysis).
+const DEFAULT_PUBLIC_CHAT_MODEL = 'gpt-4o';
 
 function readTrimmed(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';

@@ -144,7 +144,7 @@ async function callOpenAIDirect(input: FallbackInput): Promise<IVXProviderInvoca
   const apiKey = readTrimmed(process.env.OPENAI_API_KEY);
   if (!apiKey) throw new Error('openai_direct fallback not configured');
   // Model routing policy:
-  //   Primary  = openai/gpt-4o (Vercel AI Gateway, the configured default everywhere).
+  //   Primary  = gpt-4o (direct OpenAI API, the configured default everywhere).
   //   Fallback = gpt-4o-mini, used ONLY when the primary gpt-4o path fails with a
   //   retryable error class and OPENAI_API_KEY is set. Override via IVX_OPENAI_FALLBACK_MODEL.
   const model = readTrimmed(process.env.IVX_OPENAI_FALLBACK_MODEL) || 'gpt-4o-mini';

@@ -249,8 +249,8 @@ function buildKeptSystems(tools: ToolAvailabilityReport): KeptSystem[] {
     {
       system: 'OpenAI / AI provider',
       available: toolUp(tools, 'ai_gateway'),
-      backedBy: 'AI gateway (openai/gpt-4o-mini)',
-      missing: toolUp(tools, 'ai_gateway') ? null : 'AI_GATEWAY_API_KEY',
+      backedBy: 'OpenAI API (gpt-4o-mini)',
+      missing: toolUp(tools, 'ai_gateway') ? null : 'OPENAI_API_KEY',
     },
     {
       system: 'IVX backend',

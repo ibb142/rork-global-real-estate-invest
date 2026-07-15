@@ -36,7 +36,7 @@ function readTrimmed(value: unknown): string {
 /** Vision model used for OCR (gpt-4o reads PDF/image file parts natively). */
 function getOcrModel(): string {
   return resolveIVXAIModel(
-    readTrimmed(process.env.IVX_OCR_MODEL) || readTrimmed(process.env.PUBLIC_CHAT_MODEL) || 'openai/gpt-4o',
+    readTrimmed(process.env.IVX_OCR_MODEL) || readTrimmed(process.env.PUBLIC_CHAT_MODEL) || 'gpt-4o',
   );
 }
 

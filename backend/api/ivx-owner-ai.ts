@@ -149,9 +149,8 @@ export type ResolvedOwnerTables = {
 };
 
 const DEPLOYMENT_MARKER = 'ivx-owner-ai-hono-2026-05-24t-chat-reply-fix-live';
-// Owner IVX IA runs on full multimodal gpt-4o (vision + documents), billed
-// against the paid Vercel AI Gateway balance — never the rate-limited free mini.
-const DEFAULT_OWNER_AI_MODEL = 'openai/gpt-4o';
+// Owner IVX IA runs on full multimodal gpt-4o (vision + documents).
+const DEFAULT_OWNER_AI_MODEL = 'gpt-4o';
 const GENERIC_ASSISTANT_SENDER_ID = '__ivx_assistant__';
 const GENERIC_SYSTEM_SENDER_ID = '__ivx_system__';
 const BLOCKED_VISIBLE_RESPONSE_PATTERNS = [
@@ -1294,7 +1293,7 @@ async function searchLocalDevCode(query: string): Promise<Record<string, unknown
 function getOwnerAIModel(): string {
   const configuredModel = readTrimmedString(process.env.IVX_OWNER_AI_MODEL);
   // Force-upgrade away from the free-tier mini even if an old env value pins it.
-  const ownerModel = !configuredModel || configuredModel === 'openai/gpt-4o-mini'
+  const ownerModel = !configuredModel || configuredModel === 'gpt-4o-mini'
     ? DEFAULT_OWNER_AI_MODEL
     : configuredModel;
   return resolveIVXAIModel(ownerModel);

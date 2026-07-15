@@ -23,7 +23,7 @@ export type MediaProviderSelection = {
   /** Which provider endpoint the call uses (owner-controlled only). */
   endpoint: string;
   /** Owner-held auth source the backend uses for this endpoint. Never a Rork toolkit secret. */
-  authSource: 'AI_GATEWAY_API_KEY' | 'MESHY_API_KEY' | 'TRIPO_API_KEY' | 'PROCEDURAL';
+  authSource: 'OPENAI_API_KEY' | 'MESHY_API_KEY' | 'TRIPO_API_KEY' | 'PROCEDURAL';
   /** Plain-English unit the cost is measured in. */
   costUnit: string;
   /** Estimated USD cost for one typical unit of work. */
@@ -58,24 +58,24 @@ type StaticCapability = Exclude<MultimodalCapability, 'model3d_generation'>;
 const SELECTIONS: Record<StaticCapability, MediaProviderSelection> = {
   image_understanding: {
     capability: 'image_understanding',
-    modelId: 'openai/gpt-4o-mini',
+    modelId: 'gpt-4o-mini',
     providerName: 'openai',
-    endpoint: '/v3/ai (chat completions, multimodal)',
-    authSource: 'AI_GATEWAY_API_KEY',
+    endpoint: '/chat/completions (multimodal)',
+    authSource: 'OPENAI_API_KEY',
     costUnit: 'per image analysis (~1 image + 1k prompt tokens)',
     // gpt-4o-mini: $0.15/M input, $0.60/M output. ~1.5k in + 0.5k out ≈ $0.0005.
     estimatedUnitCostUsd: 0.0005,
     pricedAt: PRICED_AT,
     rationale:
       'Already the live runtime vision model (ivx-ai-runtime + owner-multimodal); cheapest vision-capable option, zero new dependency.',
-    alternatives: ['google/gemini-3-flash', 'qwen/qwen3-vl-instruct'],
+    alternatives: ['gemini-3-flash', 'qwen3-vl-instruct'],
   },
   video_understanding: {
     capability: 'video_understanding',
-    modelId: 'google/gemini-3-flash',
+    modelId: 'gemini-3-flash',
     providerName: 'google',
-    endpoint: '/v3/ai (chat completions, video/frame input)',
-    authSource: 'AI_GATEWAY_API_KEY',
+    endpoint: '/chat/completions (video/frame input)',
+    authSource: 'OPENAI_API_KEY',
     costUnit: 'per ~8 extracted frames + timeline prompt',
     // gemini-3-flash: $0.50/M in, $3/M out. ~8 frames (~6k img tokens) + 2k text
     // in, 1k out ≈ $0.007.
@@ -83,21 +83,21 @@ const SELECTIONS: Record<StaticCapability, MediaProviderSelection> = {
     pricedAt: PRICED_AT,
     rationale:
       'Long-video-capable vision LLM on the proven AI_GATEWAY path; analyzes extracted frames + a timeline without a separate video service.',
-    alternatives: ['alibaba/qwen3-vl-235b-a22b-instruct', 'openai/gpt-4o-mini'],
+    alternatives: ['qwen3-vl-235b-a22b-instruct', 'gpt-4o-mini'],
   },
   image_generation: {
     capability: 'image_generation',
-    modelId: 'openai/gpt-image-2',
+    modelId: 'gpt-image-2',
     providerName: 'openai',
-    endpoint: '/v3/ai/image-model',
-    authSource: 'AI_GATEWAY_API_KEY',
+    endpoint: '/images/generations',
+    authSource: 'OPENAI_API_KEY',
     costUnit: 'per generated image (1024px)',
     // gpt-image-2 standard 1024 image ≈ $0.04.
     estimatedUnitCostUsd: 0.04,
     pricedAt: PRICED_AT,
     rationale:
       'Default prompt-only generator per the AI skill; flexible sizes, high-fidelity, on the proven gateway path. Gemini Flash Image used for edits/reference.',
-    alternatives: ['google/gemini-3.1-flash-image', 'google/imagen-4.0-generate-001'],
+    alternatives: ['gemini-3.1-flash-image', 'imagen-4.0-generate-001'],
   },
 };
 

@@ -193,10 +193,10 @@ async function downloadStoredFile(client: DBClient, storagePath: string, bucket:
   return { bytes: new Uint8Array(buffer), mimeType };
 }
 
-/* ---------------- AI Gateway helpers ---------------- */
+/* ---------------- OpenAI API helpers ---------------- */
 
 function getGatewayApiKey(): string {
-  return readTrimmed(process.env.AI_GATEWAY_API_KEY);
+  return readTrimmed(process.env.OPENAI_API_KEY) || readTrimmed(process.env.AI_GATEWAY_API_KEY);
 }
 
 function getGatewayBaseUrl(): string {
@@ -216,7 +216,7 @@ function getTextModel(): string {
 
 function ensureGatewayConfigured(): void {
   if (!getGatewayApiKey()) {
-    throw new Error('AI_GATEWAY_API_KEY is not configured for multimodal analysis.');
+    throw new Error('OPENAI_API_KEY is not configured for multimodal analysis.');
   }
 }
 

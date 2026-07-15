@@ -71,12 +71,9 @@ export type IVXAIConfigurationSnapshot = {
   phase: 'agent_runtime_v2';
 };
 
-const GATEWAY_BASE_PATH = '/v3/ai';
-// Full multimodal model billed against the paid Vercel AI Gateway balance.
-// gpt-4o-mini is a free-tier model that Vercel rate-limits and is the weakest
-// vision model; gpt-4o gives real image + document analysis with no free-tier
-// caps. Override with IVX_AI_MODEL / PUBLIC_CHAT_MODEL / OPENAI_MODEL if needed.
-const DEFAULT_IVX_AI_MODEL = readTrimmed(process.env.IVX_AI_MODEL) || 'openai/gpt-4o';
+// Direct OpenAI API — bare model names (no openai/ prefix, that was Vercel AI Gateway routing).
+// gpt-4o gives real image + document analysis. Override with IVX_AI_MODEL if needed.
+const DEFAULT_IVX_AI_MODEL = readTrimmed(process.env.IVX_AI_MODEL)?.replace(/^openai\//, '') || 'gpt-4o';
 
 // Adaptive timeout floor / ceiling. Short prompts resolve fast (floor), large
 // reports get more headroom (ceiling). Tuned so a 12k-token report has ~90s
@@ -137,14 +134,8 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-// Backend MUST talk directly to the canonical Vercel AI Gateway so the paid
-// AI_GATEWAY_API_KEY bearer reaches Vercel intact. Any client-facing proxy
-// (EXPO_PUBLIC_IVX_AI_GATEWAY_URL, e.g. ai.ivxholding.com) is intended for
-// the frontend only and may strip the Authorization header, which causes the
-// gateway to fall back to anonymous free-tier rate limits and return the
-// "Free tier requests on this model are rate-limited" 429 even when the
-// account has paid balance. The server-only override IVX_AI_GATEWAY_URL is
-// honored for advanced routing; otherwise we go direct to Vercel.
+// Backend talks directly to the OpenAI API. OPENAI_API_KEY is the primary
+// key; AI_GATEWAY_API_KEY is kept as a backward-compat fallback.
 function getIVXAIGatewayRootUrl(): string {
   const configured = readTrimmed(process.env.IVX_AI_GATEWAY_URL);
   // Rork independence guard (2026-07-07): never honor a gateway URL that
@@ -204,28 +195,12 @@ function getGatewayBaseUrlCandidates(): string[] {
 function ensureIVXAIGatewayEnvironment(): void {
   const apiKey = getIVXAIGatewayApiKey();
   if (!apiKey) {
-    // Rork toolkit cutover (2026-07-07): the Rork toolkit key is no longer
-    // accepted as a gateway bearer. The runtime now requires an IVX-owned
-    // provider key: AI_GATEWAY_API_KEY (Vercel AI Gateway, primary) or
-    // OPENAI_API_KEY / ANTHROPIC_API_KEY (direct fallbacks, handled by
-    // attemptProviderFallback in ivx-ai-provider-fallback.ts).
     throw new Error(
-      'IVX AI runtime is not configured. Set AI_GATEWAY_API_KEY (Vercel AI Gateway) ' +
-        'or OPENAI_API_KEY / ANTHROPIC_API_KEY (direct fallbacks) on the backend host.',
+      'IVX AI runtime is not configured. Set OPENAI_API_KEY on the backend host.',
     );
-  }
-
-  if (!readTrimmed(process.env.AI_GATEWAY_API_KEY)) {
-    process.env.AI_GATEWAY_API_KEY = apiKey;
   }
 }
 
-// Rork toolkit cutover (2026-07-07): the Rork toolkit native URL, key
-// resolver, isRorkToolkitBaseUrl, and callRorkToolkitNative function have been
-// removed. The IVX AI runtime no longer routes to toolkit.rork.com under any
-// condition. All AI traffic now flows through IVX-owned providers: the Vercel
-// AI Gateway (AI_GATEWAY_API_KEY) as primary, and OpenAI direct / Anthropic
-// direct as fallbacks (see ivx-ai-provider-fallback.ts).
 
 function readRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null ? value as Record<string, unknown> : {};
@@ -289,17 +264,22 @@ function normalizeMessages(messages: IVXAITextMessage[] | undefined): IVXAITextM
 export function resolveIVXAIModel(explicitModel?: string | null, envCandidates: string[] = []): string {
   const explicit = readTrimmed(explicitModel);
   if (explicit) {
-    return explicit;
+    return stripOpenaiPrefix(explicit);
   }
 
   for (const envName of envCandidates) {
     const candidate = readTrimmed(process.env[envName]);
     if (candidate) {
-      return candidate;
+      return stripOpenaiPrefix(candidate);
     }
   }
 
   return DEFAULT_IVX_AI_MODEL;
+}
+
+/** Strip the openai/ prefix used by the old Vercel AI Gateway routing. */
+function stripOpenaiPrefix(model: string): string {
+  return model.replace(/^openai\//, '');
 }
 
 export function getIVXAIEndpoint(model: string = DEFAULT_IVX_AI_MODEL): string | null {
@@ -324,7 +304,7 @@ export function getIVXAIConfigurationSnapshot(model: string = DEFAULT_IVX_AI_MOD
     hasGatewayApiKey,
     model,
     endpoint: getIVXAIEndpoint(model),
-    runtime: 'ivx_ai_gateway',
+    runtime: 'openai_direct',
     layer: 'ivx_ai_runtime_wrapper',
     phase: 'agent_runtime_v2',
   };
@@ -371,7 +351,7 @@ export async function requestIVXAIText(input: {
     hasSystem: system.length > 0,
     promptLength: prompt.length,
     messageCount: messages.length,
-    authKeySource: 'AI_GATEWAY_API_KEY',
+    authKeySource: 'OPENAI_API_KEY',
     requestShape: messages.length > 0 ? 'messages' : 'prompt',
     maxOutputTokens: input.maxOutputTokens ?? null,
     phase: 'agent_runtime_v2',
