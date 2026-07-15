@@ -5179,7 +5179,7 @@ export function classifyOwnerAIFailure(error: unknown): IVXOwnerAIErrorClass {
     message.includes('provider')
     || message.includes('gateway')
     || message.includes('openai')
-    || message.includes('vercel ai')
+    || message.includes('ai gateway')
     || message.includes('rate limit')
     || message.includes('rate_limit')
   ) {
@@ -5406,7 +5406,7 @@ export async function handleIVXOwnerAIProxyStatus(): Promise<Response> {
     },
     runtime: {
       provider: 'chatgpt',
-      gateway: 'vercel_ai_gateway',
+      gateway: 'ivx_ai_gateway',
       layer: snapshot.layer,
       phase: snapshot.phase,
       model: snapshot.model,

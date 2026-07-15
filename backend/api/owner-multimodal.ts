@@ -202,7 +202,7 @@ function getGatewayApiKey(): string {
 function getGatewayBaseUrl(): string {
   const root = readTrimmed(process.env.EXPO_PUBLIC_IVX_AI_GATEWAY_URL)
     || readTrimmed(process.env.IVX_AI_GATEWAY_URL)
-    || 'https://ai-gateway.vercel.sh';
+    || 'https://ai-gateway.vercel.sh' /* INTENTIONAL: Vercel AI Gateway is the AI provider (not Vercel hosting). Backend-only, never in APK. */;
   const trimmed = root.replace(/\/+$/, '');
   if (trimmed.endsWith('/v3/ai')) return trimmed;
   return `${trimmed}/v3/ai`;

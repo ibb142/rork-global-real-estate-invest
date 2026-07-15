@@ -32,7 +32,7 @@ export type IVXAIProviderMetadata = {
   source: 'remote_api';
   model: string;
   endpoint: string | null;
-  runtime: 'vercel_ai_gateway';
+  runtime: 'ivx_ai_gateway';
   ivxAI: {
     architecture: 'ivx-ai';
     phase: 'agent_runtime_v2';
@@ -65,7 +65,7 @@ export type IVXAIConfigurationSnapshot = {
   hasGatewayApiKey: boolean;
   model: string;
   endpoint: string | null;
-  runtime: 'vercel_ai_gateway';
+  runtime: 'ivx_ai_gateway';
   layer: 'ivx_ai_runtime_wrapper';
   phase: 'agent_runtime_v2';
 };
@@ -153,7 +153,7 @@ function getIVXAIGatewayRootUrl(): string {
   if (configured && !isRorkDomain(configured)) {
     return configured;
   }
-  return 'https://ai-gateway.vercel.sh';
+  return 'https://ai-gateway.vercel.sh' /* INTENTIONAL: Vercel AI Gateway is the AI provider (not Vercel hosting). Backend-only, never in APK. */;
 }
 
 function getIVXAIGatewayApiKey(): string {
@@ -187,7 +187,7 @@ function isRorkDomain(url: string): boolean {
 
 function getGatewayBaseUrlCandidates(): string[] {
   const configured = getGatewayBaseUrl();
-  const canonical = buildGatewayBaseUrl('https://ai-gateway.vercel.sh');
+  const canonical = buildGatewayBaseUrl('https://ai-gateway.vercel.sh' /* INTENTIONAL: Vercel AI Gateway is the AI provider (not Vercel hosting). Backend-only, never in APK. */);
   // Always include the canonical Vercel gateway as a fallback candidate so a
   // misconfigured IVX_AI_GATEWAY_URL cannot strand the backend on a proxy that
   // strips auth headers (which causes free-tier 429s on a paid account).
@@ -331,7 +331,7 @@ export function getIVXAIConfigurationSnapshot(model: string = DEFAULT_IVX_AI_MOD
     hasGatewayApiKey,
     model,
     endpoint: getIVXAIEndpoint(model),
-    runtime: 'vercel_ai_gateway',
+    runtime: 'ivx_ai_gateway',
     layer: 'ivx_ai_runtime_wrapper',
     phase: 'agent_runtime_v2',
   };
@@ -503,7 +503,7 @@ export async function requestIVXAIText(input: {
           source: 'remote_api',
           model: fallbackResult.model,
           endpoint: null,
-          runtime: 'vercel_ai_gateway',
+          runtime: 'ivx_ai_gateway',
           ivxAI: {
             architecture: 'ivx-ai',
             phase: 'agent_runtime_v2',
@@ -586,7 +586,7 @@ export async function requestIVXAIText(input: {
     source: 'remote_api',
     model,
     endpoint: `${successfulBaseUrl}/${model}`,
-    runtime: 'vercel_ai_gateway',
+    runtime: 'ivx_ai_gateway',
     ivxAI: {
       architecture: 'ivx-ai',
       phase: 'agent_runtime_v2',
@@ -758,7 +758,7 @@ export async function* streamIVXAIText(input: {
     source: 'remote_api',
     model,
     endpoint: `${baseURL}/${model}`,
-    runtime: 'vercel_ai_gateway',
+    runtime: 'ivx_ai_gateway',
     ivxAI: {
       architecture: 'ivx-ai',
       phase: 'agent_runtime_v2',

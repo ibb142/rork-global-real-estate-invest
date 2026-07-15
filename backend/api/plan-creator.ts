@@ -34,7 +34,7 @@ type ProviderMetadata = {
   source: 'remote_api';
   model: string;
   endpoint: string | null;
-  runtime: 'vercel_ai_gateway';
+  runtime: 'ivx_ai_gateway';
 };
 
 type PlanArtifact = {

@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
   TouchableOpacity,
   TextInput,
   useWindowDimensions,
@@ -37,6 +38,7 @@ export default function TransactionsScreen() {
   const [typeFilter, setTypeFilter] = useState<FilterType>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [displayCount, setDisplayCount] = useState(20);
 
   const txQuery = useQuery({
     queryKey: ['admin-transactions'],
@@ -344,20 +346,41 @@ export default function TransactionsScreen() {
         </Text>
       </View>
 
-      <ScrollView
+      <FlatList
         style={styles.list}
+        data={filteredTransactions.slice(0, displayCount)}
+        keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
         }
-      >
-        {txQuery.isLoading && (
-          <View style={{ alignItems: 'center' as const, paddingVertical: 40 }}>
-            <ActivityIndicator size="large" color={Colors.primary} />
-            <Text style={{ color: Colors.textSecondary, marginTop: 12, fontSize: 13 }}>Loading transactions...</Text>
-          </View>
-        )}
-        {filteredTransactions.map((tx) => {
+        onEndReached={() => {
+          if (displayCount < filteredTransactions.length) {
+            setDisplayCount(prev => Math.min(prev + 20, filteredTransactions.length));
+          }
+        }}
+        onEndReachedThreshold={0.5}
+        ListEmptyComponent={
+          txQuery.isLoading ? (
+            <View style={{ alignItems: 'center' as const, paddingVertical: 40 }}>
+              <ActivityIndicator size="large" color={Colors.primary} />
+              <Text style={{ color: Colors.textSecondary, marginTop: 12, fontSize: 13 }}>Loading transactions...</Text>
+            </View>
+          ) : (
+            <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+              <Text style={{ color: Colors.textSecondary, fontSize: 14 }}>No transactions found</Text>
+            </View>
+          )
+        }
+        ListFooterComponent={
+          displayCount < filteredTransactions.length ? (
+            <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+              <ActivityIndicator size="small" color={Colors.primary} />
+              <Text style={{ color: Colors.textSecondary, marginTop: 8, fontSize: 13 }}>Loading more…</Text>
+            </View>
+          ) : null
+        }
+        renderItem={({ item: tx }) => {
           const statusStyle = getStatusStyle(tx.status);
           return (
             <View key={tx.id} style={styles.txCard}>
@@ -409,9 +432,8 @@ export default function TransactionsScreen() {
               </View>
             </View>
           );
-        })}
-        <View style={styles.bottomPadding} />
-      </ScrollView>
+        }}
+      />
     </SafeAreaView>
   );
 }

@@ -250,7 +250,7 @@ export async function handleCredentials(): Promise<Response> {
  * POST /api/ivx/deploy-tools/invoke
  *
  * Unified endpoint that lets IVX call ANY deployment tool independently.
- * Body: { tool: "github"|"render"|"supabase"|"vercel"|"evidence"|"credentials"|"brain"|"deploy", action?: string, params?: {} }
+ * Body: { tool: "github"|"render"|"supabase"|"evidence"|"credentials"|"brain"|"deploy", action?: string, params?: {} }
  *
  * This is the single entry point for both manual (owner-triggered) and
  * autonomous (IVX self-triggered) deployment operations.
@@ -268,7 +268,7 @@ export async function handleInvoke(request: Request): Promise<Response> {
   const params = (body.params && typeof body.params === 'object' ? body.params : {}) as Record<string, unknown>;
 
   if (!tool) {
-    return publicJson({ ok: false, error: 'tool is required. Available: github, render, supabase, vercel, evidence, credentials, brain, deploy, sync' }, 400);
+    return publicJson({ ok: false, error: 'tool is required. Available: github, render, supabase, evidence, credentials, brain, deploy, sync' }, 400);
   }
 
   try {
@@ -357,14 +357,6 @@ export async function handleInvoke(request: Request): Promise<Response> {
         return publicJson({ ok: false, error: `Unknown action '${action}' for supabase. Try: status, connection, tables, rw` }, 400);
       }
 
-      case 'vercel': {
-        if (action === 'status' || action === 'full') {
-          const result = await VercelTool.getFullVercelStatus();
-          return publicJson({ ok: true, tool: 'vercel', action, result });
-        }
-        return publicJson({ ok: false, error: `Unknown action '${action}' for vercel. Try: status` }, 400);
-      }
-
       case 'evidence': {
         const evidence = await ProductionEvidence.generateFullEvidence();
         return publicJson({ ok: true, tool: 'evidence', action, evidence });
@@ -435,7 +427,7 @@ export async function handleInvoke(request: Request): Promise<Response> {
       default:
         return publicJson({
           ok: false,
-          error: `Unknown tool '${tool}'. Available: github, render, supabase, vercel, evidence, credentials, brain, deploy, sync`,
+          error: `Unknown tool '${tool}'. Available: github, render, supabase, evidence, credentials, brain, deploy, sync`,
         }, 400);
     }
   } catch (err) {

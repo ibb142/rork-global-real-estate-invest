@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { Bell, TrendingUp, Shield, AlertCircle, CheckCircle, ChevronRight } from 'lucide-react-native';
 import Colors from '@/constants/colors';
@@ -13,10 +14,14 @@ import Colors from '@/constants/colors';
 import { useNotifications as useNotificationHook } from '@/lib/data-hooks';
 import { supabase } from '@/lib/supabase';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { EmptyState, ListFooter } from '@/components/ProgressiveStates';
+
+const PAGE_SIZE = 20;
 
 export default function NotificationsScreen() {
-  const { notifications, refetch } = useNotificationHook();
+  const { notifications, refetch, isLoading, isError } = useNotificationHook();
   const [refreshing, setRefreshing] = useState(false);
+  const [displayCount, setDisplayCount] = useState(PAGE_SIZE);
   const queryClient = useQueryClient();
 
   const markAsReadMutation = useMutation({
@@ -48,10 +53,11 @@ export default function NotificationsScreen() {
     },
   });
 
-  const onRefresh = () => {
+  const onRefresh = useCallback(() => {
     setRefreshing(true);
+    setDisplayCount(PAGE_SIZE);
     void refetch().finally(() => setRefreshing(false));
-  };
+  }, [refetch]);
 
   const markAsRead = (id: string) => {
     markAsReadMutation.mutate(id);
@@ -95,6 +101,41 @@ export default function NotificationsScreen() {
   };
 
   const unreadCount = notifications.filter(n => !n.read).length;
+  const displayedNotifications = notifications.slice(0, displayCount);
+  const hasMore = displayCount < notifications.length;
+
+  const loadMore = useCallback(() => {
+    if (hasMore) {
+      setDisplayCount(prev => Math.min(prev + PAGE_SIZE, notifications.length));
+    }
+  }, [hasMore, notifications.length]);
+
+  const renderItem = ({ item: notification }: { item: typeof notifications[0] }) => (
+    <TouchableOpacity
+      style={[
+        styles.notificationItem,
+        !notification.read && styles.notificationItemUnread,
+      ]}
+      onPress={() => markAsRead(notification.id)}
+    >
+      <View style={styles.notificationIcon}>
+        {getNotificationIcon(notification.type)}
+      </View>
+      <View style={styles.notificationContent}>
+        <View style={styles.notificationHeader}>
+          <Text style={styles.notificationTitle}>{notification.title}</Text>
+          {!notification.read && <View style={styles.unreadDot} />}
+        </View>
+        <Text style={styles.notificationMessage} numberOfLines={2}>
+          {notification.message}
+        </Text>
+        <Text style={styles.notificationTime}>
+          {formatDate(notification.createdAt)}
+        </Text>
+      </View>
+      <ChevronRight size={18} color={Colors.textTertiary} />
+    </TouchableOpacity>
+  );
 
   return (
     <View style={styles.container}>
@@ -109,9 +150,12 @@ export default function NotificationsScreen() {
         )}
       </View>
 
-      <ScrollView
+      <FlatList
+        data={displayedNotifications}
+        renderItem={renderItem}
+        keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
-        style={styles.scrollView}
+        contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -119,47 +163,24 @@ export default function NotificationsScreen() {
             tintColor={Colors.primary}
           />
         }
-      >
-        {notifications.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Bell size={48} color={Colors.textTertiary} />
-            <Text style={styles.emptyStateText}>No notifications yet</Text>
-            <Text style={styles.emptyStateSubtext}>
-              You'll receive updates about your investments here
-            </Text>
-          </View>
-        ) : (
-          notifications.map(notification => (
-            <TouchableOpacity
-              key={notification.id}
-              style={[
-                styles.notificationItem,
-                !notification.read && styles.notificationItemUnread,
-              ]}
-              onPress={() => markAsRead(notification.id)}
-            >
-              <View style={styles.notificationIcon}>
-                {getNotificationIcon(notification.type)}
-              </View>
-              <View style={styles.notificationContent}>
-                <View style={styles.notificationHeader}>
-                  <Text style={styles.notificationTitle}>{notification.title}</Text>
-                  {!notification.read && <View style={styles.unreadDot} />}
-                </View>
-                <Text style={styles.notificationMessage} numberOfLines={2}>
-                  {notification.message}
-                </Text>
-                <Text style={styles.notificationTime}>
-                  {formatDate(notification.createdAt)}
-                </Text>
-              </View>
-              <ChevronRight size={18} color={Colors.textTertiary} />
-            </TouchableOpacity>
-          ))
-        )}
-
-        <View style={styles.bottomPadding} />
-      </ScrollView>
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.5}
+        ListEmptyComponent={
+          isLoading ? (
+            <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+              <ActivityIndicator size="large" color={Colors.primary} />
+              <Text style={{ color: Colors.textSecondary, marginTop: 12, fontSize: 13 }}>Loading notifications…</Text>
+            </View>
+          ) : (
+            <EmptyState
+              title="No notifications yet"
+              message="You'll receive updates about your investments here"
+              icon={<Bell size={48} color={Colors.textTertiary} />}
+            />
+          )
+        }
+        ListFooterComponent={<ListFooter isFetchingMore={false} hasMore={hasMore} />}
+      />
     </View>
   );
 }
@@ -190,6 +211,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.primary,
     fontWeight: '600' as const,
+  },
+  listContent: {
+    flexGrow: 1,
   },
   notificationItem: {
     flexDirection: 'row',
@@ -239,28 +263,5 @@ const styles = StyleSheet.create({
   notificationTime: {
     fontSize: 12,
     color: Colors.textTertiary,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 40,
-  },
-  emptyStateText: {
-    fontSize: 18,
-    fontWeight: '600' as const,
-    color: Colors.text,
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: Colors.textTertiary,
-    textAlign: 'center',
-  },
-  bottomPadding: {
-    height: 20,
-  },
-  scrollView: {
-    backgroundColor: Colors.background,
   },
 });

@@ -4,11 +4,14 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
   TouchableOpacity,
   TextInput,
   Image,
   Alert,
   Modal,
+  RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -36,6 +39,8 @@ export default function PropertiesScreen() {
   const [filter, setFilter] = useState<FilterType>('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
+  const [displayCount, setDisplayCount] = useState(10);
+  const [refreshing, setRefreshing] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -494,8 +499,48 @@ export default function PropertiesScreen() {
         ))}
       </ScrollView>
 
-      <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
-        {filteredProperties.map((property: Property) => (
+      <FlatList
+        style={styles.list}
+        data={filteredProperties.slice(0, displayCount)}
+        keyExtractor={(item) => item.id}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              void propertiesQuery.refetch().finally(() => setRefreshing(false));
+            }}
+            tintColor={Colors.primary}
+          />
+        }
+        onEndReached={() => {
+          if (displayCount < filteredProperties.length) {
+            setDisplayCount(prev => Math.min(prev + 10, filteredProperties.length));
+          }
+        }}
+        onEndReachedThreshold={0.5}
+        ListEmptyComponent={
+          propertiesQuery.isLoading ? (
+            <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+              <ActivityIndicator size="large" color={Colors.primary} />
+              <Text style={{ color: Colors.textSecondary, marginTop: 12, fontSize: 13 }}>Loading properties...</Text>
+            </View>
+          ) : (
+            <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+              <Text style={{ color: Colors.textSecondary, fontSize: 14 }}>No properties found</Text>
+            </View>
+          )
+        }
+        ListFooterComponent={
+          displayCount < filteredProperties.length ? (
+            <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+              <ActivityIndicator size="small" color={Colors.primary} />
+              <Text style={{ color: Colors.textSecondary, marginTop: 8, fontSize: 13 }}>Loading more…</Text>
+            </View>
+          ) : null
+        }
+        renderItem={({ item: property }) => (
           <View key={property.id} style={styles.propertyCard}>
             <Image
               source={{ uri: property.images[0] }}
@@ -594,9 +639,8 @@ export default function PropertiesScreen() {
               </View>
             </View>
           </View>
-        ))}
-        <View style={styles.bottomPadding} />
-      </ScrollView>
+        )}
+      />
 
       <PropertyFormModal />
     </SafeAreaView>

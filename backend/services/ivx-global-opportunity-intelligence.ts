@@ -457,7 +457,7 @@ export async function loadTodayRecords(): Promise<IntelligenceRecord[]> {
 
 // ── Web Search via AI Gateway ──────────────────────────────────────────────
 
-const AI_GATEWAY_URL = process.env.IVX_AI_GATEWAY_URL || 'https://ai-gateway.vercel.sh';
+const AI_GATEWAY_URL = process.env.IVX_AI_GATEWAY_URL || 'https://ai-gateway.vercel.sh' /* INTENTIONAL: Vercel AI Gateway is the AI provider (not Vercel hosting). Backend-only, never in APK. */;
 const AI_GATEWAY_KEY = process.env.AI_GATEWAY_API_KEY || process.env.IVX_AI_GATEWAY_API_KEY || '';
 
 type WebSearchResult = {

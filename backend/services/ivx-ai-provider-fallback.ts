@@ -16,7 +16,7 @@
  *     decide policy; only retryable classes trigger fallback
  */
 
-export type IVXProviderName = 'vercel_ai_gateway' | 'openai_direct' | 'anthropic_direct';
+export type IVXProviderName = 'ivx_ai_gateway' | 'openai_direct' | 'anthropic_direct';
 export type IVXProviderFailureClass =
   | 'auth'
   | 'quota'
@@ -57,7 +57,7 @@ export function getIVXProviderChainSnapshot(): {
   fallbackEnabled: boolean;
 } {
   const primary: IVXProviderStatus = {
-    name: 'vercel_ai_gateway',
+    name: 'ivx_ai_gateway',
     role: 'primary',
     configured: hasEnv('AI_GATEWAY_API_KEY'),
     envGates: ['AI_GATEWAY_API_KEY'],
