@@ -900,7 +900,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const inFlightSessionKeyRef = useRef<string | null>(null);
   const inFlightSessionPromiseRef = useRef<Promise<AuthSessionResult> | null>(null);
 
-  const resolveServerRole = useCallback(async (userId: string): Promise<ServerRoleResolution> => {
+  const resolveServerRole = useCallback(async (userId: string, sessionEmail?: string | null): Promise<ServerRoleResolution> => {
+    const traceId = `auth-${Date.now()}-${userId.slice(0, 8)}`;
+    const startTime = Date.now();
+    console.log(`[Auth] OWNER_PROFILE_QUERY_STARTED traceId=${traceId} userId=${userId} email=${sessionEmail ? sanitizeEmail(sessionEmail) : 'none'}`);
+
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -911,8 +915,16 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       if (!error && data?.role) {
         const rawProfileRole = typeof data.role === 'string' ? data.role : null;
         const normalizedProfileRole = normalizeRole(rawProfileRole);
-        console.log('[Auth] Role from profiles table:', rawProfileRole, '=>', normalizedProfileRole);
+        console.log(`[Auth] OWNER_PROFILE_QUERY_COMPLETED traceId=${traceId} source=profiles rawRole=${rawProfileRole} normalizedRole=${normalizedProfileRole} elapsed=${Date.now() - startTime}ms`);
         if (shouldAcceptResolvedRole(rawProfileRole, normalizedProfileRole)) {
+          // Email allow-list upgrade: if the session email matches the configured owner email,
+          // promote the role to 'owner' even if profiles.role says something else.
+          // This is the SAME upgrade that handleSession applies, now baked into resolveServerRole
+          // so background hydration cannot downgrade the owner.
+          if (isOwnerAdminEmail(sessionEmail) && !isAdminRole(normalizedProfileRole)) {
+            console.log(`[Auth] OWNER_AUTHORIZED traceId=${traceId} source=profiles+email_allowlist role=owner elapsed=${Date.now() - startTime}ms`);
+            return { role: 'owner', source: 'profiles' };
+          }
           return { role: normalizedProfileRole, source: 'profiles' };
         }
         console.log('[Auth] Profiles role did not map cleanly to a trusted role. Continuing fallback checks for:', rawProfileRole);
@@ -928,8 +940,12 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       const rpcRole = extractRoleCandidate(data);
       if (!error && rpcRole) {
         const normalizedRpcRole = normalizeRole(rpcRole);
-        console.log('[Auth] Role from get_user_role RPC:', rpcRole, '=>', normalizedRpcRole);
+        console.log(`[Auth] OWNER_PROFILE_QUERY_COMPLETED traceId=${traceId} source=rpc_get_user_role rawRole=${rpcRole} normalizedRole=${normalizedRpcRole} elapsed=${Date.now() - startTime}ms`);
         if (shouldAcceptResolvedRole(rpcRole, normalizedRpcRole)) {
+          if (isOwnerAdminEmail(sessionEmail) && !isAdminRole(normalizedRpcRole)) {
+            console.log(`[Auth] OWNER_AUTHORIZED traceId=${traceId} source=rpc+email_allowlist role=owner elapsed=${Date.now() - startTime}ms`);
+            return { role: 'owner', source: 'rpc_get_user_role' };
+          }
           return { role: normalizedRpcRole, source: 'rpc_get_user_role' };
         }
         console.log('[Auth] get_user_role RPC returned an untrusted role label. Continuing fallback checks for:', rpcRole);
@@ -943,7 +959,12 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     try {
       const { data, error } = await supabase.rpc('verify_admin_access');
       if (!error && extractAdminAccessFlag(data)) {
-        console.log('[Auth] verify_admin_access RPC confirmed admin access for user:', userId);
+        console.log(`[Auth] OWNER_PROFILE_QUERY_COMPLETED traceId=${traceId} source=rpc_verify_admin_access role=admin elapsed=${Date.now() - startTime}ms`);
+        // Email allow-list upgrade for verify_admin_access too
+        if (isOwnerAdminEmail(sessionEmail)) {
+          console.log(`[Auth] OWNER_AUTHORIZED traceId=${traceId} source=verify_admin+email_allowlist role=owner elapsed=${Date.now() - startTime}ms`);
+          return { role: 'owner', source: 'rpc_verify_admin_access' };
+        }
         return { role: 'admin', source: 'rpc_verify_admin_access' };
       }
 
@@ -962,24 +983,44 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         && trustedOwnerMeta.userId === userId
         && isAdminRole(trustedRole)
       ) {
-        console.log('[Auth] Falling back to trusted-device owner role for user:', userId, 'role:', trustedRole);
+        console.log(`[Auth] OWNER_PROFILE_QUERY_COMPLETED traceId=${traceId} source=trusted_device role=${trustedRole} elapsed=${Date.now() - startTime}ms`);
         return { role: trustedRole, source: 'trusted_device' };
       }
     } catch (error) {
       console.log('[Auth] Trusted-device role fallback note:', (error as Error)?.message ?? 'unknown');
     }
 
-    console.log('[Auth] Falling back to investor role because no verified admin role source passed for user:', userId);
+    // Email allow-list final fallback: if all server sources fail but the session email
+    // matches the configured owner email, the user IS the owner. This prevents the
+    // background hydration from downgrading an owner to investor when RLS or network
+    // issues block the profiles query.
+    if (isOwnerAdminEmail(sessionEmail)) {
+      console.log(`[Auth] OWNER_AUTHORIZED traceId=${traceId} source=email_allowlist_fallback role=owner elapsed=${Date.now() - startTime}ms`);
+      return { role: 'owner', source: 'fallback' };
+    }
+
+    console.log(`[Auth] OWNER_DENIED traceId=${traceId} source=fallback role=investor elapsed=${Date.now() - startTime}ms`);
     return { role: 'investor', source: 'fallback' };
   }, []);
 
-  const fetchProfileRole = useCallback(async (userId: string): Promise<string> => {
-    const resolvedRole = await resolveServerRole(userId);
+  const fetchProfileRole = useCallback(async (userId: string, sessionEmail?: string | null): Promise<string> => {
+    const resolvedRole = await resolveServerRole(userId, sessionEmail);
     console.log('[Auth] Role resolution complete for user:', userId, 'role:', resolvedRole.role, 'source:', resolvedRole.source);
     return resolvedRole.role;
   }, [resolveServerRole]);
 
-  const resolveLocalSessionRoleFallback = useCallback(async (userId: string): Promise<SessionRoleBootstrap> => {
+  const resolveLocalSessionRoleFallback = useCallback(async (userId: string, sessionEmail?: string | null): Promise<SessionRoleBootstrap> => {
+    // Email allow-list: if the session email matches the configured owner email,
+    // return 'owner' immediately so the timeout fallback never downgrades the owner.
+    if (isOwnerAdminEmail(sessionEmail)) {
+      console.log('[Auth] Role resolution timeout fallback: using owner role from email allow-list for:', userId);
+      return {
+        role: 'owner',
+        source: 'timeout_fallback',
+        requiresBackgroundHydration: true,
+      };
+    }
+
     try {
       const [storedAuth, ownerDeviceVerified, trustedOwnerMeta] = await Promise.all([
         loadStoredAuth(),
@@ -1020,11 +1061,15 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const hydrateResolvedRoleInBackground = useCallback((session: Session, optimisticRole: string): void => {
     const sessionUserId = session.user.id;
+    const sessionEmail = session.user.email;
     console.log('[Auth] Scheduling background role hydration for:', sessionUserId, 'optimisticRole:', optimisticRole);
 
     void Promise.resolve().then(async () => {
       try {
-        const resolvedRole = await resolveServerRole(sessionUserId);
+        // Pass sessionEmail so resolveServerRole can apply the email allow-list upgrade.
+        // This prevents background hydration from downgrading an owner to investor
+        // when the profiles query is slow/fails but the email matches the configured owner.
+        const resolvedRole = await resolveServerRole(sessionUserId, sessionEmail);
         const normalizedResolvedRole = normalizeRole(resolvedRole.role);
 
         if (activeSessionUserIdRef.current !== sessionUserId) {
@@ -1037,12 +1082,20 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           return;
         }
 
+        // NEVER downgrade from an admin/owner role to investor during background hydration.
+        // The optimistic role was set by handleSession which has the full email allow-list
+        // upgrade logic. Background hydration should only UPGRADE, never downgrade.
+        if (isAdminRole(optimisticRole) && !isAdminRole(normalizedResolvedRole)) {
+          console.log('[Auth] Background role hydration SKIPPED — refusing to downgrade from', optimisticRole, 'to', normalizedResolvedRole, 'for user:', sessionUserId);
+          return;
+        }
+
         if (normalizedResolvedRole === optimisticRole) {
           console.log('[Auth] Background role hydration confirmed existing role for:', sessionUserId, 'role:', normalizedResolvedRole);
           return;
         }
 
-        console.log('[Auth] Background role hydration updating role for:', sessionUserId, 'from:', optimisticRole, 'to:', normalizedResolvedRole, 'source:', resolvedRole.source);
+        console.log('[Auth] Background role hydration UPGRADING role for:', sessionUserId, 'from:', optimisticRole, 'to:', normalizedResolvedRole, 'source:', resolvedRole.source);
         setUserRole((currentRole) => currentRole === normalizedResolvedRole ? currentRole : normalizedResolvedRole);
         setUser((previousUser) => {
           if (previousUser?.id !== sessionUserId) {
@@ -1251,7 +1304,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
     const roleBootstrap = await withTimeout<SessionRoleBootstrap | null>(
       async () => {
-        const resolvedRole = await resolveServerRole(supaUser.id);
+        const resolvedRole = await resolveServerRole(supaUser.id, supaUser.email);
         return {
           role: normalizeRole(resolvedRole.role),
           source: resolvedRole.source,
@@ -1262,7 +1315,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       'resolveServerRole',
       null,
     );
-    const resolvedSessionRole = roleBootstrap ?? await resolveLocalSessionRoleFallback(supaUser.id);
+    const resolvedSessionRole = roleBootstrap ?? await resolveLocalSessionRoleFallback(supaUser.id, supaUser.email);
     let role = normalizeRole(resolvedSessionRole.role);
 
     // Owner email allow-list: if the authenticated email matches the configured
@@ -2500,7 +2553,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       let authenticatedRoleSource: OwnerIdentityAuditSource = 'not_authenticated';
 
       if (session?.user.id) {
-        const resolvedRole = await resolveServerRole(session.user.id);
+        const resolvedRole = await resolveServerRole(session.user.id, session.user.email);
         authenticatedRole = normalizeRole(resolvedRole.role);
         authenticatedRoleSource = resolvedRole.source;
       } else if (isOwnerIPAccess && user?.id) {
@@ -2643,7 +2696,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         return { success: false, message: 'No active session. Please log in again.' };
       }
 
-      const roleResolution = await resolveServerRole(user.id);
+      const roleResolution = await resolveServerRole(user.id, currentSession.user.email);
       let serverRole = normalizeRole(roleResolution.role);
       let roleSource: ServerRoleResolutionSource = roleResolution.source;
       console.log('[Auth] activateOwnerAccess role resolution:', serverRole, 'source:', roleSource, 'user:', user.id);
