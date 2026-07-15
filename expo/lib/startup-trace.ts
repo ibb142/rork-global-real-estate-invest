@@ -3,22 +3,35 @@
  *
  * Generates a unique trace ID per app launch and records checkpoints with
  * elapsed milliseconds so we can identify exactly where startup stops.
+ *
+ * The required startup trace must reach APP_INTERACTIVE for a successful launch.
  */
 
 const START_TIME_MS = Date.now();
 const TRACE_ID = `${START_TIME_MS.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 export type StartupCheckpoint =
+  | 'APP_NATIVE_STARTED'
+  | 'JS_BUNDLE_STARTED'
+  | 'ROOT_COMPONENT_MOUNTED'
   | 'APP_MOUNTED'
   | 'ROOT_LAYOUT_RENDERED'
+  | 'ERROR_BOUNDARY_MOUNTED'
+  | 'PROVIDERS_STARTED'
+  | 'PROVIDERS_COMPLETED'
   | 'PROVIDERS_MOUNTED'
   | 'SPLASH_HIDE_STARTED'
   | 'SPLASH_HIDE_COMPLETED'
+  | 'AUTH_INITIALIZATION_STARTED'
+  | 'AUTH_INITIALIZATION_COMPLETED'
+  | 'AUTH_INITIALIZATION_FAILED'
   | 'AUTH_INIT_STARTED'
   | 'AUTH_INIT_COMPLETED'
   | 'AUTH_INIT_FAILED'
   | 'ROUTER_READY'
-  | 'INITIAL_ROUTE_RENDERED';
+  | 'INITIAL_ROUTE_SELECTED'
+  | 'INITIAL_ROUTE_RENDERED'
+  | 'APP_INTERACTIVE';
 
 const recorded = new Set<StartupCheckpoint>();
 
@@ -58,5 +71,10 @@ export function getStartupTraceInfo(): { traceId: string; elapsedMs: number; che
 
 /** True if all required checkpoints have been recorded. */
 export function isStartupComplete(): boolean {
-  return recorded.has('INITIAL_ROUTE_RENDERED');
+  return recorded.has('APP_INTERACTIVE');
+}
+
+/** Get the trace ID for inclusion in error reports. */
+export function getStartupTraceId(): string {
+  return TRACE_ID;
 }

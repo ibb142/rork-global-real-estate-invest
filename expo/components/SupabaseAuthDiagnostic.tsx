@@ -57,10 +57,10 @@ export function SupabaseAuthDiagnostic(): React.ReactElement {
       if (!audit.host.includes('kvclcdjmjghndxsngfzb')) {
         forceProductionSupabaseClient();
       }
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: 'iperez4242@gmail.com',
-        password: 'X146corp@1x146corp$$1',
-      });
+      // No hardcoded credentials — this diagnostic must not auto-submit.
+      // It only checks the Supabase client config (URL + key) without sending
+      // a password. A real sign-in test requires the owner to enter credentials.
+      const { data, error } = await supabase.auth.getSession();
       const status = (error as { status?: number })?.status ?? null;
       const message = error?.message ?? 'OK';
       const issuerMatch = data.session?.access_token

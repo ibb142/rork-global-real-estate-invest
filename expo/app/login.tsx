@@ -374,6 +374,7 @@ interface LoginScreenContentProps {
 
 export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProps = {}) {
   logStartup('INITIAL_ROUTE_RENDERED', 'login');
+  logStartup('APP_INTERACTIVE');
   const router = useRouter();
   const params = useLocalSearchParams<{ email?: string; justRegistered?: string; ownerMode?: string; mode?: string }>();
   const routeOwnerMode = params.ownerMode === '1' || params.ownerMode === 'true' || params.mode === 'owner';

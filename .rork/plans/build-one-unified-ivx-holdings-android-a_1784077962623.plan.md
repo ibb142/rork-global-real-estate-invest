@@ -22,6 +22,10 @@ All owner-login persistence / auto-restore / sign-in changes are **paused** unti
 - [x] Keep `app/(tabs)/_layout.tsx` auth guard but cap its loading safety net at a short timeout (e.g., 2 seconds) and always redirect to `/login` when it fires.
 - [x] Verify the production APK contains the correct Supabase URL/key fallbacks and contains no development URLs (localhost, 127.0.0.1, ngrok, etc.).
 - [x] Build a new `com.ivxholdings.app` APK (versionCode 20), upload a direct-download link, and provide the user with a real-device log capture script so they can verify `INITIAL_ROUTE_RENDERED` on a physical device.
+- [x] Create missing `app/index.tsx` initial route (versionCode 21) — Expo Router had no route for `/`, causing black screen on cold launch.
+- [x] Fix `metro.config.js` try/catch resilience — bare `require("@rork-ai/toolkit-sdk/metro")` crashed the bundler.
+- [x] Remove hardcoded password `X146corp@1x146corp$$1` from `loginOwnerPasswordless` and `SupabaseAuthDiagnostic.tsx` — automatic credential submission without user input.
+- [x] Add all required startup trace checkpoints through `APP_INTERACTIVE` in `startup-trace.ts`.
 
 ## Task 1 — Remove the top diagnostic banner from production
 
@@ -92,6 +96,7 @@ All owner-login persistence / auto-restore / sign-in changes are **paused** unti
 - [x] Re-upload the new build 18 APK and update the direct download link (litter.catbox.moe; gofile.io only served an HTML page).
 - [x] Update `DEPLOYMENT_PROOF.json` with the new build details.
 - [x] Bump the Android `versionCode` to `20` and rebuild after removing the blocking root-layout timeout and making auth init non-blocking (startup reliability fix).
+- [x] Bump the Android `versionCode` to `21` and rebuild after creating missing `app/index.tsx`, fixing `metro.config.js`, removing hardcoded passwords, and adding full startup trace checkpoints.
 
 ## Final acceptance
 
@@ -102,7 +107,7 @@ All owner-login persistence / auto-restore / sign-in changes are **paused** unti
 - [x] Git SHA is not `local` and API environment is not `unknown` in production (build info reads from app.config.ts extra).
 - [x] Owner AI send button is disabled until authentication is ready (explicit auth states + `isAuthBlocked`).
 - [x] Final APK uses `com.ivxholdings.app` and is directly downloadable (build 18 link delivered and verified with HTTP 200 + application/octet-stream + checksum match).
-- [~] Real Android testing passes on the user’s device for build 20: no black screen, no 'taking longer' fallback, Owner Login renders, startup trace shows INITIAL_ROUTE_RENDERED.
+- [~] Real Android testing passes on the user’s device for build 21: no black screen, Owner Login renders on cold launch, startup trace reaches APP_INTERACTIVE, no hardcoded password auto-login, no forbidden endpoints in bundle.
 
 ## Blockers
 

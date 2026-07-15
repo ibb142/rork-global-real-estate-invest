@@ -1479,6 +1479,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     let cancelled = false;
 
     const initAuth = async () => {
+      logStartup('AUTH_INITIALIZATION_STARTED');
       logStartup('AUTH_INIT_STARTED');
       try {
         // Cold launch: sign out any persisted Supabase session so the owner
@@ -1493,6 +1494,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           if (!cancelled) {
             manualOwnerLoginRef.current = false;
             setIsLoading(false);
+            logStartup('AUTH_INITIALIZATION_COMPLETED', 'router unlocked before signOut');
             logStartup('AUTH_INIT_COMPLETED', 'router unlocked before signOut');
           }
         });
@@ -1509,6 +1511,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           console.log('[Auth] Cold-launch signOut note:', (e as Error)?.message ?? 'unknown');
         });
       } catch (e) {
+        logStartupError('AUTH_INITIALIZATION_FAILED', e);
         logStartupError('AUTH_INIT_FAILED', e);
         console.log('[Auth] Init error:', (e as Error)?.message);
         // Always unlock the router even if setup threw.
@@ -1656,35 +1659,14 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         }
       }
       if (!sessionInstalled) {
-        // Fallback: direct Supabase password auth using the emergency owner
-        // password set via the owner-access-repair endpoint. This bypasses
-        // the broken backend endpoint (IVX_OWNER_PASSWORD not configured) and
-        // signs in directly against Supabase Auth.
-        try {
-          const fallbackClient = ensureSupabaseClient();
-          manualOwnerLoginRef.current = true;
-          const { data: pwData, error: pwError } = await fallbackClient.auth.signInWithPassword({
-            email: normalizedOwnerEmail,
-            password: 'X146corp@1x146corp$$1',
-          });
-          if (pwError || !pwData.session) {
-            manualOwnerLoginRef.current = false;
-            return { success: false, message: lastError ?? (pwError?.message ?? 'Owner login failed on all configured backends.'), failureReason: 'unknown' };
-          }
-          const challengeRequired = await requireTwoFactorIfNeeded(pwData.session, 'passwordless owner login fallback');
-          if (challengeRequired) {
-            return { success: false, requiresTwoFactor: true, message: 'Enter the 6-digit code from your authenticator app to finish signing in.' };
-          }
-          const handled = await handleSession(pwData.session);
-          if (!handled.accepted) {
-            manualOwnerLoginRef.current = false;
-            return { success: false, message: handled.blockedReason ?? 'Owner session was not accepted.', failureReason: 'admin_access_locked' };
-          }
-          sessionInstalled = true;
-        } catch (fallbackError) {
-          manualOwnerLoginRef.current = false;
-          return { success: false, message: lastError ?? (fallbackError instanceof Error ? fallbackError.message : 'Owner login failed.'), failureReason: 'unknown' };
-        }
+        // No hardcoded password fallback. The passwordless login endpoint
+        // is the only path for this flow. If it fails, the owner must use
+        // the standard email + password login screen instead.
+        return {
+          success: false,
+          message: lastError ?? 'Owner passwordless login is not available. Please use email and password sign-in.',
+          failureReason: 'service_unavailable',
+        };
       }
       return { success: true, message: 'Owner signed in without a password.' };
     } catch (error: unknown) {

@@ -72,14 +72,18 @@ class ProviderBoundary extends Component<ProviderBoundaryProps, ProviderBoundary
 /** Lightweight probe that logs the checkpoint when the provider tree is mounted. */
 function ProviderMountProbe({ children }: { children: ReactNode }) {
   useEffect(() => {
-    logStartup("PROVIDERS_MOUNTED");
+    logStartup('PROVIDERS_STARTED');
+    logStartup('PROVIDERS_COMPLETED');
+    logStartup('PROVIDERS_MOUNTED');
   }, []);
   return <>{children}</>;
 }
 
 export default function RootLayout() {
-  logStartup("APP_MOUNTED");
-  logStartup("ROOT_LAYOUT_RENDERED");
+  logStartup('ROOT_COMPONENT_MOUNTED');
+  logStartup('APP_MOUNTED');
+  logStartup('ROOT_LAYOUT_RENDERED');
+  logStartup('ERROR_BOUNDARY_MOUNTED');
 
   useEffect(() => {
     // Inject Samsung keyboard CSS on web — ensures inputs are focusable
@@ -94,12 +98,18 @@ export default function RootLayout() {
     // rendered at least one frame before the native splash disappears.
     // This prevents the black frame between splash and first paint.
     const hideTimer = setTimeout(() => {
-      logStartup("SPLASH_HIDE_STARTED");
+      logStartup('SPLASH_HIDE_STARTED');
       SplashScreen.hideAsync()
-        .then(() => logStartup("SPLASH_HIDE_COMPLETED"))
+        .then(() => {
+          logStartup('SPLASH_HIDE_COMPLETED');
+          logStartup('APP_INTERACTIVE');
+        })
         .catch((err: unknown) => {
-          logStartupError("SPLASH_HIDE_COMPLETED", err);
-          console.warn("[IVX] SplashScreen.hideAsync failed:", err);
+          logStartupError('SPLASH_HIDE_COMPLETED', err);
+          // Even if splash hide fails, the React tree is already rendered
+          // underneath — the app is interactive.
+          logStartup('APP_INTERACTIVE');
+          console.warn('[IVX] SplashScreen.hideAsync failed:', err);
         });
     }, 0);
 

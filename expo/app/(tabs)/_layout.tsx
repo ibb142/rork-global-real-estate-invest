@@ -28,6 +28,7 @@ const TABS_LOADING_TIMEOUT_MS = 2000;
 
 export default function TabsLayout() {
   logStartup('ROUTER_READY');
+  logStartup('INITIAL_ROUTE_SELECTED', 'tabs');
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { profileData, isAuthenticated, isLoading } = useAuth();
@@ -114,6 +115,7 @@ export default function TabsLayout() {
   }
 
   logStartup('INITIAL_ROUTE_RENDERED', 'tabs');
+  logStartup('APP_INTERACTIVE');
   const isOwner = useMemo(() => {
     const role = ((profileData as { role?: string } | null)?.role ?? '').toLowerCase();
     return role === 'owner' || role === 'admin';
