@@ -6,11 +6,18 @@ import { execSync } from 'child_process';
 // This breaks the circular dependency where hardcoding the SHA
 // creates a new commit with a different SHA.
 let _sourceCommitSha = 'unknown';
-try {
-  _sourceCommitSha = execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
-} catch {
-  // Fallback for environments without git
-  _sourceCommitSha = process.env.EXPO_PUBLIC_SOURCE_COMMIT_SHA || 'unknown';
+// Prefer the explicit env var (set to the GitHub remote HEAD SHA)
+// over the local git HEAD, because the Rork git router rewrites
+// commit SHAs on push — local HEAD != GitHub remote HEAD.
+const _envSha = process.env.EXPO_PUBLIC_SOURCE_COMMIT_SHA;
+if (_envSha && _envSha.length === 40) {
+  _sourceCommitSha = _envSha;
+} else {
+  try {
+    _sourceCommitSha = execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
+  } catch {
+    _sourceCommitSha = 'unknown';
+  }
 }
 
 const config: ExpoConfig = {
