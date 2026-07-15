@@ -31,20 +31,22 @@ export interface IVXRuntimeInfo {
 export function getIVXRuntimeInfo(): IVXRuntimeInfo {
   const isWeb = Platform.OS === 'web';
 
-  // executionEnvironment: 'storeClient' (Expo Go), 'standalone' (built app),
-  // 'bare' (dev client / bare workflow).
+  // executionEnvironment: 'storeClient' (Expo Go), 'standalone' (EAS store build),
+  // 'bare' (prebuilt / bare workflow). A bare workflow release APK is a real
+  // production build, not a dev client; only flag it as a dev runtime when
+  // React Native's __DEV__ flag is true.
   const executionEnvironment = String(Constants.executionEnvironment ?? '');
-  // appOwnership: 'expo' (Expo Go), 'standalone', 'guest' (dev client).
+  // appOwnership: 'expo' (Expo Go), 'standalone', 'guest' (dev client / bare).
   const appOwnership = String(Constants.appOwnership ?? '');
 
   const isExpoGo =
     executionEnvironment === 'storeClient' || appOwnership === 'expo';
-  const isStandalone =
-    executionEnvironment === 'standalone' || appOwnership === 'standalone';
-  const isDevClient =
-    !isExpoGo && !isStandalone && (executionEnvironment === 'bare' || appOwnership === 'guest');
-
+  const isBare = executionEnvironment === 'bare' || appOwnership === 'guest';
   const devFlag = typeof __DEV__ !== 'undefined' && __DEV__ === true;
+  // A bare workflow build is standalone/production when it is a release bundle.
+  const isStandalone =
+    executionEnvironment === 'standalone' || appOwnership === 'standalone' || (isBare && !devFlag);
+  const isDevClient = isBare && devFlag;
 
   let kind: IVXRuntimeKind = 'unknown';
   if (isWeb) {

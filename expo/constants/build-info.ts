@@ -63,14 +63,9 @@ function readString(value: unknown, fallback: string): string {
 }
 
 function readEnvironment(): IVXBuildInfo['environment'] {
+  const devFlag = typeof __DEV__ !== 'undefined' && __DEV__;
   const runtime = getIVXRuntimeInfo();
-  if (typeof __DEV__ !== 'undefined' && __DEV__) {
-    return 'development';
-  }
-  if (runtime.isStandalone) {
-    return 'production';
-  }
-  if (runtime.isExpoGo || runtime.isDevRuntime) {
+  if (devFlag || runtime.isExpoGo || runtime.isDevRuntime) {
     return 'development';
   }
   return 'production';

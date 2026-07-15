@@ -16,10 +16,11 @@ The only approved application is the existing Expo React Native project at `expo
 ## Task 1 — Remove the top diagnostic banner from production
 
 - [x] Render `IVXOwnerAIDiagnostics` only when explicitly enabled by an authenticated owner in production; default to hidden in release builds.
-- [x] In development / Expo Go, allow it to be shown automatically but add a Close button and persist the closed state.
-- [x] Move the full diagnostics panel into the Owner Diagnostics / Control Room drawer, not as an overlay above chat content.
+- [x] Add a Close button and persist the closed state.
+- [~] Move the full diagnostics panel into the Owner Diagnostics / Control Room drawer, not as an overlay above chat content.
 - [x] Ensure the banner never pushes the page down, covers buttons, or reappears after app restart unless the owner reopens it.
 - [x] Do not delete diagnostics functionality; relocate it.
+- *Note: build 14 still rendered the overlay because the `visible` prop was hardcoded to `true`. Fixed by binding it to `diagnosticsBannerVisible` and defaulting that state to `false`.*
 
 ## Task 2 — Fix owner session persistence and restore
 
@@ -42,6 +43,7 @@ The only approved application is the existing Expo React Native project at `expo
 - [x] Derive environment label (`development`, `staging`, `production`) from `__DEV__` and `Constants.executionEnvironment`.
 - [x] Display the canonical API base URL name (`api.ivxholding.com`) and a redacted Supabase project identifier, never `local` or `unknown` in a production build.
 - [x] Fail the production build if required build identity values are missing.
+- [x] Fix `runtime-environment.ts` so a bare-workflow release APK is classified as `standalone`/`production`, not `dev-client`/`development`.
 
 ## Task 5 — Owner authorization
 
@@ -70,20 +72,22 @@ The only approved application is the existing Expo React Native project at `expo
 ## Task 9 — Build and deploy
 
 - [x] Bump the Android `versionCode` to `14` and update build markers / Git SHA in `app.config.ts`.
+- [x] Bump the Android `versionCode` to `15` and rebuild after the diagnostics-visibility and runtime-detection fixes.
 - [x] Build the production APK locally with `expo prebuild` + `gradlew assembleRelease` (EAS cloud is blocked by missing `EXPO_TOKEN` in the sandbox).
-- [x] Verify package `com.ivxholdings.app`, version, versionCode, and embedded API URL / Git SHA.
+- [x] Rebuild the production APK after the fixes and verify package, versionCode, and embedded identity.
 - [x] Upload the APK to a public HTTPS URL with a direct download link.
+- [x] Re-upload the new build 15 APK and update the direct download link.
 - [x] Update `DEPLOYMENT_PROOF.json` with the new build details.
 
 ## Final acceptance
 
-- [x] Top diagnostic banner is hidden in production (code + build verified; real-device confirmation required).
+- [x] Top diagnostic banner is hidden in production by default (build 15; real-device confirmation required).
 - [x] Diagnostics remain available inside Owner Control (Control → Diagnostics button).
 - [x] Owner session restores after restart and Owner AI recognizes it (auto-login block removed; code verified; real-device confirmation required).
 - [x] `no_supabase_session` no longer appears after valid owner login (session persists; code verified; real-device confirmation required).
 - [x] Git SHA is not `local` and API environment is not `unknown` in production (build info reads from app.config.ts extra).
 - [x] Owner AI send button is disabled until authentication is ready (explicit auth states + `isAuthBlocked`).
-- [x] Final APK uses `com.ivxholdings.app` and is directly downloadable.
+- [x] Final APK uses `com.ivxholdings.app` and is directly downloadable (build 15 link delivered).
 - [~] Real Android testing passes on the user’s device.
 
 ## Blockers

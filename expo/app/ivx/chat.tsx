@@ -890,14 +890,11 @@ export default function IVXOwnerChatRoute() {
   const [keyboardInset, setKeyboardInset] = useState<number>(0);
   const [rootLayoutHeight, setRootLayoutHeight] = useState<number>(0);
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
-  // Build-information diagnostics banner: hidden by default in production,
-  // visible by default in development / Expo Go, and persistently closable.
-  // The owner can reopen it from Owner Control → Diagnostics → Build Information.
-  const [diagnosticsBannerVisible, setDiagnosticsBannerVisible] = useState<boolean>(() => {
-    if (typeof __DEV__ !== 'undefined' && __DEV__) return true;
-    const runtime = getIVXRuntimeInfo();
-    return runtime.isExpoGo || runtime.isDevRuntime;
-  });
+  // Build-information diagnostics banner: ALWAYS hidden by default. The owner
+  // can reopen it from Owner Control → Diagnostics → Build Information. The
+  // closed state is persisted across app restarts so production never shows
+  // the overlay unless explicitly requested.
+  const [diagnosticsBannerVisible, setDiagnosticsBannerVisible] = useState<boolean>(false);
   const [diagnosticsBannerLoaded, setDiagnosticsBannerLoaded] = useState<boolean>(false);
   // Owner session gate removed: chat composer is always usable without requiring
   // a separate owner verification step. The preflight state is kept ready for
@@ -5408,7 +5405,7 @@ export default function IVXOwnerChatRoute() {
             </View>
           ) : null}
           {diagnosticsBannerLoaded && diagnosticsBannerVisible ? (
-            <IVXOwnerAIDiagnostics visible onClose={handleCloseDiagnosticsBanner} />
+            <IVXOwnerAIDiagnostics visible={diagnosticsBannerVisible} onClose={handleCloseDiagnosticsBanner} />
           ) : null}
           {topStatusNote ? (
             <View
