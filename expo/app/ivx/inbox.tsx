@@ -163,7 +163,7 @@ export default function IVXOwnerInboxRoute() {
   }, [queryClient]);
 
   const handleOpenDiagnostics = useCallback(() => {
-    router.push('/ivx/diagnostics');
+    router.push('/admin/diagnostics' as never);
   }, [router]);
 
   const handleOpenSearch = useCallback(() => {

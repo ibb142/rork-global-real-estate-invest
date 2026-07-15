@@ -30,6 +30,12 @@ import { Property } from '@/types';
 import { formatCurrencyWithDecimals, formatAmountInput, parseAmountInput } from '@/lib/formatters';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import { useProgressiveList } from '@/lib/use-progressive-list';
+import { EmptyState, ErrorState, ListFooter } from '@/components/ProgressiveStates';
+import { fetchPropertiesPage, invalidatePropertiesCache } from '@/lib/canonical-query';
+import { usePropertiesRealtime } from '@/lib/canonical-realtime';
+import { OptimizedImage } from '@/components/OptimizedImage';
+import { logAudit } from '@/lib/audit-trail';
 
 type FilterType = 'all' | 'live' | 'coming_soon' | 'funded' | 'closed';
 
@@ -39,7 +45,6 @@ export default function PropertiesScreen() {
   const [filter, setFilter] = useState<FilterType>('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
-  const [displayCount, setDisplayCount] = useState(10);
   const [refreshing, setRefreshing] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -56,14 +61,15 @@ export default function PropertiesScreen() {
   });
 
   const queryClient = useQueryClient();
+  usePropertiesRealtime(null);
 
-  const propertiesQuery = useQuery({
+  const propertiesList = useProgressiveList<Property>({
     queryKey: ['admin-properties'],
-    queryFn: async () => {
-      console.log('[Admin Properties] Fetching from Supabase');
-      const { data, error } = await supabase.from('properties').select('*').order('created_at', { ascending: false }).limit(200);
-      if (error) { console.log('[Admin Properties] error:', error.message); return []; }
-      return (data ?? []).map((p: any): Property => ({
+    pageSize: 10,
+    staleTime: 1000 * 60 * 2,
+    fetchPage: async (page: number, pageSize: number) => {
+      const result = await fetchPropertiesPage(page, pageSize);
+      const items = result.items.map((p: any): Property => ({
         id: p.id,
         name: p.name || 'Unnamed',
         location: p.location || '',
@@ -91,11 +97,11 @@ export default function PropertiesScreen() {
         createdAt: p.created_at || new Date().toISOString(),
         closingDate: '',
       }));
+      return { items, hasMore: result.hasMore };
     },
-    staleTime: 30000,
   });
 
-  const properties = useMemo(() => propertiesQuery.data ?? [], [propertiesQuery.data]);
+  const properties = propertiesList.data;
 
   const addPropertyMutation = useMutation({
     mutationFn: async (input: { name: string; location: string; share_price: number; total_shares: number; annual_yield: number; type: string; status: string }) => {
@@ -103,8 +109,11 @@ export default function PropertiesScreen() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['admin-properties'] });
+    onSuccess: (_data) => {
+      invalidatePropertiesCache();
+      void queryClient.invalidateQueries({ queryKey: ['admin-properties', 'page-1'] });
+      propertiesList.refresh();
+      void logAudit({ entityType: 'property', entityId: _data?.id ?? 'unknown', action: 'CREATE', source: 'admin' });
       Alert.alert('Success', 'Property added successfully');
       setShowAddModal(false);
     },
@@ -115,12 +124,75 @@ export default function PropertiesScreen() {
     mutationFn: async (id: string) => {
       const { error } = await supabase.from('properties').delete().eq('id', id);
       if (error) throw error;
+      await logAudit({ entityType: 'property', entityId: id, action: 'DELETE', source: 'admin' });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['admin-properties'] });
+      invalidatePropertiesCache();
+      void queryClient.invalidateQueries({ queryKey: ['admin-properties', 'page-1'] });
+      propertiesList.refresh();
       Alert.alert('Success', 'Property deleted');
     },
     onError: (err: Error) => Alert.alert('Error', err.message),
+  });
+
+  const archivePropertyMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('properties').update({ status: 'archived' }).eq('id', id);
+      if (error) throw error;
+      await logAudit({ entityType: 'property', entityId: id, action: 'ARCHIVE', source: 'admin' });
+    },
+    onSuccess: () => {
+      invalidatePropertiesCache();
+      void queryClient.invalidateQueries({ queryKey: ['admin-properties', 'page-1'] });
+      propertiesList.refresh();
+      Alert.alert('Archived', 'Property has been archived.');
+    },
+    onError: (err: Error) => Alert.alert('Error', 'Failed to archive: ' + err.message),
+  });
+
+  const restorePropertyMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('properties').update({ status: 'coming_soon' }).eq('id', id);
+      if (error) throw error;
+      await logAudit({ entityType: 'property', entityId: id, action: 'RESTORE', source: 'admin' });
+    },
+    onSuccess: () => {
+      invalidatePropertiesCache();
+      void queryClient.invalidateQueries({ queryKey: ['admin-properties', 'page-1'] });
+      propertiesList.refresh();
+      Alert.alert('Restored', 'Property has been restored.');
+    },
+    onError: (err: Error) => Alert.alert('Error', 'Failed to restore: ' + err.message),
+  });
+
+  const publishPropertyMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('properties').update({ status: 'active' }).eq('id', id);
+      if (error) throw error;
+      await logAudit({ entityType: 'property', entityId: id, action: 'PUBLISH', source: 'admin' });
+    },
+    onSuccess: () => {
+      invalidatePropertiesCache();
+      void queryClient.invalidateQueries({ queryKey: ['admin-properties', 'page-1'] });
+      propertiesList.refresh();
+      Alert.alert('Published', 'Property is now live for investors.');
+    },
+    onError: (err: Error) => Alert.alert('Error', 'Failed to publish: ' + err.message),
+  });
+
+  const unpublishPropertyMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('properties').update({ status: 'coming_soon' }).eq('id', id);
+      if (error) throw error;
+      await logAudit({ entityType: 'property', entityId: id, action: 'UNPUBLISH', source: 'admin' });
+    },
+    onSuccess: () => {
+      invalidatePropertiesCache();
+      void queryClient.invalidateQueries({ queryKey: ['admin-properties', 'page-1'] });
+      propertiesList.refresh();
+      Alert.alert('Unpublished', 'Property is no longer live.');
+    },
+    onError: (err: Error) => Alert.alert('Error', 'Failed to unpublish: ' + err.message),
   });
 
   const filteredProperties = useMemo(() => {
@@ -239,7 +311,10 @@ export default function PropertiesScreen() {
         status: formData.status === 'live' ? 'active' : formData.status,
       }).eq('id', editingProperty.id).then(({ error }: { error: any }) => {
         if (error) { Alert.alert('Error', error.message); return; }
-        void queryClient.invalidateQueries({ queryKey: ['admin-properties'] });
+        invalidatePropertiesCache();
+        void queryClient.invalidateQueries({ queryKey: ['admin-properties', 'page-1'] });
+        void logAudit({ entityType: 'property', entityId: editingProperty.id, action: 'UPDATE', source: 'admin' });
+        propertiesList.refresh();
         Alert.alert('Success', 'Property updated');
         setShowAddModal(false);
       });
@@ -448,7 +523,7 @@ export default function PropertiesScreen() {
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>Properties</Text>
-          <Text style={styles.subtitle}>{properties.length} total properties{propertiesQuery.isLoading ? ' (loading...)' : ''}</Text>
+          <Text style={styles.subtitle}>{properties.length} total properties{propertiesList.isLoading ? ' (loading...)' : ''}</Text>
         </View>
         <TouchableOpacity style={styles.addButton} onPress={handleAddProperty}>
           <Plus size={20} color="#fff" />
@@ -501,50 +576,47 @@ export default function PropertiesScreen() {
 
       <FlatList
         style={styles.list}
-        data={filteredProperties.slice(0, displayCount)}
+        data={filteredProperties}
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
+            refreshing={propertiesList.isRefreshing}
             onRefresh={() => {
               setRefreshing(true);
-              void propertiesQuery.refetch().finally(() => setRefreshing(false));
+              void Promise.resolve(propertiesList.refresh()).finally(() => setRefreshing(false));
             }}
             tintColor={Colors.primary}
           />
         }
-        onEndReached={() => {
-          if (displayCount < filteredProperties.length) {
-            setDisplayCount(prev => Math.min(prev + 10, filteredProperties.length));
-          }
-        }}
+        onEndReached={propertiesList.loadMore}
         onEndReachedThreshold={0.5}
         ListEmptyComponent={
-          propertiesQuery.isLoading ? (
+          propertiesList.isLoading ? (
             <View style={{ alignItems: 'center', paddingVertical: 40 }}>
               <ActivityIndicator size="large" color={Colors.primary} />
               <Text style={{ color: Colors.textSecondary, marginTop: 12, fontSize: 13 }}>Loading properties...</Text>
             </View>
+          ) : propertiesList.isError ? (
+            <ErrorState
+              message={propertiesList.error?.message ?? 'Failed to load properties'}
+              onRetry={propertiesList.refresh}
+            />
           ) : (
-            <View style={{ alignItems: 'center', paddingVertical: 40 }}>
-              <Text style={{ color: Colors.textSecondary, fontSize: 14 }}>No properties found</Text>
-            </View>
+            <EmptyState title="No properties found" />
           )
         }
-        ListFooterComponent={
-          displayCount < filteredProperties.length ? (
-            <View style={{ paddingVertical: 16, alignItems: 'center' }}>
-              <ActivityIndicator size="small" color={Colors.primary} />
-              <Text style={{ color: Colors.textSecondary, marginTop: 8, fontSize: 13 }}>Loading more…</Text>
-            </View>
-          ) : null
-        }
+        ListFooterComponent={<ListFooter isFetchingMore={propertiesList.isFetchingMore} hasMore={propertiesList.hasMore} />}
         renderItem={({ item: property }) => (
           <View key={property.id} style={styles.propertyCard}>
-            <Image
-              source={{ uri: property.images[0] }}
+            <OptimizedImage
+              uri={property.images[0]}
+              width={undefined}
+              height={140}
               style={styles.propertyImage}
+              borderRadius={0}
+              placeholderText={property.name}
+              testID={`property-img-${property.id}`}
             />
             <View style={styles.propertyContent}>
               <View style={styles.propertyHeader}>

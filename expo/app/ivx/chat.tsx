@@ -53,7 +53,6 @@ import type { IVXMessage, IVXOwnerAIRouterDebug, IVXOwnerAIToolOutput, IVXUpload
 import { assertCleanOwnerAIResponseText, isIVXServiceUnavailableDiagnostics } from '@/src/modules/ivx-owner-ai/services/ivxAIRequestService';
 import { ivxAIWatchdog, type WatchdogTraceHandle } from '@/src/modules/ivx-owner-ai/services/ivxAIWatchdog';
 import { IVXWatchdogBanner, IVXWatchdogDrawer } from '@/components/IVXWatchdogPanel';
-import { IVXOwnerAIDiagnostics } from '@/components/IVXOwnerAIDiagnostics';
 import { IVXStagedTimeoutBanner, type TimeoutEvidence } from '@/components/IVXStagedTimeoutBanner';
 import { createAIOrchestrator, type AIOrchestrator } from '@/src/modules/ivx-owner-ai/services/ivxOwnerAIOrchestrator';
 import Constants from 'expo-constants';
@@ -894,8 +893,8 @@ export default function IVXOwnerChatRoute() {
   // can reopen it from Owner Control → Diagnostics → Build Information. The
   // closed state is persisted across app restarts so production never shows
   // the overlay unless explicitly requested.
-  const [diagnosticsBannerVisible, setDiagnosticsBannerVisible] = useState<boolean>(false);
-  const [diagnosticsBannerLoaded, setDiagnosticsBannerLoaded] = useState<boolean>(false);
+  // Diagnostics overlay removed — moved to protected /admin/diagnostics route.
+  // The chat screen no longer renders a floating diagnostics panel.
   // Owner session gate removed: chat composer is always usable without requiring
   // a separate owner verification step. The preflight state is kept ready for
   // backwards compatibility with any diagnostics that still inspect it.
@@ -949,40 +948,8 @@ export default function IVXOwnerChatRoute() {
     console.log('[IVXOwnerChatRoute] Owner session gate disabled; composer ready for all users.');
   }, [ownerId, user?.email]);
 
-  // Load persisted diagnostics-banner closed state. Production builds start
-  // hidden; dev/Expo Go start visible but honor the owner's explicit Close.
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const stored = await AsyncStorage.getItem('ivx_owner_diagnostics_banner_visible');
-        if (!cancelled) {
-          if (stored !== null) {
-            setDiagnosticsBannerVisible(stored === 'true');
-          }
-          setDiagnosticsBannerLoaded(true);
-        }
-      } catch (error) {
-        console.log('[IVXOwnerChatRoute] Diagnostics banner visibility load failed:', error instanceof Error ? error.message : 'unknown');
-        if (!cancelled) {
-          setDiagnosticsBannerLoaded(true);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const handleOpenDiagnosticsBanner = useCallback(() => {
-    setDiagnosticsBannerVisible(true);
-    void AsyncStorage.setItem('ivx_owner_diagnostics_banner_visible', 'true');
-  }, []);
-
-  const handleCloseDiagnosticsBanner = useCallback(() => {
-    setDiagnosticsBannerVisible(false);
-    void AsyncStorage.setItem('ivx_owner_diagnostics_banner_visible', 'false');
-  }, []);
+  // Diagnostics overlay removed — moved to protected /admin/diagnostics route.
+  // The button in the control room now navigates to /admin/diagnostics instead.
   // Overlay lifecycle hardening: close the live-work overlay automatically
   // when the app backgrounds, when the screen unmounts, or when navigation
   // pulls the route off. Prevents ghost overlays + stale poller activity.
@@ -5404,9 +5371,6 @@ export default function IVXOwnerChatRoute() {
               )}
             </View>
           ) : null}
-          {diagnosticsBannerLoaded && diagnosticsBannerVisible ? (
-            <IVXOwnerAIDiagnostics visible={diagnosticsBannerVisible} onClose={handleCloseDiagnosticsBanner} />
-          ) : null}
           {topStatusNote ? (
             <View
               style={ownerAIRoutingBlocked ? styles.blockedBanner : activeFallbackForCurrentMessage ? styles.degradedBanner : styles.devBanner}
@@ -5591,8 +5555,8 @@ export default function IVXOwnerChatRoute() {
                     </Pressable>
                     <Pressable
                       style={styles.graphActionButton}
-                      onPress={handleOpenDiagnosticsBanner}
-                      testID="ivx-owner-open-diagnostics-banner"
+                      onPress={() => router.push('/admin/diagnostics' as never)}
+                      testID="ivx-owner-open-diagnostics-admin"
                     >
                       <Cpu size={13} color={Colors.black} />
                       <Text style={styles.graphActionButtonText}>Diagnostics</Text>
@@ -5791,8 +5755,8 @@ export default function IVXOwnerChatRoute() {
                     </Pressable>
                     <Pressable
                       style={styles.graphActionButton}
-                      onPress={() => router.push('/ivx/diagnostics' as never)}
-                      testID="ivx-owner-open-diagnostics"
+                      onPress={() => router.push('/admin/diagnostics' as never)}
+                      testID="ivx-owner-open-diagnostics-admin"
                     >
                       <Cpu size={13} color={Colors.black} />
                       <Text style={styles.graphActionButtonText}>Diagnostics</Text>

@@ -52,11 +52,15 @@ import { Image } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Colors from '@/constants/colors';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchJVDeals, updateJVDeal, archiveJVDeal, restoreJVDeal, permanentlyDeleteJVDeal, recoverPhotosForDeal, adminRestorePhotos, resetSupabaseCheck, updateDealDisplayOrders } from '@/lib/jv-storage';
+import { fetchJVDeals, fetchJVDealsPaginated, updateJVDeal, archiveJVDeal, restoreJVDeal, permanentlyDeleteJVDeal, recoverPhotosForDeal, adminRestorePhotos, resetSupabaseCheck, updateDealDisplayOrders } from '@/lib/jv-storage';
 import { uploadDealPhotosParallel } from '@/lib/photo-upload';
 import { fetchPhotosFromStorageBucket } from '@/constants/deal-photos';
 import { prefetchImages } from '@/components/CachedImage';
 import { invalidateAllJVQueries, useJVRealtime } from '@/lib/jv-realtime';
+import { useProgressiveList } from '@/lib/use-progressive-list';
+import { EmptyState, ErrorState, ListFooter } from '@/components/ProgressiveStates';
+import { fetchDealsPage, invalidateDealsCache } from '@/lib/canonical-query';
+import { useDealsRealtime } from '@/lib/canonical-realtime';
 import { formatCurrency, parseAmountInput, formatAmountInput } from '@/lib/formatters';
 import { buildOwnershipSnapshot } from '@/lib/ownership-math';
 import { extractExplicitDealSalePrice } from '@/lib/parse-deal';
@@ -262,22 +266,24 @@ export default function AdminJVDealsScreen() {
   const isScreenFocused = useScreenFocusState(true);
 
   useJVRealtime('admin-jv-deals', true);
+  useDealsRealtime(null);
 
-  const jvQuery = useQuery<JVQueryData>({
+  const jvList = useProgressiveList<JVDeal>({
     queryKey: ['jvAgreements.list'],
-    queryFn: async () => {
-      console.log('[Admin JV] Fetching JV deals...');
-      const result = await fetchJVDeals({ limit: 100 });
-      const deals = (result.deals ?? []) as JVDeal[];
-      console.log('[Admin JV] Fetched', deals.length, 'deals, total:', result.total);
+    pageSize: 10,
+    staleTime: 60_000,
+    fetchPage: async (page: number, pageSize: number) => {
+      console.log('[Admin JV] Fetching JV deals page', page, 'size', pageSize);
+      const result = await fetchDealsPage(page, pageSize);
+      const deals = (result.items ?? []) as unknown as JVDeal[];
 
+      // Enrich photos for deals with <=1 photo (non-blocking, best-effort)
       const enrichPromises = deals.map(async (deal) => {
         const photoCount = Array.isArray(deal.photos) ? deal.photos.length : 0;
         if (photoCount <= 1 && deal.id) {
           try {
             const storagePhotos = await fetchPhotosFromStorageBucket(deal.id);
             if (storagePhotos.length > photoCount) {
-              console.log('[Admin JV] Enriched deal', deal.id, 'with', storagePhotos.length, 'Storage bucket photos (was', photoCount, ')');
               deal.photos = storagePhotos;
             }
           } catch {}
@@ -291,19 +297,27 @@ export default function AdminJVDealsScreen() {
         prefetchImages(allPhotos);
       }
 
-      for (const d of deals) {
-        console.log('[Admin JV] Deal:', d.id, '| title:', d.title || d.projectName, '| published:', d.published, '| photos:', Array.isArray(d.photos) ? d.photos.length : 0);
-      }
-      return { deals };
+      return { items: deals, hasMore: result.hasMore };
+      // Note: canonical-query handles dedup, retry, and SWR cache internally
     },
-    retry: 2,
-    retryDelay: 800,
+  });
+
+  // Legacy query kept for stats — fetches total count without loading all deals
+  const statsQuery = useQuery<{ total: number; published: number; active: number; totalInvestment: number }>({
+    queryKey: ['jvAgreements.stats'],
+    queryFn: async () => {
+      const result = await fetchJVDeals({ limit: 100 });
+      const all = (result.deals ?? []) as JVDeal[];
+      return {
+        total: all.length,
+        published: all.filter(d => d.published).length,
+        active: all.filter(d => d.status === 'active').length,
+        totalInvestment: all.reduce((sum, d) => sum + (d.totalInvestment || 0), 0),
+      };
+    },
     staleTime: 60_000,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
-    refetchIntervalInBackground: false,
-    gcTime: 1000 * 60 * 5,
-    refetchInterval: isScreenFocused ? ADMIN_JV_DEALS_REFRESH_MS : false,
   });
 
   const publishMutation = useMutation({
@@ -538,7 +552,7 @@ export default function AdminJVDealsScreen() {
   });
 
   const deals = useMemo((): JVDeal[] => {
-    const raw: JVDeal[] = jvQuery.data?.deals ?? [];
+    const raw: JVDeal[] = jvList.data ?? [];
     let filtered = raw;
     if (filterStatus !== 'all') {
       if (filterStatus === 'published') {
@@ -566,17 +580,19 @@ export default function AdminJVDealsScreen() {
       });
     }
     return filtered;
-  }, [jvQuery.data, filterStatus, searchQuery, reorderMode, localOrder]);
+  }, [jvList.data, filterStatus, searchQuery, reorderMode, localOrder]);
 
   const stats = useMemo(() => {
-    const all: JVDeal[] = jvQuery.data?.deals ?? [];
+    const stats = statsQuery.data;
+    if (stats) return stats;
+    const all: JVDeal[] = jvList.data ?? [];
     return {
       total: all.length,
       published: all.filter(d => d.published).length,
       active: all.filter(d => d.status === 'active').length,
       totalInvestment: all.reduce((sum, d) => sum + (d.totalInvestment || 0), 0),
     };
-  }, [jvQuery.data]);
+  }, [statsQuery.data, jvList.data]);
 
   const reorderMutation = useMutation({
     mutationFn: async (orders: Array<{ id: string; displayOrder: number }>) => {
@@ -610,8 +626,8 @@ export default function AdminJVDealsScreen() {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    void jvQuery.refetch().finally(() => setRefreshing(false));
-  }, [jvQuery]);
+    void Promise.resolve(jvList.refresh()).finally(() => setRefreshing(false));
+  }, [jvList]);
 
   const openEditModal = useCallback((deal: JVDeal) => {
     setSelectedDeal(deal);
@@ -841,7 +857,7 @@ export default function AdminJVDealsScreen() {
       }
 
       if (targetDealId && !editModalVisible) {
-        const deal = (jvQuery.data?.deals ?? []).find(d => d.id === targetDealId);
+        const deal = (jvList.data ?? []).find(d => d.id === targetDealId);
         const existingPhotos = Array.isArray(deal?.photos) ? deal.photos : [];
         const allPhotos = [...existingPhotos, ...uploadedUrls];
         console.log('[Admin JV] Saving', allPhotos.length, 'photos directly to deal:', targetDealId);
@@ -860,7 +876,7 @@ export default function AdminJVDealsScreen() {
       console.error('[Admin JV] Gallery pick error:', err);
       Alert.alert('Error', 'Failed to pick photos: ' + ((err as Error)?.message || 'Unknown error'));
     }
-  }, [selectedDeal, editModalVisible, jvQuery.data, photoRestoreMutation, uploadProgressAnim]);
+  }, [selectedDeal, editModalVisible, jvList.data, photoRestoreMutation, uploadProgressAnim]);
 
   const removeEditPhoto = useCallback((index: number) => {
     setEditPhotos(prev => prev.filter((_, i) => i !== index));
@@ -1170,16 +1186,16 @@ export default function AdminJVDealsScreen() {
             ))}
           </ScrollView>
 
-          {jvQuery.isLoading ? (
+          {jvList.isLoading ? (
             <View style={styles.loadingWrap}>
               <ActivityIndicator size="large" color={Colors.primary} />
               <Text style={styles.loadingText}>Loading deals...</Text>
             </View>
-          ) : jvQuery.isError ? (
+          ) : jvList.isError ? (
             <View style={styles.errorWrap}>
               <AlertTriangle size={40} color="#FF4D4D" />
               <Text style={styles.errorTitle}>Failed to load deals</Text>
-              <Text style={styles.errorSubtitle}>{jvQuery.error?.message || 'Unknown error occurred'}</Text>
+              <Text style={styles.errorSubtitle}>{jvList.error?.message || 'Unknown error occurred'}</Text>
               <TouchableOpacity style={styles.retryBtn} onPress={onRefresh} testID="jv-retry">
                 <Text style={styles.retryBtnText}>Tap to Retry</Text>
               </TouchableOpacity>
@@ -1420,6 +1436,21 @@ export default function AdminJVDealsScreen() {
               );
             })
           )}
+
+          {jvList.hasMore || jvList.isFetchingMore ? (
+            <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+              {jvList.isFetchingMore ? (
+                <>
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                  <Text style={{ color: Colors.textSecondary, marginTop: 8, fontSize: 13 }}>Loading more deals…</Text>
+                </>
+              ) : (
+                <TouchableOpacity onPress={jvList.loadMore} testID="jv-load-more">
+                  <Text style={{ color: Colors.primary, fontSize: 14, fontWeight: '600' }}>Load more deals</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : null}
 
           <View style={styles.bottomSpacer} />
         </ScrollView>

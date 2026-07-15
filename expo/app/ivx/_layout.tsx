@@ -1,6 +1,11 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Stack } from 'expo-router';
+import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
 import Colors from '@/constants/colors';
+import { useAuth } from '@/lib/auth-context';
+import { isAdminRole } from '@/lib/auth-helpers';
+import { isOpenAccessModeEnabled } from '@/lib/open-access';
 
 // IVX Crash Shield: route-level error boundary for every ivx screen
 // (chat / cto-dashboard / diagnostics / incidents / deploy / etc.).
@@ -41,6 +46,42 @@ const IVX_CAMPAIGN_OPTIONS = { title: 'Campaign Report' } as const;
 const IVX_AUTONOMOUS_OPS_OPTIONS = { title: 'Autonomous Operations' } as const;
 const IVX_AGENT_COMMAND_CENTER_OPTIONS = { title: 'AI Engineering Command Center' } as const;
 export default function IVXOwnerLayout() {
+  const router = useRouter();
+  const { isAuthenticated, isLoading, userRole } = useAuth();
+  const redirectAttemptedRef = useRef(false);
+
+  // Auth guard: redirect to /login when unauthenticated.
+  // Prevents non-owner/non-admin users from accessing IVX owner screens.
+  useEffect(() => {
+    if (isLoading || isOpenAccessModeEnabled()) return;
+    if (!isAuthenticated && !redirectAttemptedRef.current) {
+      redirectAttemptedRef.current = true;
+      console.log('[IVXLayout] Unauthenticated — redirecting to /login');
+      router.replace('/login');
+    } else if (isAuthenticated && redirectAttemptedRef.current) {
+      redirectAttemptedRef.current = false;
+    }
+  }, [isAuthenticated, isLoading, router]);
+
+  // Show loading while auth state is being resolved
+  if (isLoading) {
+    return (
+      <View style={ivxStyles.loading}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={ivxStyles.loadingText}>Loading IVX…</Text>
+      </View>
+    );
+  }
+
+  // Block non-admin users from accessing IVX owner screens
+  if (!isAuthenticated || !isAdminRole(userRole)) {
+    return (
+      <View style={ivxStyles.loading}>
+        <Text style={ivxStyles.deniedText}>Access denied. Owner/Admin role required.</Text>
+      </View>
+    );
+  }
+
   return (
     <Stack screenOptions={IVX_STACK_SCREEN_OPTIONS}>
       <Stack.Screen name="inbox" options={IVX_INBOX_OPTIONS} />
@@ -72,3 +113,25 @@ export default function IVXOwnerLayout() {
     </Stack>
   );
 }
+
+const ivxStyles = StyleSheet.create({
+  loading: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  loadingText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '600' as const,
+    marginTop: 12,
+  },
+  deniedText: {
+    color: Colors.error,
+    fontSize: 14,
+    fontWeight: '600' as const,
+    textAlign: 'center' as const,
+  },
+});

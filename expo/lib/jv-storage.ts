@@ -519,6 +519,30 @@ function sanitizePayloadForSupabase(payload: Record<string, unknown>): Record<st
   return sanitized;
 }
 
+/**
+ * Paginated fetch for JV deals using Supabase range-based cursor pagination.
+ * Returns one page of deals plus a hasMore flag.
+ */
+export async function fetchJVDealsPaginated(page: number, pageSize: number): Promise<{ deals: any[]; hasMore: boolean }> {
+  const offset = (page - 1) * pageSize;
+  try {
+    let query = supabase.from('jv_deals').select('*');
+    query = query.order('display_order', { ascending: true, nullsFirst: false });
+    query = query.order('created_at', { ascending: false });
+    query = query.range(offset, offset + pageSize - 1);
+    const { data, error } = await query;
+    if (error) {
+      console.log('[JV-Storage] Paginated fetch error:', error.message);
+      throw error;
+    }
+    const deals = (data ?? []).map(mapSupabaseRowToCamelCase);
+    return { deals, hasMore: deals.length === pageSize };
+  } catch (err) {
+    console.log('[JV-Storage] Paginated fetch exception:', (err as Error)?.message);
+    throw err;
+  }
+}
+
 export async function fetchJVDeals(filters?: { published?: boolean; limit?: number; forceReset?: boolean }): Promise<{ deals: any[]; total: number }> {
   const MASTER_TIMEOUT_MS = 12000;
   const masterTimeout = new Promise<{ deals: any[]; total: number }>((resolve) =>
