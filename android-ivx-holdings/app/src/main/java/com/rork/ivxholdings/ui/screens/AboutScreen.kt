@@ -19,11 +19,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -33,6 +33,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,10 +50,19 @@ import com.rork.ivxholdings.ui.theme.IVXOnSurface
 import com.rork.ivxholdings.ui.theme.IVXOnSurfaceMuted
 import com.rork.ivxholdings.ui.theme.IVXRed
 import com.rork.ivxholdings.ui.theme.IVXSurfaceVariant
+import com.rork.ivxholdings.ui.viewmodel.HealthUiState
+import com.rork.ivxholdings.ui.viewmodel.HealthViewModel
+import com.rork.ivxholdings.util.AppConfig
+import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutScreen(navController: NavController) {
+    val viewModel: HealthViewModel = koinViewModel()
+    val uiState by viewModel.uiState.collectAsState()
+
+    LaunchedEffect(Unit) { viewModel.load() }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -60,34 +72,80 @@ fun AboutScreen(navController: NavController) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = IVXOnSurface)
                     }
                 },
+                actions = {
+                    IconButton(onClick = { viewModel.load() }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = IVXGold)
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = IVXDark)
             )
         }
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            item { HealthHeader() }
-            item { HealthItem("Production commit", "0b37191f", true) }
-            item { HealthItem("Render /health", "healthy", true) }
-            item { HealthItem("Routes registered", "77", true) }
-            item { HealthItem("Vercel Exit API", "13 endpoints live", true) }
-            item { HealthItem("GitHub sync", "main = 0b37191f", true) }
-            item { HealthItem("Vercel traffic", "100%", false) }
-            item { HealthItem("IVX traffic", "0%", false) }
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    "IVX Holdings Android App v1.0.0 · Package com.rork.ivxholdings",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = IVXOnSurfaceMuted
+        when (val state = uiState) {
+            is HealthUiState.Loading -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = IVXGold)
+                }
+            }
+            is HealthUiState.Error -> {
+                ErrorContent(modifier = Modifier.padding(padding), message = state.message)
+            }
+            is HealthUiState.Success -> {
+                HealthContent(
+                    modifier = Modifier.padding(padding),
+                    health = state.health,
+                    version = state.version
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun HealthContent(
+    modifier: Modifier,
+    health: com.rork.ivxholdings.data.model.HealthResponse,
+    version: String
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item { HealthHeader() }
+        item { HealthItem("Production commit", version, true) }
+        item { HealthItem("Render /health", health.status, true) }
+        item { HealthItem("Routes registered", health.routes.size.toString(), true) }
+        item { HealthItem("Vercel Exit API", "13 endpoints live", true) }
+        item { HealthItem("GitHub sync", "main = $version", true) }
+        item { HealthItem("Vercel traffic", "100%", false) }
+        item { HealthItem("IVX traffic", "0%", false) }
+        item {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "IVX Holdings Android App v${AppConfig.APP_VERSION} · Package com.rork.ivxholdings",
+                color = IVXOnSurfaceMuted,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+}
+
+@Composable
+private fun ErrorContent(modifier: Modifier, message: String) {
+    Column(
+        modifier = modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(Icons.Default.Warning, contentDescription = null, tint = IVXRed, modifier = Modifier.size(48.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(message, color = IVXRed)
     }
 }
 

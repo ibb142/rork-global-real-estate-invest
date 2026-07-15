@@ -2,6 +2,7 @@ package com.rork.ivxholdings.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,12 +33,17 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.rork.ivxholdings.data.model.VercelDependency
+import com.rork.ivxholdings.data.model.VercelExitDashboard
 import com.rork.ivxholdings.ui.theme.IVXBlue
 import com.rork.ivxholdings.ui.theme.IVXDark
 import com.rork.ivxholdings.ui.theme.IVXGold
@@ -45,41 +52,18 @@ import com.rork.ivxholdings.ui.theme.IVXOnSurface
 import com.rork.ivxholdings.ui.theme.IVXOnSurfaceMuted
 import com.rork.ivxholdings.ui.theme.IVXRed
 import com.rork.ivxholdings.ui.theme.IVXSurfaceVariant
-
-private data class Dependency(
-    val id: String,
-    val name: String,
-    val type: String,
-    val risk: String,
-    val replacement: String
-)
-
-private val dependencies = listOf(
-    Dependency("VD-001", "ai-gateway.vercel.sh runtime", "AI Gateway", "Critical", "IVX AI Gateway"),
-    Dependency("VD-002", "Vercel AI Gateway stream endpoint", "AI Gateway", "Critical", "IVX AI Gateway /stream"),
-    Dependency("VD-003", "OpenAI SDK via Vercel", "SDK", "High", "Direct OpenAI SDK"),
-    Dependency("VD-004", "NEXT_PUBLIC_ env vars", "Environment", "Medium", "Native Config.kt"),
-    Dependency("VD-005", "Vercel deployment docs", "Documentation", "Low", "Render docs"),
-    Dependency("VD-006", "Vercel KV secret", "Secret", "High", "Redis Cloud"),
-    Dependency("VD-007", "Vercel AI SDK import", "SDK", "Critical", "Custom AI runtime"),
-    Dependency("VD-008", "Vercel API route handler", "API Route", "Medium", "Hono backend")
-)
-
-private val agents = listOf(
-    "Atlas (1) - Migration Architect",
-    "Vega (2) - AI Gateway",
-    "Orion (3) - Backend API",
-    "Nova (4) - Mobile/Web",
-    "Cipher (5) - Database/Supabase",
-    "Forge (6) - DevOps",
-    "Sentinel (7) - Security",
-    "Pulse (8) - QA",
-    "Auditor (9) - Code Review/Cutover"
-)
+import com.rork.ivxholdings.ui.viewmodel.VercelExitUiState
+import com.rork.ivxholdings.ui.viewmodel.VercelExitViewModel
+import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VercelExitScreen(navController: NavController) {
+    val viewModel: VercelExitViewModel = koinViewModel()
+    val uiState by viewModel.uiState.collectAsState()
+
+    LaunchedEffect(Unit) { viewModel.load() }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -93,43 +77,88 @@ fun VercelExitScreen(navController: NavController) {
             )
         }
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item { SummaryCard() }
-            item { AgentsCard() }
-            item { CostCard() }
-            item {
-                Text(
-                    "Dependency Inventory (${dependencies.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(top = 8.dp)
+        when (val state = uiState) {
+            is VercelExitUiState.Loading -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = IVXGold)
+                }
+            }
+            is VercelExitUiState.Error -> {
+                ErrorContent(
+                    modifier = Modifier.padding(padding),
+                    message = state.message
                 )
             }
-            items(dependencies) { dep ->
-                DependencyRow(dep)
+            is VercelExitUiState.Success -> {
+                VercelExitContent(
+                    modifier = Modifier.padding(padding),
+                    dashboard = state.dashboard,
+                    dependencies = state.dependencies
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun VercelExitContent(
+    modifier: Modifier,
+    dashboard: VercelExitDashboard,
+    dependencies: List<VercelDependency>
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item { SummaryCard(dashboard) }
+        item { CostCard(dashboard) }
+        item {
+            Text(
+                "Dependency Inventory (${dependencies.size})",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+        items(dependencies) { dep ->
+            DependencyRow(dep)
+        }
+        if (dependencies.isEmpty()) {
             item {
-                Spacer(modifier = Modifier.height(24.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(IVXRed.copy(alpha = 0.15f))
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = IVXSurfaceVariant)
                 ) {
-                    Icon(Icons.Default.Lock, contentDescription = null, tint = IVXRed, modifier = Modifier.size(24.dp))
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text("Owner-only controls", fontWeight = FontWeight.SemiBold)
-                        Text("Dangerous operations require server-side MFA confirmation.", style = MaterialTheme.typography.bodySmall, color = IVXOnSurfaceMuted)
-                    }
+                    Text(
+                        "No dependencies loaded. Backend may require authentication or be unavailable.",
+                        modifier = Modifier.padding(16.dp),
+                        color = IVXOnSurfaceMuted
+                    )
+                }
+            }
+        }
+        item {
+            Spacer(modifier = Modifier.height(24.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(IVXRed.copy(alpha = 0.15f))
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Lock, contentDescription = null, tint = IVXRed, modifier = Modifier.size(24.dp))
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text("Owner-only controls", fontWeight = FontWeight.SemiBold)
+                    Text("Dangerous operations require server-side MFA confirmation.", style = MaterialTheme.typography.bodySmall, color = IVXOnSurfaceMuted)
                 }
             }
         }
@@ -137,7 +166,22 @@ fun VercelExitScreen(navController: NavController) {
 }
 
 @Composable
-private fun SummaryCard() {
+private fun ErrorContent(modifier: Modifier, message: String) {
+    Column(
+        modifier = modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(Icons.Default.Warning, contentDescription = null, tint = IVXRed, modifier = Modifier.size(48.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(message, color = IVXRed, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Spacer(modifier = Modifier.height(8.dp))
+        Text("Showing local fallback data.", color = IVXOnSurfaceMuted, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun SummaryCard(dashboard: VercelExitDashboard) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -147,14 +191,14 @@ private fun SummaryCard() {
             Text("Migration Status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Metric("Deps", "38")
-                Metric("Removed", "0")
-                Metric("Complete", "20%")
-                Metric("Phase", "2")
+                Metric("Deps", dashboard.dependenciesDiscovered.toString())
+                Metric("Removed", dashboard.dependenciesRemoved.toString())
+                Metric("Complete", "${(dashboard.overallCompletion * 100).toInt()}%")
+                Metric("Phase", dashboard.currentPhase.filter { it.isDigit() }.take(1).ifEmpty { "2" })
             }
             Spacer(modifier = Modifier.height(12.dp))
-            Text("Traffic: 100% Vercel → 0% IVX", color = IVXRed, fontWeight = FontWeight.SemiBold)
-            Text("Target: Vercel-zero infrastructure", color = IVXOnSurfaceMuted, style = MaterialTheme.typography.bodySmall)
+            Text("Traffic: ${dashboard.vercelTraffic} Vercel → ${dashboard.ivxTraffic} IVX", color = IVXRed, fontWeight = FontWeight.SemiBold)
+            Text("Status: ${dashboard.migrationStatus}", color = IVXOnSurfaceMuted, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -168,24 +212,7 @@ private fun Metric(label: String, value: String) {
 }
 
 @Composable
-private fun AgentsCard() {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = IVXSurfaceVariant)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text("9 AI Agents", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(8.dp))
-            agents.forEach { agent ->
-                Text(agent, style = MaterialTheme.typography.bodySmall, color = IVXOnSurfaceMuted)
-            }
-        }
-    }
-}
-
-@Composable
-private fun CostCard() {
+private fun CostCard(dashboard: VercelExitDashboard) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -196,26 +223,26 @@ private fun CostCard() {
             Spacer(modifier = Modifier.height(8.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Before:", color = IVXOnSurfaceMuted)
-                Text("$349/mo", color = IVXRed, fontWeight = FontWeight.Bold)
+                Text(dashboard.costBefore, color = IVXRed, fontWeight = FontWeight.Bold)
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("After:", color = IVXOnSurfaceMuted)
-                Text("$288/mo", color = IVXGreen, fontWeight = FontWeight.Bold)
+                Text(dashboard.costAfter, color = IVXGreen, fontWeight = FontWeight.Bold)
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Savings:", color = IVXOnSurfaceMuted)
-                Text("$61/mo", color = IVXGold, fontWeight = FontWeight.Bold)
+                Text(dashboard.monthlySavings, color = IVXGold, fontWeight = FontWeight.Bold)
             }
         }
     }
 }
 
 @Composable
-private fun DependencyRow(dep: Dependency) {
-    val riskColor = when (dep.risk) {
-        "Critical" -> IVXRed
-        "High" -> IVXGold
-        "Medium" -> IVXBlue
+private fun DependencyRow(dep: VercelDependency) {
+    val riskColor = when (dep.risk.lowercase()) {
+        "critical" -> IVXRed
+        "high" -> IVXGold
+        "medium" -> IVXBlue
         else -> IVXGreen
     }
     Card(
@@ -230,16 +257,17 @@ private fun DependencyRow(dep: Dependency) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = if (dep.risk == "Critical") Icons.Default.Warning else Icons.Default.CheckCircle,
+                imageVector = if (dep.risk.lowercase() == "critical") Icons.Default.Warning else Icons.Default.CheckCircle,
                 contentDescription = null,
                 tint = riskColor,
                 modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text("${dep.id} · ${dep.name}", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
-                Text("Type: ${dep.type} · Risk: ${dep.risk}", style = MaterialTheme.typography.bodySmall, color = IVXOnSurfaceMuted)
-                Text("Replacement: ${dep.replacement}", style = MaterialTheme.typography.bodySmall, color = IVXGreen)
+                Text("${dep.dependencyId} · ${dep.vercelService}", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                Text("Type: ${dep.dependencyType} · Risk: ${dep.risk}", style = MaterialTheme.typography.bodySmall, color = IVXOnSurfaceMuted)
+                Text("Replacement: ${dep.replacementService}", style = MaterialTheme.typography.bodySmall, color = IVXGreen)
+                Text("Status: ${dep.migrationStatus}", style = MaterialTheme.typography.bodySmall, color = IVXGold)
             }
         }
     }

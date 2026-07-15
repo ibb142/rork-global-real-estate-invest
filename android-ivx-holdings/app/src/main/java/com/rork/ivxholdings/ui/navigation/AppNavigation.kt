@@ -18,7 +18,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -28,6 +27,7 @@ import com.rork.ivxholdings.ui.screens.AboutScreen
 import com.rork.ivxholdings.ui.screens.AgentsScreen
 import com.rork.ivxholdings.ui.screens.ChatScreen
 import com.rork.ivxholdings.ui.screens.HomeScreen
+import com.rork.ivxholdings.ui.screens.LoginScreen
 import com.rork.ivxholdings.ui.screens.VercelExitScreen
 import com.rork.ivxholdings.ui.theme.IVXDark
 import com.rork.ivxholdings.ui.theme.IVXGold
@@ -54,6 +54,28 @@ private val bottomNavItems = listOf(
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
+
+    NavHost(
+        navController = navController,
+        startDestination = "login"
+    ) {
+        composable("login") {
+            LoginScreen(onLoginSuccess = {
+                navController.navigate(Screen.Home.route) {
+                    popUpTo("login") { inclusive = true }
+                }
+            })
+        }
+        composable(Screen.Home.route) { MainScaffold(navController) }
+        composable(Screen.VercelExit.route) { VercelExitScreen(navController) }
+        composable(Screen.Agents.route) { AgentsScreen(navController) }
+        composable(Screen.Chat.route) { ChatScreen(navController) }
+        composable(Screen.About.route) { AboutScreen(navController) }
+    }
+}
+
+@Composable
+private fun MainScaffold(navController: NavHostController) {
     val currentBackStack by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStack?.destination?.route
 
@@ -69,19 +91,12 @@ fun AppNavigation() {
                         selected = selected,
                         onClick = {
                             navController.navigate(screen.route) {
-                                popUpTo(navController.graph.startDestinationRoute ?: Screen.Home.route) {
-                                    saveState = true
-                                }
+                                popUpTo(Screen.Home.route) { saveState = true }
                                 launchSingleTop = true
                                 restoreState = true
                             }
                         },
-                        icon = {
-                            Icon(
-                                imageVector = screen.icon,
-                                contentDescription = screen.label
-                            )
-                        },
+                        icon = { Icon(imageVector = screen.icon, contentDescription = screen.label) },
                         label = { Text(screen.label) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = IVXGold,
@@ -101,10 +116,6 @@ fun AppNavigation() {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable(Screen.Home.route) { HomeScreen(navController = navController) }
-            composable(Screen.VercelExit.route) { VercelExitScreen(navController = navController) }
-            composable(Screen.Agents.route) { AgentsScreen(navController = navController) }
-            composable(Screen.Chat.route) { ChatScreen(navController = navController) }
-            composable(Screen.About.route) { AboutScreen(navController = navController) }
         }
     }
 }

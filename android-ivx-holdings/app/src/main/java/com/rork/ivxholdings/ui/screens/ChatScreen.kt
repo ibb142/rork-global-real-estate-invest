@@ -17,11 +17,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -33,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,32 +47,24 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.rork.ivxholdings.ui.theme.IVXBlue
 import com.rork.ivxholdings.ui.theme.IVXDark
-import androidx.compose.ui.graphics.Color
 import com.rork.ivxholdings.ui.theme.IVXGold
 import com.rork.ivxholdings.ui.theme.IVXGreen
 import com.rork.ivxholdings.ui.theme.IVXOnSurface
 import com.rork.ivxholdings.ui.theme.IVXOnSurfaceMuted
 import com.rork.ivxholdings.ui.theme.IVXRed
 import com.rork.ivxholdings.ui.theme.IVXSurfaceVariant
-
-private data class ChatMessage(
-    val role: String,
-    val text: String
-)
+import com.rork.ivxholdings.ui.viewmodel.ChatMessage
+import com.rork.ivxholdings.ui.viewmodel.ChatUiState
+import com.rork.ivxholdings.ui.viewmodel.ChatViewModel
+import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(navController: NavController) {
+    val viewModel: ChatViewModel = koinViewModel()
+    val messages by viewModel.messages.collectAsState()
+    val uiState by viewModel.uiState.collectAsState()
     var input by remember { mutableStateOf("") }
-    val messages = remember {
-        mutableStateOf(
-            listOf(
-                ChatMessage("ai", "Welcome to IVX Owner AI. I am the orchestrator. State your request."),
-                ChatMessage("owner", "Check Vercel Exit status."),
-                ChatMessage("ai", "Migration is at 20%. Phase 2: Replacement Architecture. 38 dependencies remain. 9 AI agents active. 108 tests passing.")
-            )
-        )
-    }
 
     Scaffold(
         topBar = {
@@ -95,8 +89,22 @@ fun ChatScreen(navController: NavController) {
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(messages.value) { msg ->
+                items(messages) { msg ->
                     MessageBubble(msg)
+                }
+                if (uiState is ChatUiState.Loading) {
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Start
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = IVXGold,
+                                strokeWidth = 2.dp
+                            )
+                        }
+                    }
                 }
             }
 
@@ -122,16 +130,26 @@ fun ChatScreen(navController: NavController) {
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(
                     onClick = {
-                        if (input.isNotBlank()) {
-                            messages.value = messages.value + ChatMessage("owner", input)
-                            input = ""
-                            messages.value = messages.value + ChatMessage("ai", "Request received. Owner-only action queued with idempotency key and staged timeout.")
-                        }
+                        viewModel.send(input)
+                        input = ""
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = IVXGold, contentColor = IVXDark)
+                    enabled = input.isNotBlank() && uiState !is ChatUiState.Loading,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = IVXGold,
+                        contentColor = IVXDark,
+                        disabledContainerColor = IVXGold.copy(alpha = 0.4f)
+                    )
                 ) {
-                    Icon(Icons.Default.Send, contentDescription = "Send")
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
                 }
+            }
+            if (uiState is ChatUiState.Error) {
+                Text(
+                    (uiState as ChatUiState.Error).message,
+                    color = IVXRed,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
             }
         }
     }

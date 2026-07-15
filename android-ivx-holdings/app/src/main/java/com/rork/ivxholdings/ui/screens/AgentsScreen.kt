@@ -21,8 +21,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,12 +34,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.rork.ivxholdings.data.model.AgentState
 import com.rork.ivxholdings.ui.theme.IVXBlue
 import com.rork.ivxholdings.ui.theme.IVXDark
 import com.rork.ivxholdings.ui.theme.IVXGold
@@ -46,31 +52,18 @@ import com.rork.ivxholdings.ui.theme.IVXOnSurface
 import com.rork.ivxholdings.ui.theme.IVXOnSurfaceMuted
 import com.rork.ivxholdings.ui.theme.IVXRed
 import com.rork.ivxholdings.ui.theme.IVXSurfaceVariant
-
-private data class Agent(
-    val number: Int,
-    val name: String,
-    val role: String,
-    val status: String,
-    val progress: String,
-    val deps: Int
-)
-
-private val agents = listOf(
-    Agent(1, "Atlas", "Migration Architect", "Active", "Architecture complete", 0),
-    Agent(2, "Vega", "AI Gateway Developer", "Active", "Replacing Vercel AI SDK", 8),
-    Agent(3, "Orion", "Backend API Developer", "Active", "Porting Hono routes", 5),
-    Agent(4, "Nova", "Mobile and Web Developer", "Active", "Mobile UI verified", 4),
-    Agent(5, "Cipher", "Database and Supabase Developer", "Standby", "Audit pending", 0),
-    Agent(6, "Forge", "DevOps and Infrastructure Developer", "Active", "Render pipeline ready", 4),
-    Agent(7, "Sentinel", "Security and Identity Developer", "Active", "Token migration planned", 6),
-    Agent(8, "Pulse", "QA and Performance Developer", "Active", "108 tests passing", 1),
-    Agent(9, "Auditor", "Code Review and Cutover Developer", "Active", "Evidence ledger open", 6)
-)
+import com.rork.ivxholdings.ui.viewmodel.AgentsUiState
+import com.rork.ivxholdings.ui.viewmodel.AgentsViewModel
+import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AgentsScreen(navController: NavController) {
+    val viewModel: AgentsViewModel = koinViewModel()
+    val uiState by viewModel.uiState.collectAsState()
+
+    LaunchedEffect(Unit) { viewModel.load() }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -84,25 +77,50 @@ fun AgentsScreen(navController: NavController) {
             )
         }
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(agents) { agent ->
-                AgentCard(agent)
+        when (val state = uiState) {
+            is AgentsUiState.Loading -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = IVXGold)
+                }
+            }
+            is AgentsUiState.Error -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(state.message, color = IVXRed)
+                }
+            }
+            is AgentsUiState.Success -> {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(state.agents) { agent ->
+                        AgentCard(agent)
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun AgentCard(agent: Agent) {
+private fun AgentCard(agent: AgentState) {
     val statusColor = when (agent.status) {
-        "Active" -> IVXGreen
-        "Standby" -> IVXGold
+        "PRODUCTION_VERIFIED", "DEPLOYED", "TEST_PASSED" -> IVXGreen
+        "BLOCKED", "TEST_FAILED", "DEPLOYMENT_FAILED" -> IVXRed
+        "IDLE", "WAITING_FOR_REVIEW" -> IVXGold
         else -> IVXBlue
     }
     Card(
@@ -134,7 +152,7 @@ private fun AgentCard(agent: Agent) {
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "AI ${agent.number} · ${agent.name}",
+                        "AI ${agent.agentNumber} · ${agent.agentName}",
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.titleMedium
                     )
@@ -151,14 +169,20 @@ private fun AgentCard(agent: Agent) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(agent.role, color = IVXOnSurfaceMuted, style = MaterialTheme.typography.bodySmall)
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(agent.progress, color = IVXGold, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
-                if (agent.deps > 0) {
+                Text(agent.currentTask, color = IVXGold, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("Progress: ${(agent.progress * 100).toInt()}% · Tests: ${agent.testsExecuted}", color = IVXOnSurfaceMuted, style = MaterialTheme.typography.bodySmall)
+                if (!agent.currentBlocker.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("Dependencies assigned: ${agent.deps}", color = IVXOnSurfaceMuted, style = MaterialTheme.typography.bodySmall)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Warning, contentDescription = null, tint = IVXRed, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Blocker: ${agent.currentBlocker}", color = IVXRed, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
             Icon(
-                imageVector = Icons.Default.CheckCircle,
+                imageVector = if (agent.status == "BLOCKED" || agent.status == "TEST_FAILED") Icons.Default.Warning else Icons.Default.CheckCircle,
                 contentDescription = null,
                 tint = statusColor,
                 modifier = Modifier.size(24.dp)
