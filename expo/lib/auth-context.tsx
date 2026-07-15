@@ -1479,70 +1479,17 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
     const initAuth = async () => {
       try {
-        const session = await withTimeout(
-          async () => {
-            const result = await supabase.auth.getSession();
-            return result.data.session;
-          },
-          AUTH_BOOTSTRAP_TIMEOUT_MS,
-          'getSession',
-          null,
-        );
-
-        if (session) {
-          // Persisted session restore: validate and handle the session regardless
-          // of whether it belongs to an owner or a member. Server-side role
-          // resolution inside handleSession will verify owner authorization.
-          if (!cancelled) {
-            const challengeRequired = await requireTwoFactorIfNeeded(session, 'startup restore');
-            if (!challengeRequired) {
-              const handledSession = await handleSession(session);
-              if (!handledSession.accepted) {
-                console.log('[Auth] Startup restore blocked:', handledSession.blockedReason ?? 'admin access lock');
-              }
-            }
-          }
-          return;
+        // Cold launch: sign out any persisted Supabase session so the owner
+        // (and all users) must enter credentials manually every time.
+        // This prevents automatic owner sign-in from AsyncStorage.
+        await supabase.auth.signOut({ scope: 'local' }).catch((e: unknown) => {
+          console.log('[Auth] Cold-launch signOut note:', (e as Error)?.message ?? 'unknown');
+        });
+        if (!cancelled) {
+          manualOwnerLoginRef.current = false;
         }
-
-        const stored = await loadStoredAuth();
-        if (stored.userId) {
-          setAuthCredentials(null, stored.userId, stored.userRole);
-          const refreshedSession = await withTimeout(
-            async () => {
-              const refreshResult = await supabase.auth.refreshSession();
-              return refreshResult.data.session;
-            },
-            AUTH_REFRESH_TIMEOUT_MS,
-            'refreshSession',
-            null,
-          );
-
-          if (refreshedSession) {
-            if (!cancelled) {
-              const challengeRequired = await requireTwoFactorIfNeeded(refreshedSession, 'session refresh');
-              if (!challengeRequired) {
-                const handledSession = await handleSession(refreshedSession);
-                if (handledSession.accepted) {
-                  console.log('[Auth] Session restored via refresh for:', stored.userId);
-                } else {
-                  console.log('[Auth] Session refresh blocked:', handledSession.blockedReason ?? 'admin access lock');
-                }
-              }
-            }
-            return;
-          }
-
-          console.log('[Auth] Stored userId found but session refresh failed or timed out — clearing');
-          await clearStoredAuth();
-        }
-
-        // Trusted-device auto-restore is intentionally disabled. The owner must
-        // authenticate through Supabase on the current device; once authenticated,
-        // Supabase's own session persistence handles restart and background resume.
       } catch (e) {
         console.log('[Auth] Init error:', (e as Error)?.message);
-        console.log('[Auth] Trusted owner auto-restore skipped because startup verification did not complete safely');
       } finally {
         if (!cancelled) {
           setIsLoading(false);
@@ -1568,9 +1515,14 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         }
         console.log('[Auth] State changed:', _event);
         if (session) {
-          // Honor auth state changes from Supabase (including automatic token
-          // refresh). Server-side role resolution in handleSession verifies
-          // whether the restored user is the IVX owner.
+          // Only accept sessions from manual login — not from automatic restore.
+          // manualOwnerLoginRef is set to true inside login() /
+          // loginOwnerPasswordless() / verify2FA() before the Supabase sign-in
+          // call. Without it, persisted sessions from cold launch are ignored.
+          if (!manualOwnerLoginRef.current) {
+            console.log('[Auth] Ignoring auth state session — no manual login for this app session');
+            return;
+          }
           const challengeRequired = await requireTwoFactorIfNeeded(session, `auth event ${String(_event)}`);
           if (!challengeRequired) {
             const handledSession = await handleSession(session);
@@ -1806,9 +1758,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
             const retryResult = await signInWithEmailPassword(freshClient, email, password);
             if (retryResult.ok && retryResult.session) {
               console.log('[Auth] Owner sign-in succeeded after repair:', normalizedEmail);
-              if (isOwnerAdminEmail(retryResult.session.user?.email)) {
-                manualOwnerLoginRef.current = true;
-              }
+              manualOwnerLoginRef.current = true;
               const challengeRequired = await requireTwoFactorIfNeeded(retryResult.session, 'password sign-in after repair');
               if (challengeRequired) {
                 return {
@@ -1872,10 +1822,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       const { session: dataSession } = signInResult;
       const resolvedSession = dataSession ?? (await supabase.auth.getSession()).data.session;
       if (resolvedSession) {
-        // Mark manual login so onAuthStateChange allows this owner session.
-        if (isOwnerAdminEmail(resolvedSession.user?.email)) {
-          manualOwnerLoginRef.current = true;
-        }
+        // Mark manual login so onAuthStateChange accepts this session.
+        manualOwnerLoginRef.current = true;
         console.log('[Auth] Direct password sign-in produced a real session for:', credentials.email, 'user:', resolvedSession.user.id);
         const challengeRequired = await requireTwoFactorIfNeeded(resolvedSession, 'password sign-in');
         if (challengeRequired) {
@@ -1980,10 +1928,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       if (!verifiedSession) {
         throw new Error('Two-factor verification finished but no authenticated session was returned.');
       }
-      // Mark manual owner login so onAuthStateChange allows this session.
-      if (isOwnerAdminEmail(verifiedSession.user?.email)) {
-        manualOwnerLoginRef.current = true;
-      }
+      // Mark manual login so onAuthStateChange accepts this session.
+      manualOwnerLoginRef.current = true;
 
       const handledSession = await handleSession(verifiedSession);
       if (!handledSession.accepted) {

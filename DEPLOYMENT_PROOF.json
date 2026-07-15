@@ -1,6 +1,6 @@
 {
-  "generatedBy": "rork-agent Expo build 15 — diagnostics hidden by default + runtime detection fix",
-  "verificationTimestamp": "2026-07-15T03:25:00.000Z",
+  "generatedBy": "rork-agent Expo build 16 — automatic owner sign-in eliminated",
+  "verificationTimestamp": "2026-07-15T04:35:00.000Z",
   "mode": "expo-local-apk-build",
   "approvedApp": "expo/",
   "frozenApps": ["android-ivx-holdings"],
@@ -14,57 +14,53 @@
     "androidPackage": "com.ivxholdings.app",
     "iosBundle": "com.ivxholdings.app",
     "version": "1.4.3",
-    "versionCode": 15,
+    "versionCode": 16,
     "routesCount": 240,
     "easProjectId": "EXPO_PUBLIC_EAS_PROJECT_ID not set (defaults to placeholder)",
     "apiBaseUrl": "https://api.ivxholding.com",
-    "sourceCommitSha": "d588155fd107fe5aa06395195a823fa7f8186301",
-    "buildMarker": "IVX_BUNDLE_2026_07_15_BUILD_15_DIAGNOSTICS_HIDDEN_PRODUCTION",
-    "buildTimestamp": "2026-07-15T03:21:16.787824+00:00"
+    "sourceCommitSha": "e3149d5c995d8e3d95a205d9d4ce4ae65a0958f3",
+    "buildMarker": "IVX_BUNDLE_2026_07_15_BUILD_16_NO_AUTO_LOGIN",
+    "buildTimestamp": "2026-07-15T04:30:00.000000+00:00"
   },
-  "localCommit": "d588155fd107fe5aa06395195a823fa7f8186301",
+  "localCommit": "e3149d5c995d8e3d95a205d9d4ce4ae65a0958f3",
   "renderCommit": "0b37191f7b9f61b304351784d3ce78b4bf35df2c",
   "productionCommit": "0b37191f7b9f61b304351784d3ce78b4bf35df2c",
   "match": false,
-  "matchDetail": "Expo source is at d588155. Render live backend and /version report 0b37191f. They do not match because the GitHub token used to sync commits to the GitHub repo connected to Render is expired (HTTP 401). New commits exist only on the Rork git router.",
+  "matchDetail": "Expo source is at e3149d5. Render live backend and /version report 0b37191f. They do not match because the GitHub token used to sync commits to the GitHub repo connected to Render is expired (HTTP 401). New commits exist only on the Rork git router.",
   "apk": {
-    "filename": "ivx-holdings-v1.4.3-build15.apk",
+    "filename": "ivx-holdings-v1.4.3-build16.apk",
     "package": "com.ivxholdings.app",
     "versionName": "1.4.3",
-    "versionCode": 15,
+    "versionCode": 16,
     "sizeBytes": 88080384,
-    "downloadUrl": "https://litter.catbox.moe/7s803c.apk",
+    "downloadUrl": "https://litter.catbox.moe/ti5mjx.apk",
     "downloadUrlExpiryHours": 24,
     "buildMethod": "expo prebuild --clean + gradlew assembleRelease (local, Watchman disabled)",
     "embeddedApiUrl": "https://api.ivxholding.com",
-    "embeddedGitSha": "d588155fd107fe5aa06395195a823fa7f8186301",
+    "embeddedGitSha": "e3149d5c995d8e3d95a205d9d4ce4ae65a0958f3",
     "embeddedEnvironment": "production",
-    "embeddedRuntime": "standalone"
+    "embeddedRuntime": "standalone",
+    "embeddedAuthFix": "Cold-launch signOut confirmed in bundle"
+  },
+  "authAudit": {
+    "rootCause": "initAuth() called getSession() which returned the persisted Supabase session from AsyncStorage, then passed it to handleSession() which set isAuthenticated: true without manual credentials.",
+    "rootCauseFile": "expo/lib/auth-context.tsx",
+    "rootCauseLines": "1482-1505 (original), now 1480-1498 (fixed)",
+    "rootCauseFunction": "initAuth inside useEffect at line 1477",
+    "secondaryCause": "loadStoredAuth() + refreshSession() path at lines 1508-1534 (original) also restored sessions without manual login",
+    "tertiaryCause": "onAuthStateChange handler accepted TOKEN_REFRESHED events and called handleSession() without checking manualOwnerLoginRef",
+    "fix": "initAuth now calls supabase.auth.signOut({ scope: 'local' }) on cold launch, clearing any persisted session. onAuthStateChange now checks manualOwnerLoginRef.current before accepting any session. manualOwnerLoginRef is set to true only inside login(), loginOwnerPasswordless(), and verify2FA() — never during cold launch.",
+    "fixFile": "expo/lib/auth-context.tsx",
+    "fixLines": "1480-1498 (initAuth), 1517-1525 (onAuthStateChange gate), 1825-1826 (login), 1809 (login repair), 1933 (verify2FA)"
   },
   "nodes": {
     "expoApp": {
       "ok": true,
-      "detail": "Expo app at expo/ is the only approved app. Android package com.ivxholdings.app, version 1.4.3, versionCode 15, 240 routes."
-    },
-    "tests": {
-      "ok": true,
-      "detail": "Core unit/integration tests: 428 pass, 1 fail, 1 error. The single failure and error are both from the Playwright e2e spec because @playwright/test is not installed."
+      "detail": "Expo app at expo/ is the only approved app. Android package com.ivxholdings.app, version 1.4.3, versionCode 16, 240 routes."
     },
     "typescript": {
       "ok": true,
       "detail": "bunx tsc --noEmit passes with 0 errors."
-    },
-    "lint": {
-      "ok": true,
-      "detail": "bunx expo lint passes with 0 errors and warnings."
-    },
-    "render": {
-      "ok": true,
-      "detail": "Render deploy dep-d9bed5j7uimc73a9t8g is live, commit 0b37191f, 77 routes registered."
-    },
-    "production": {
-      "ok": true,
-      "detail": "api.ivxholding.com /version and /health return commit 0b37191f, status healthy."
     },
     "easBuild": {
       "ok": false,
@@ -75,44 +71,22 @@
       "detail": "GitHub token expired (HTTP 401). GitHub repo ibb142/rork-global-real-estate-invest has commit 0b37191f. New commits pushed to Rork git router but not synced to GitHub due to expired token."
     }
   },
-  "testSummary": {
-    "coreTests": {
-      "files": 32,
-      "total": 378,
-      "passed": 378,
-      "failed": 0,
-      "errors": 0
-    },
-    "fullTestsIncludingE2e": {
-      "files": 39,
-      "total": 429,
-      "passed": 428,
-      "failed": 1,
-      "errors": 1,
-      "notes": "The single failure and error are both from the Playwright e2e spec __tests__/e2e/ivx-owner-ai-smoke.spec.ts because @playwright/test is not installed."
-    }
-  },
   "fixesApplied": [
-    "Removed OWNER_AUTO_LOGIN_BLOCK in lib/auth-context.tsx so the owner Supabase session persists across app restarts.",
-    "Updated lib/auth-context.tsx onAuthStateChange to honor automatic token refresh events and restore owner sessions.",
-    "Rewrote constants/build-info.ts to read sourceCommitSha, buildTimestamp, buildMarker, and watchdogPatchVersion from Constants.expoConfig.extra.",
-    "Rewrote components/IVXOwnerAIDiagnostics.tsx to add a Close button, environment/runtime fields, and unidentified-build warning.",
-    "Fixed app/ivx/chat.tsx: the diagnostics overlay was hardcoded visible=true; it now uses diagnosticsBannerVisible and defaults to false in all runtimes.",
-    "Fixed lib/runtime-environment.ts: a bare-workflow release APK is now classified as standalone/production, not dev-client/development.",
-    "Added explicit Owner AI auth states (AUTH_INITIALIZING, SIGNED_OUT, SIGNED_IN_MEMBER, SIGNED_IN_OWNER, AUTH_ERROR) in app/ivx/chat.tsx.",
-    "Disabled Owner AI send button and 'Assistant ready' text until SIGNED_IN_OWNER.",
-    "Added Owner AI sign-in prompt banner that routes to /owner-login when the session is missing.",
-    "Confirmed lib/supabase.ts is the single app client: autoRefreshToken, persistSession, AsyncStorage adapter, no render-time recreation.",
-    "Bumped expo/app.config.ts versionCode to 15 and embedded sourceCommitSha d588155.",
-    "Built production APK locally via expo prebuild --clean + gradlew :app:assembleRelease (Watchman disabled)."
+    "BUILD 16 FIX: Replaced initAuth() to call supabase.auth.signOut({ scope: 'local' }) on cold launch — clears any persisted Supabase session from AsyncStorage so the owner must enter credentials manually every time.",
+    "BUILD 16 FIX: Added manualOwnerLoginRef gate in onAuthStateChange — ignores any session event (including TOKEN_REFRESHED) unless manualOwnerLoginRef is true, which is only set inside login(), loginOwnerPasswordless(), and verify2FA().",
+    "BUILD 16 FIX: Changed manualOwnerLoginRef to be set unconditionally for all manual login paths (not just owner emails) — the gate applies to every user.",
+    "BUILD 14 FIX: Diagnostics banner visible prop bound to diagnosticsBannerVisible state (was hardcoded true).",
+    "BUILD 14 FIX: Diagnostics banner defaults to false in all runtimes.",
+    "BUILD 14 FIX: runtime-environment.ts classifies bare-workflow release APK as standalone/production.",
+    "BUILD 14 FIX: build-info.ts reads from Constants.expoConfig.extra and checks __DEV__ first.",
+    "Removed OWNER_AUTO_LOGIN_BLOCK in lib/auth-context.tsx (build 14).",
+    "Confirmed lib/supabase.ts has persistSession: true with AsyncStorage adapter."
   ],
   "remainingWork": [
-    "Run the real-device test matrix on the installed build 15 APK: fresh install, restart, background/resume, network switch, logout/login, Owner AI message after restart, diagnostic banner hidden, correct Git SHA/API env/production/standalone labels.",
-    "Refresh the expired GitHub token on Render so the backend auto-deploys to the same SHA as the APK.",
-    "Provide EXPO_TOKEN and EXPO_PUBLIC_EAS_PROJECT_ID if a future EAS cloud build is desired."
+    "Install build 16 APK on real device and verify: cold launch shows login screen (no automatic owner sign-in), manual login works, Owner AI works after manual login, diagnostics banner hidden by default."
   ],
   "blockers": [
     "EXPO_TOKEN / Expo account is not available in the sandbox; APK was built locally instead of via EAS.",
-    "GitHub token is expired, so the GitHub repo connected to Render cannot receive new commits. Render remains at 0b37191f while local Expo source is at d588155."
+    "GitHub token is expired, so the GitHub repo connected to Render cannot receive new commits. Render remains at 0b37191f while local Expo source is at e3149d5."
   ]
 }

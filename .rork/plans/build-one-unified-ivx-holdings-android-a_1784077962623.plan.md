@@ -73,21 +73,22 @@ The only approved application is the existing Expo React Native project at `expo
 
 - [x] Bump the Android `versionCode` to `14` and update build markers / Git SHA in `app.config.ts`.
 - [x] Bump the Android `versionCode` to `15` and rebuild after the diagnostics-visibility and runtime-detection fixes.
+- [x] Bump the Android `versionCode` to `16` and rebuild after eliminating automatic owner sign-in.
 - [x] Build the production APK locally with `expo prebuild` + `gradlew assembleRelease` (EAS cloud is blocked by missing `EXPO_TOKEN` in the sandbox).
 - [x] Rebuild the production APK after the fixes and verify package, versionCode, and embedded identity.
 - [x] Upload the APK to a public HTTPS URL with a direct download link.
-- [x] Re-upload the new build 15 APK and update the direct download link.
+- [x] Re-upload the new build 16 APK and update the direct download link.
 - [x] Update `DEPLOYMENT_PROOF.json` with the new build details.
 
 ## Final acceptance
 
 - [x] Top diagnostic banner is hidden in production by default (build 15; real-device confirmation required).
 - [x] Diagnostics remain available inside Owner Control (Control → Diagnostics button).
-- [x] Owner session restores after restart and Owner AI recognizes it (auto-login block removed; code verified; real-device confirmation required).
-- [x] `no_supabase_session` no longer appears after valid owner login (session persists; code verified; real-device confirmation required).
+- [x] Owner must enter credentials manually on every cold launch — no automatic sign-in from persisted session (build 16; real-device confirmation required).
+- [x] `no_supabase_session` no longer appears after valid owner login (session persists within app session; code verified; real-device confirmation required).
 - [x] Git SHA is not `local` and API environment is not `unknown` in production (build info reads from app.config.ts extra).
 - [x] Owner AI send button is disabled until authentication is ready (explicit auth states + `isAuthBlocked`).
-- [x] Final APK uses `com.ivxholdings.app` and is directly downloadable (build 15 link delivered).
+- [x] Final APK uses `com.ivxholdings.app` and is directly downloadable (build 16 link delivered).
 - [~] Real Android testing passes on the user’s device.
 
 ## Blockers
