@@ -1,0 +1,8 @@
+{
+  "id": "yqvc3j9qdoriiswfxl5ul",
+  "role": "user",
+  "content": "import { Stack } from \"expo-router\";\nimport { ActivityIndicator, View } from \"react-native\";\nimport { OwnerAuthProvider, useOwnerAuth } from \"@/providers/OwnerAuthProvider\";\n\nfunction RootNavigator() {\n  const { isOwner, initializing } = useOwnerAuth();\n\n  if (initializing) {\n    return (\n      <View\n        style={{\n          flex: 1,\n          alignItems: \"center\",\n          justifyContent: \"center\",\n        }}\n      >\n        <ActivityIndicator size=\"large\" />\n      </View>\n    );\n  }\n\n  return (\n    <Stack screenOptions={{ headerShown: false }}>\n      <Stack.Protected guard={!isOwner}>\n        <Stack.Screen name=\"owner-login\" />\n      </Stack.Protected>\n\n      <Stack.Protected guard={isOwner}>\n        <Stack.Screen name=\"owner\" />\n      </Stack.Protected>\n\n      <Stack.Screen name=\"index\" />\n    </Stack>\n  );\n}\n\nexport default function RootLayout() {\n  return (\n    <OwnerAuthProvider>\n      <RootNavigator />\n    </OwnerAuthProvider>\n  );\n}",
+  "attachments": [],
+  "sourceAttachments": [],
+  "userId": "4ad45f53-a7da-448f-ae4e-e47b4076b098"
+}
