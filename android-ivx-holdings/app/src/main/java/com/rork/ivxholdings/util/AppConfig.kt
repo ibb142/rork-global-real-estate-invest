@@ -23,5 +23,5 @@ object AppConfig {
     const val OWNER_EMAIL = "iperez4242@gmail.com"
     const val APP_VERSION = "1.4.3"
     const val VERSION_CODE = 12
-    const val GIT_SHA = "4098a66"
+    const val GIT_SHA = "0b37191f"
 }
