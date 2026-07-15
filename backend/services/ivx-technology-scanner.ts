@@ -28,7 +28,7 @@ export type ScanCategory =
   | 'ai_developer_tools'
   | 'deployment_automation'
   | 'github_automation'
-  | 'render_vercel_aws_automation'
+  | 'render_aws_automation'
   | 'supabase_automation'
   | 'ai_coding_agents'
   | 'security_tools'
@@ -91,9 +91,9 @@ const SCAN_CATEGORIES: Array<{
     queryKeywords: ['GitHub Actions automation 2026', 'GitHub API automation', 'GitHub Copilot workspace', 'GitHub auto-merge tools'],
   },
   {
-    category: 'render_vercel_aws_automation',
-    label: 'Render/Vercel/AWS Automation',
-    queryKeywords: ['Render deploy automation', 'Vercel automation', 'AWS deployment automation', 'infrastructure as code 2026'],
+    category: 'render_aws_automation',
+    label: 'Render/AWS Automation',
+    queryKeywords: ['Render deploy automation', 'AWS deployment automation', 'infrastructure as code 2026'],
   },
   {
     category: 'supabase_automation',
@@ -146,7 +146,6 @@ const CURATED_TOOLS: Record<ScanCategory, ScanResult['tools']> = {
   ],
   deployment_automation: [
     { name: 'Render', url: 'https://render.com', description: 'Zero-DevOps cloud platform with auto-deploy from Git, native Docker support.', relevance: 'high' },
-    { name: 'Vercel', url: 'https://vercel.com', description: 'Frontend deployment platform with instant rollbacks and edge functions.', relevance: 'high' },
     { name: 'Railway', url: 'https://railway.app', description: 'Instant deployment with built-in databases and CI/CD pipelines.', relevance: 'high' },
     { name: 'Fly.io', url: 'https://fly.io', description: 'Deploy apps close to users with global Anycast networking.', relevance: 'medium' },
     { name: 'Kamal', url: 'https://kamal-deploy.org', description: 'Deploy web apps anywhere with zero-downtime, from bare metal to cloud VMs.', relevance: 'medium' },
@@ -159,7 +158,7 @@ const CURATED_TOOLS: Record<ScanCategory, ScanResult['tools']> = {
     { name: 'Danger', url: 'https://danger.systems', description: 'Automated code review rules running in CI to enforce conventions.', relevance: 'medium' },
     { name: 'Graphite', url: 'https://graphite.dev', description: 'Stacked PR workflow with auto-rebase and smart code review.', relevance: 'medium' },
   ],
-  render_vercel_aws_automation: [
+  render_aws_automation: [
     { name: 'Terraform', url: 'https://terraform.io', description: 'Infrastructure as code for AWS, GCP, Azure, and 3000+ providers.', relevance: 'high' },
     { name: 'Pulumi', url: 'https://pulumi.com', description: 'Infrastructure as code using real programming languages.', relevance: 'high' },
     { name: 'SST', url: 'https://sst.dev', description: 'Build full-stack apps on AWS with live Lambda development.', relevance: 'high' },

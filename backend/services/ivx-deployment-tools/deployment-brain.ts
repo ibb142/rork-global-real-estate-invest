@@ -14,7 +14,6 @@
 import * as GitHubTool from './github-tool';
 import * as RenderTool from './render-tool';
 import * as SupabaseTool from './supabase-tool';
-import * as VercelTool from './vercel-tool';
 import * as ProductionEvidence from './production-evidence';
 import * as CredentialSync from './credential-sync';
 import { discoverCredentials } from '../ivx-enterprise-deployment-engine';
@@ -32,7 +31,7 @@ export type BrainDecision =
   | 'needs_owner_approval';
 
 export interface PlatformStatus {
-  platform: 'github' | 'render' | 'supabase' | 'vercel';
+  platform: 'github' | 'render' | 'supabase';
   ok: boolean;
   configured: boolean;
   error: string | null;
@@ -48,8 +47,7 @@ export interface BrainState {
   commits: {
     github: string | null;
     render: string | null;
-    vercel: string | null;
-    production: string | null;
+      production: string | null;
   };
   platforms: PlatformStatus[];
   deployInProgress: boolean;
@@ -152,23 +150,6 @@ export async function assessDeploymentBrain(): Promise<BrainState> {
     errors.push(`Supabase: ${supabase.error}`);
   }
 
-  // ─── 5. Check Vercel ──────────────────────────────────────────────
-  const vercelConfigured = (process.env.VERCEL_TOKEN ?? '').trim().length > 0;
-  let vercelOk = false;
-  let vercelError: string | null = 'VERCEL_TOKEN not configured — tool inactive';
-  if (vercelConfigured) {
-    const vercel = await VercelTool.getFullVercelStatus();
-    vercelOk = vercel.ok;
-    vercelError = vercel.error;
-  }
-  platforms.push({
-    platform: 'vercel',
-    ok: vercelOk,
-    configured: vercelConfigured,
-    error: vercelError,
-    details: { configured: vercelConfigured },
-  });
-
   // ─── 6. Production Evidence ────────────────────────────────────────
   const evidence = await ProductionEvidence.generateFullEvidence();
   const productionSha = evidence.commits.find(c => c.source === 'Production')?.shortSha ?? null;
@@ -235,7 +216,6 @@ export async function assessDeploymentBrain(): Promise<BrainState> {
     commits: {
       github: githubSha,
       render: renderSha,
-      vercel: null, // Vercel SHA requires project-specific deploy list
       production: productionSha,
     },
     platforms,

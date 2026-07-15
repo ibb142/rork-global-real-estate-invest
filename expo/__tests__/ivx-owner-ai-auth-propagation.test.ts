@@ -113,7 +113,7 @@ describe('IVX Owner AI auth header propagation', () => {
             aiRuntimeConfigured: true,
             aiRuntime: {
               model: 'openai/gpt-4o-mini',
-              endpoint: 'https://ai-gateway.vercel.sh/v3/ai/openai/gpt-4o-mini',
+              endpoint: 'https://api.ivxholding.com/v3/ai/openai/gpt-4o-mini',
               hasGatewayUrl: true,
               hasGatewayApiKey: true,
             },

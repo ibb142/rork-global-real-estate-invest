@@ -29,7 +29,7 @@ const EXPECTED_CHATGPT_MODEL = process.env.IVX_OWNER_AI_MODEL || process.env.PUB
 const EXPECTED_GATEWAY_BASE_PATH = '/v3/ai';
 
 const FILE_PROBES = [
-  { label: 'backend IVX AI runtime wrapper', file: 'backend/ivx-ai-runtime.ts', patterns: ['createGateway', 'generateText', "const GATEWAY_BASE_PATH = '/v3/ai';", "const DEFAULT_IVX_AI_MODEL = readTrimmed(process.env.IVX_AI_MODEL) || 'openai/gpt-4o';", 'process.env.EXPO_PUBLIC_IVX_AI_GATEWAY_URL', 'process.env.AI_GATEWAY_API_KEY', 'requestIVXAIText', "provider: 'chatgpt'", "runtime: 'vercel_ai_gateway'"] },
+  { label: 'backend IVX AI runtime wrapper', file: 'backend/ivx-ai-runtime.ts', patterns: ['createGateway', 'generateText', "const GATEWAY_BASE_PATH = '/v3/ai';", "const DEFAULT_IVX_AI_MODEL = readTrimmed(process.env.IVX_AI_MODEL) || 'openai/gpt-4o';", 'process.env.EXPO_PUBLIC_IVX_AI_GATEWAY_URL', 'process.env.AI_GATEWAY_API_KEY', 'requestIVXAIText', "provider: 'chatgpt'", "runtime: 'ivx_ai_gateway'"] },
   { label: 'backend public chat ChatGPT service', file: 'backend/public-chat-ai.ts', patterns: ["const DEFAULT_PUBLIC_CHAT_MODEL = 'openai/gpt-4o';", 'requestIVXAIText', "module: 'public-chat'", "source: 'chatgpt'", 'generatePublicChatAnswer', "source: 'fallback'"] },
   { label: 'backend owner AI route', file: 'backend/api/ivx-owner-ai.ts', patterns: ["const DEFAULT_OWNER_AI_MODEL = 'openai/gpt-4o';", 'requestIVXAIText', "module: 'owner-room'", "provider: 'chatgpt'", "source: 'remote_api'", 'endpoint: aiResult.endpoint'] },
   { label: 'backend route registration', file: 'backend/hono.ts', patterns: ["app.get('/health'", "app.post('/api/ivx/owner-ai'", "app.post('/api/public/send-message'", "app.post('/api/public/chat'", 'openAIModel', 'aiProvider', 'aiEndpoint'] },

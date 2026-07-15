@@ -15,7 +15,6 @@
 import { getIVXOwnerVariableRuntimeValue } from '../../api/ivx-owner-variables';
 import * as GitHubTool from './github-tool';
 import * as RenderTool from './render-tool';
-import * as VercelTool from './vercel-tool';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -24,7 +23,6 @@ export type CredentialSource =
   | 'owner_variables'
   | 'github_secrets'
   | 'render_env'
-  | 'vercel_env'
   | 'supabase_vault'
   | 'unknown';
 
@@ -32,7 +30,7 @@ export type CredentialValidation = 'valid' | 'missing' | 'expired' | 'wrong_scop
 
 export interface DiscoveredCredential {
   name: string;
-  category: 'github' | 'render' | 'supabase' | 'vercel' | 'aws' | 'ai' | 'security' | 'other';
+  category: 'github' | 'render' | 'supabase' | 'aws' | 'ai' | 'security' | 'other';
   required: boolean;
   sources: {
     source: CredentialSource;
@@ -79,7 +77,6 @@ const CREDENTIAL_REGISTRY: Array<{
   { name: 'SUPABASE_DB_PASSWORD', category: 'supabase', required: false, envName: 'SUPABASE_DB_PASSWORD' },
   { name: 'DATABASE_URL', category: 'supabase', required: false, envName: 'DATABASE_URL' },
   { name: 'POSTGRES_URL', category: 'supabase', required: false, envName: 'POSTGRES_URL' },
-  { name: 'VERCEL_TOKEN', category: 'vercel', required: false, envName: 'VERCEL_TOKEN' },
   { name: 'AWS_ACCESS_KEY_ID', category: 'aws', required: false, envName: 'AWS_ACCESS_KEY_ID' },
   { name: 'AWS_SECRET_ACCESS_KEY', category: 'aws', required: false, envName: 'AWS_SECRET_ACCESS_KEY' },
   { name: 'AWS_REGION', category: 'aws', required: false, envName: 'AWS_REGION' },
@@ -164,16 +161,9 @@ export async function discoverAllCredentials(): Promise<CredentialSyncResult> {
   const recommendations: string[] = [];
 
   // Get GitHub secrets, Render env, Vercel env in parallel
-  const [githubSecrets, renderEnv, vercelEnv] = await Promise.all([
+  const [githubSecrets, renderEnv] = await Promise.all([
     GitHubTool.getSecrets().catch(() => ({ ok: false, secrets: [] })),
     RenderTool.getEnvVars().catch(() => ({ ok: false, envVars: [] })),
-    (async () => {
-      const projResult = await VercelTool.listProjects().catch(() => ({ ok: false, projects: [] }));
-      if (projResult.ok && projResult.projects?.length) {
-        return VercelTool.getEnvVars(projResult.projects[0].id).catch(() => ({ ok: false, envVars: [] }));
-      }
-      return { ok: false, envVars: [] };
-    })(),
   ]);
 
   const githubSecretNames = new Set(
@@ -182,10 +172,6 @@ export async function discoverAllCredentials(): Promise<CredentialSyncResult> {
   const renderEnvKeys = new Set(
     (renderEnv.envVars ?? []).map(e => e.key),
   );
-  const vercelEnvKeys = new Set(
-    (vercelEnv.envVars ?? []).map(e => e.key),
-  );
-
   for (const reg of CREDENTIAL_REGISTRY) {
     const [envCheck, ownerCheck] = await Promise.all([
       Promise.resolve(checkProcessEnv(reg.envName)),
@@ -208,9 +194,7 @@ export async function discoverAllCredentials(): Promise<CredentialSyncResult> {
     }
 
     // Check Vercel env vars
-    if (vercelEnvKeys.has(reg.name) || vercelEnvKeys.has(reg.envName)) {
-      sources.push({ source: 'vercel_env', present: true, masked: '*** (Vercel env)' });
-    }
+
 
     const anyPresent = sources.some(s => s.present);
 

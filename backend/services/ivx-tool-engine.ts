@@ -28,7 +28,6 @@ import { getVaultValue } from './ivx-secure-vault';
 import * as GitHubTool from './ivx-deployment-tools/github-tool';
 import * as RenderTool from './ivx-deployment-tools/render-tool';
 import * as SupabaseTool from './ivx-deployment-tools/supabase-tool';
-import * as VercelTool from './ivx-deployment-tools/vercel-tool';
 import * as EvidenceTool from './ivx-deployment-tools/production-evidence';
 
 export const TOOL_ENGINE_MARKER = 'ivx-tool-engine-2026-07-02';
@@ -76,10 +75,6 @@ function supabaseUrl(): string {
 
 function supabaseServiceRole(): string {
   return getVaultValue('IVX_SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SERVICE_ROLE_KEY');
-}
-
-function vercelToken(): string {
-  return getVaultValue('IVX_VERCEL_TOKEN', 'VERCEL_TOKEN');
 }
 
 // ─── Tool Implementations ────────────────────────────────────────────

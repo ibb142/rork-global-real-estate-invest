@@ -67,7 +67,6 @@ const LIVE_COMMIT_SHA = (
   process.env.RENDER_GIT_COMMIT?.trim() ||
   process.env.GIT_COMMIT?.trim() ||
   process.env.SOURCE_VERSION?.trim() ||
-  process.env.VERCEL_GIT_COMMIT_SHA?.trim() ||
   'unknown'
 );
 const LIVE_COMMIT_SHORT = LIVE_COMMIT_SHA === 'unknown' ? 'unknown' : LIVE_COMMIT_SHA.slice(0, 8);

@@ -106,7 +106,7 @@ export class IVXOwnerAIRequestError extends Error {
 
 export const IVX_SERVICE_UNAVAILABLE_MESSAGE = 'Service temporarily unavailable. Please try again.';
 
-const GATEWAY_CHAT_COMPLETIONS_PATH = '/v2/vercel/v1/chat/completions';
+const GATEWAY_CHAT_COMPLETIONS_PATH = '/v1/chat/completions';
 const DEFAULT_IVX_OWNER_AI_MODEL = 'openai/gpt-4o';
 const LOCAL_AI_PROVIDER_TIMEOUT_MS = 22_000;
 

@@ -14,7 +14,6 @@
  *   IVX_SUPABASE_SERVICE_ROLE_KEY — Supabase service role key
  *   IVX_AWS_ACCESS_KEY_ID  — AWS access key
  *   IVX_AWS_SECRET_ACCESS_KEY — AWS secret key
- *   IVX_VERCEL_TOKEN       — Vercel API token
  *   IVX_OWNER_TOKEN        — Owner service token
  *
  * Fallback: when IVX_ prefixed vars are absent, the vault falls back to
@@ -26,7 +25,7 @@ const VAULT_MARKER = 'ivx-secure-vault-2026-07-02';
 
 // ─── Vault Entry Definitions ────────────────────────────────────────
 
-export type VaultCategory = 'github' | 'render' | 'supabase' | 'aws' | 'vercel' | 'auth' | 'other';
+export type VaultCategory = 'github' | 'render' | 'supabase' | 'aws' | 'auth' | 'other';
 
 export type VaultEntry = {
   /** IVX-prefixed variable name (e.g. IVX_GITHUB_TOKEN) */
@@ -183,20 +182,6 @@ async function testSupabaseServiceRole(key: string): Promise<{ ok: boolean; deta
   }
 }
 
-async function testVercelToken(token: string): Promise<{ ok: boolean; detail: string }> {
-  try {
-    const res = await fetch('https://api.vercel.com/v2/user', {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (res.status === 200) return { ok: true, detail: 'authenticated' };
-    if (res.status === 401) return { ok: false, detail: 'HTTP 401 — token invalid' };
-    return { ok: false, detail: `HTTP ${res.status}` };
-  } catch (err) {
-    return { ok: false, detail: `network error: ${err instanceof Error ? err.message : String(err)}` };
-  }
-}
-
 async function testAwsAccessKey(key: string): Promise<{ ok: boolean; detail: string }> {
   // AWS keys can't be tested without a full signed request — shape check only
   if (key.length < 16) return { ok: false, detail: 'too short to be a real AWS access key (shape check only)' };
@@ -267,14 +252,6 @@ const VAULT_REGISTRY: VaultEntry[] = [
     required: false,
     purpose: 'AWS secret key paired with access key for AWS API operations',
     test: async (v: string) => ({ ok: v.length >= 16, detail: v.length >= 16 ? 'shape check passed' : 'too short' }),
-  },
-  {
-    ivxName: 'IVX_VERCEL_TOKEN',
-    fallbackName: 'VERCEL_TOKEN',
-    category: 'vercel',
-    required: false,
-    purpose: 'Vercel API token for deployment management and project access',
-    test: testVercelToken,
   },
   {
     ivxName: 'IVX_OWNER_TOKEN',

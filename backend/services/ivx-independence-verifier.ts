@@ -166,15 +166,6 @@ export async function verifyIndependence(): Promise<IndependenceReport> {
     awsPresent ? null : 'AWS credentials not configured',
   ));
 
-  // 7. Vercel Access
-  const vercelPresent = vault.variables.find((v) => v.name === 'IVX_VERCEL_TOKEN')?.present ?? false;
-  capabilities.push(makeVerdict(
-    'VERCEL_ACCESS',
-    vercelPresent,
-    vercelPresent ? 'Vercel token present' : null,
-    vercelPresent ? null : 'Vercel token not configured',
-  ));
-
   // 8. Chat Commands
   const healthResult = toolResults.find((r) => r.tool === 'production.health');
   const chatOk = healthResult?.ok ?? false;

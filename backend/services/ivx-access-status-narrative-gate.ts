@@ -30,7 +30,7 @@ const ACCESS_STATUS_PROMPT_PATTERNS: RegExp[] = [
   /\bwhat\s+access\s+do\s+you\s+have\b/i,
   /\bcredential\s+status\b/i,
   /\bdeployment\s+access\b/i,
-  /\bcan\s+you\s+access\s+(github|render|supabase|aws|vercel)\b/i,
+  /\bcan\s+you\s+access\s+(github|render|supabase|aws)\b/i,
 ];
 
 const FABRICATED_ACCESS_STATUS_MARKERS: { marker: RegExp; label: string }[] = [

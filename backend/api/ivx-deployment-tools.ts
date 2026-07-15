@@ -7,7 +7,6 @@
  *   GET  /api/ivx/deploy-tools/github        — GitHub tool status
  *   GET  /api/ivx/deploy-tools/render        — Render tool status
  *   GET  /api/ivx/deploy-tools/supabase      — Supabase tool status
- *   GET  /api/ivx/deploy-tools/vercel        — Vercel tool status
  *   GET  /api/ivx/deploy-tools/evidence      — production evidence
  *   GET  /api/ivx/deploy-tools/credentials   — credential sync status
  *   GET  /api/ivx/deploy-tools/dashboard     — unified dashboard (all in one)
@@ -21,7 +20,6 @@ import { assertIVXOwnerOnly, ownerOnlyJson, ownerOnlyOptions } from './owner-onl
 import * as GitHubTool from '../services/ivx-deployment-tools/github-tool';
 import * as RenderTool from '../services/ivx-deployment-tools/render-tool';
 import * as SupabaseTool from '../services/ivx-deployment-tools/supabase-tool';
-import * as VercelTool from '../services/ivx-deployment-tools/vercel-tool';
 import * as ProductionEvidence from '../services/ivx-deployment-tools/production-evidence';
 import * as CredentialSync from '../services/ivx-deployment-tools/credential-sync';
 import { assessDeploymentBrain, quickHealthCheck } from '../services/ivx-deployment-tools/deployment-brain';
@@ -203,31 +201,7 @@ export async function handleSupabaseStatus(): Promise<Response> {
   }
 }
 
-// ─── VERCEL TOOL ────────────────────────────────────────────────────────
 
-export async function handleVercelStatus(): Promise<Response> {
-  try {
-    const configured = (process.env.VERCEL_TOKEN ?? '').trim().length > 0;
-    if (!configured) {
-      return publicJson({
-        ok: false,
-        error: 'VERCEL_TOKEN not configured — Vercel tool is inactive',
-        configured: false,
-        projects: [],
-        deploys: [],
-      });
-    }
-
-    const fullStatus = await VercelTool.getFullVercelStatus();
-    return publicJson({
-      ok: fullStatus.ok,
-      error: fullStatus.error,
-      configured: true,
-      projects: fullStatus.projects ?? [],
-      deploys: fullStatus.deploys ?? [],
-    });
-  } catch (err) {
-    return publicJson({ ok: false, error: err instanceof Error ? err.message : String(err) }, 500);
   }
 }
 
