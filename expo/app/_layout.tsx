@@ -1,8 +1,8 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect, useState, Component, type ReactNode } from "react";
-import { StyleSheet, View, Text, Platform, ActivityIndicator, TouchableOpacity } from "react-native";
+import React, { useEffect, Component, type ReactNode } from "react";
+import { StyleSheet, View, Text, Platform, TouchableOpacity } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -10,6 +10,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DiagnosticErrorBoundary } from "@/components/DiagnosticErrorBoundary";
 import { injectWebKeyboardCSS } from "@/hooks/useWebKeyboard";
 import { checkForUpdates } from "@/lib/app-update-checker";
+import { logStartup, logStartupError } from "@/lib/startup-trace";
 
 // Static imports — all providers with per-provider error boundaries
 import { I18nProvider } from "@/lib/i18n-context";
@@ -26,9 +27,6 @@ const queryClient = new QueryClient();
 SplashScreen.preventAutoHideAsync().catch((err: unknown) => {
   console.warn("[IVX] SplashScreen.preventAutoHideAsync failed:", err);
 });
-
-// Maximum time to wait for startup before showing a fallback error screen.
-const STARTUP_TIMEOUT_MS = 5000;
 
 // Re-export expo-router's ErrorBoundary for route-level catches
 export { ErrorBoundary } from "expo-router";
@@ -61,6 +59,9 @@ class ProviderBoundary extends Component<ProviderBoundaryProps, ProviderBoundary
           <Text style={styles.providerErrorMsg}>
             {this.state.error?.message || "Unknown error"}
           </Text>
+          <TouchableOpacity style={styles.providerErrorButton} onPress={() => this.setState({ hasError: false, error: null })}>
+            <Text style={styles.providerErrorButtonText}>Retry</Text>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -68,9 +69,17 @@ class ProviderBoundary extends Component<ProviderBoundaryProps, ProviderBoundary
   }
 }
 
+/** Lightweight probe that logs the checkpoint when the provider tree is mounted. */
+function ProviderMountProbe({ children }: { children: ReactNode }) {
+  useEffect(() => {
+    logStartup("PROVIDERS_MOUNTED");
+  }, []);
+  return <>{children}</>;
+}
+
 export default function RootLayout() {
-  const [startupError, setStartupError] = useState<string | null>(null);
-  const [startupTimedOut, setStartupTimedOut] = useState(false);
+  logStartup("APP_MOUNTED");
+  logStartup("ROOT_LAYOUT_RENDERED");
 
   useEffect(() => {
     // Inject Samsung keyboard CSS on web — ensures inputs are focusable
@@ -81,11 +90,18 @@ export default function RootLayout() {
       console.warn("[IVX] injectWebKeyboardCSS failed:", err);
     }
 
-    // Hide the native splash screen as soon as React has rendered.
-    // This coordinates splash dismissal with first paint to prevent black screens.
-    SplashScreen.hideAsync().catch((err: unknown) => {
-      console.warn("[IVX] SplashScreen.hideAsync failed:", err);
-    });
+    // Defer splash screen dismissal to the next frame so the React tree has
+    // rendered at least one frame before the native splash disappears.
+    // This prevents the black frame between splash and first paint.
+    const hideTimer = setTimeout(() => {
+      logStartup("SPLASH_HIDE_STARTED");
+      SplashScreen.hideAsync()
+        .then(() => logStartup("SPLASH_HIDE_COMPLETED"))
+        .catch((err: unknown) => {
+          logStartupError("SPLASH_HIDE_COMPLETED", err);
+          console.warn("[IVX] SplashScreen.hideAsync failed:", err);
+        });
+    }, 0);
 
     // Non-fatal OTA update check — runs in background, NEVER crashes the app.
     // If the update server is unreachable, the app continues with the
@@ -93,13 +109,6 @@ export default function RootLayout() {
     checkForUpdates().catch((err) => {
       console.warn("[IVX] OTA update check failed (non-fatal):", err);
     });
-
-    // Startup safety timeout: if the app hasn't fully rendered within 5 seconds,
-    // show a visible error screen instead of leaving the user on a black screen.
-    const startupTimeout = setTimeout(() => {
-      console.warn("[IVX] Startup timeout reached after", STARTUP_TIMEOUT_MS, "ms");
-      setStartupTimedOut(true);
-    }, STARTUP_TIMEOUT_MS);
 
     // Defer all startup instrumentation to after first paint.
     // These modules (incident capture, owner AI watchdog) are owner-only
@@ -131,46 +140,10 @@ export default function RootLayout() {
     }, 3000);
 
     return () => {
-      clearTimeout(startupTimeout);
+      clearTimeout(hideTimer);
       clearTimeout(deferredTimer);
     };
   }, []);
-
-  // Startup timeout fallback — show a visible error screen instead of hanging.
-  if (startupTimedOut) {
-    return (
-      <View style={styles.startupTimeoutContainer}>
-        <Text style={styles.startupTimeoutTitle}>IVX is taking longer than expected</Text>
-        <Text style={styles.startupTimeoutBody}>
-          The app could not initialize within 5 seconds. This may be due to a slow network or device.
-        </Text>
-        <TouchableOpacity
-          style={styles.startupRetryButton}
-          onPress={() => {
-            setStartupTimedOut(false);
-            setStartupError(null);
-          }}
-        >
-          <Text style={styles.startupRetryText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  if (startupError) {
-    return (
-      <View style={styles.startupTimeoutContainer}>
-        <Text style={styles.startupTimeoutTitle}>IVX failed to start</Text>
-        <Text style={styles.startupTimeoutBody}>{startupError}</Text>
-        <TouchableOpacity
-          style={styles.startupRetryButton}
-          onPress={() => setStartupError(null)}
-        >
-          <Text style={styles.startupRetryText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
 
   return (
     <DiagnosticErrorBoundary>
@@ -189,22 +162,24 @@ export default function RootLayout() {
                         <IPXProvider>
                           <ProviderBoundary name="Email">
                             <EmailProvider>
-                              <StatusBar style="light" />
-                              <Stack
-                                screenOptions={{
-                                  headerShown: false,
-                                  contentStyle: { backgroundColor: "#0A0A0F" },
-                                }}
-                              >
-                                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                                <Stack.Screen name="admin" options={{ headerShown: false }} />
-                                <Stack.Screen name="ivx" options={{ headerShown: false }} />
-                                <Stack.Screen name="property" options={{ headerShown: false }} />
-                                <Stack.Screen name="landing" options={{ headerShown: false }} />
-                                <Stack.Screen name="login" options={{ headerShown: false }} />
-                                <Stack.Screen name="signup" options={{ headerShown: false }} />
-                                <Stack.Screen name="modal" options={{ presentation: "modal" }} />
-                              </Stack>
+                              <ProviderMountProbe>
+                                <StatusBar style="light" />
+                                <Stack
+                                  screenOptions={{
+                                    headerShown: false,
+                                    contentStyle: { backgroundColor: "#0A0A0F" },
+                                  }}
+                                >
+                                  <Stack.Screen name="login" options={{ headerShown: false }} />
+                                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                                  <Stack.Screen name="admin" options={{ headerShown: false }} />
+                                  <Stack.Screen name="ivx" options={{ headerShown: false }} />
+                                  <Stack.Screen name="property" options={{ headerShown: false }} />
+                                  <Stack.Screen name="landing" options={{ headerShown: false }} />
+                                  <Stack.Screen name="signup" options={{ headerShown: false }} />
+                                  <Stack.Screen name="modal" options={{ presentation: "modal" }} />
+                                </Stack>
+                              </ProviderMountProbe>
                             </EmailProvider>
                           </ProviderBoundary>
                         </IPXProvider>
@@ -223,38 +198,6 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#0A0A0F" },
-  startupTimeoutContainer: {
-    flex: 1,
-    backgroundColor: "#0A0A0F",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-  startupTimeoutTitle: {
-    color: "#FFD700",
-    fontSize: 20,
-    fontWeight: "700" as const,
-    marginBottom: 12,
-    textAlign: "center" as const,
-  },
-  startupTimeoutBody: {
-    color: "#888",
-    fontSize: 14,
-    textAlign: "center" as const,
-    marginBottom: 24,
-    lineHeight: 20,
-  },
-  startupRetryButton: {
-    backgroundColor: "#FFD700",
-    borderRadius: 12,
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-  },
-  startupRetryText: {
-    color: "#000",
-    fontSize: 16,
-    fontWeight: "700" as const,
-  },
   providerError: {
     flex: 1,
     backgroundColor: "#0A0A0F",
@@ -273,5 +216,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: "monospace" as const,
     textAlign: "center" as const,
+    marginBottom: 16,
+  },
+  providerErrorButton: {
+    backgroundColor: "#FFD700",
+    borderRadius: 12,
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+  },
+  providerErrorButtonText: {
+    color: "#000",
+    fontSize: 16,
+    fontWeight: "700" as const,
   },
 });

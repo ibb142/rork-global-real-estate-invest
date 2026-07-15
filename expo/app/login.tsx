@@ -42,6 +42,7 @@ import {
 import { getOpenAccessModeMessage, isOpenAccessModeEnabled } from '@/lib/open-access';
 import { supabase, isSupabaseConfigured, getSupabaseConfigAudit, forceProductionSupabaseClient, SUPABASE_USING_PRODUCTION_FALLBACK, SUPABASE_NOT_CONFIGURED_MESSAGE, SUPABASE_HOST_HINT } from '@/lib/supabase';
 import { resolveSupabaseUrl, resolveSupabaseAnonKey } from '@/lib/supabase-env';
+import { logStartup } from '@/lib/startup-trace';
 
 /** Pre-sign-in guard: verifies the resolved Supabase config is safe before
  * sending credentials. Blocks sign-in and shows a clear error if the bundle
@@ -372,6 +373,7 @@ interface LoginScreenContentProps {
 }
 
 export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProps = {}) {
+  logStartup('INITIAL_ROUTE_RENDERED', 'login');
   const router = useRouter();
   const params = useLocalSearchParams<{ email?: string; justRegistered?: string; ownerMode?: string; mode?: string }>();
   const routeOwnerMode = params.ownerMode === '1' || params.ownerMode === 'true' || params.mode === 'owner';

@@ -9,6 +9,7 @@ import { signInWithEmailPassword } from './auth-password-sign-in';
 import { extractChallengeId, extractFirstVerifiedMfaFactor, getMfaChallengeRequirement, type ParsedMfaFactor } from './auth-mfa';
 import { startSessionMonitor } from './session-timeout';
 import { initializeSync, syncOwnerData, syncUserData } from './supabase-sync';
+import { logStartup, logStartupError } from './startup-trace';
 import {
   ensureMemberProfileRecord,
   ensureMemberWalletRecord,
@@ -1478,33 +1479,39 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     let cancelled = false;
 
     const initAuth = async () => {
+      logStartup('AUTH_INIT_STARTED');
       try {
         // Cold launch: sign out any persisted Supabase session so the owner
         // (and all users) must enter credentials manually every time.
         // This prevents automatic owner sign-in from AsyncStorage.
         //
-        // Wrapped in withTimeout so that if AsyncStorage is slow (large session
-        // payloads on Android), the app does not hang on the loading spinner.
-        // The AUTH_BOOTSTRAP_TIMEOUT_MS (3500ms) fallback ensures isLoading
-        // is always set to false within a bounded time.
-        await withTimeout(
-          () => supabase.auth.signOut({ scope: 'local' }),
+        // CRITICAL: The router must render BEFORE this signOut completes.
+        // We set isLoading=false immediately in a microtask so TabsLayout can
+        // redirect to /login, then run the background signOut in a fire-and-forget
+        // promise. If signOut hangs or is slow, the UI is never blocked.
+        Promise.resolve().then(() => {
+          if (!cancelled) {
+            manualOwnerLoginRef.current = false;
+            setIsLoading(false);
+            logStartup('AUTH_INIT_COMPLETED', 'router unlocked before signOut');
+          }
+        });
+
+        // Background signOut with a strict timeout. This never blocks render.
+        withTimeout(
+          () => supabase.auth.signOut({ scope: 'local' }).then(() => {
+            console.log('[Auth] Cold-launch signOut completed');
+          }),
           AUTH_BOOTSTRAP_TIMEOUT_MS,
           'initAuth.signOut',
           undefined,
         ).catch((e: unknown) => {
           console.log('[Auth] Cold-launch signOut note:', (e as Error)?.message ?? 'unknown');
         });
-        if (!cancelled) {
-          manualOwnerLoginRef.current = false;
-        }
       } catch (e) {
+        logStartupError('AUTH_INIT_FAILED', e);
         console.log('[Auth] Init error:', (e as Error)?.message);
-      } finally {
-        // Always set isLoading to false — even if signOut threw or timed out.
-        // This ensures the router auth guard in TabsLayout can proceed and
-        // redirect to /login. Without this, a hung signOut would leave the
-        // app on a perpetual loading spinner (black screen).
+        // Always unlock the router even if setup threw.
         if (!cancelled) {
           setIsLoading(false);
         }

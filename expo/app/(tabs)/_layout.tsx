@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FloatingChatButton from '@/components/FloatingChatButton';
 import { useAuth } from '@/lib/auth-context';
 import { isOpenAccessModeEnabled } from '@/lib/open-access';
+import { logStartup, logStartupError } from '@/lib/startup-trace';
 
 const tabColors = {
   active: '#FFD700',
@@ -23,15 +24,18 @@ const tabColors = {
   border: '#242424',
 };
 
+const TABS_LOADING_TIMEOUT_MS = 2000;
+
 export default function TabsLayout() {
+  logStartup('ROUTER_READY');
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { profileData, isAuthenticated, isLoading } = useAuth();
   const redirectAttemptedRef = useRef(false);
-  // Safety timeout: if isLoading stays true for more than 5 seconds,
-  // force it to false so the auth guard can proceed. This prevents
-  // an infinite spinner if initAuth hangs on a slow AsyncStorage read.
+  // Safety timeout: if auth init somehow keeps isLoading true, cap the wait
+  // and force the login redirect. This is the last-resort guard, not the main path.
   const [loadingTimedOut, setLoadingTimedOut] = useState(false);
+  const [authInitError, setAuthInitError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoading) {
@@ -39,9 +43,10 @@ export default function TabsLayout() {
       return;
     }
     const timer = setTimeout(() => {
-      console.warn('[TabsLayout] Loading exceeded 5s — forcing auth guard to proceed');
+      console.warn('[TabsLayout] Loading exceeded', TABS_LOADING_TIMEOUT_MS, 'ms — forcing login redirect');
       setLoadingTimedOut(true);
-    }, 5000);
+      setAuthInitError('IVX startup took too long. Tap below to open Owner Login.');
+    }, TABS_LOADING_TIMEOUT_MS);
     return () => clearTimeout(timer);
   }, [isLoading]);
 
@@ -59,7 +64,12 @@ export default function TabsLayout() {
     if (!isAuthenticated && !redirectAttemptedRef.current) {
       redirectAttemptedRef.current = true;
       console.log('[TabsLayout] Unauthenticated on cold launch — redirecting to /login');
-      router.replace('/login');
+      try {
+        router.replace('/login');
+      } catch (err) {
+        logStartupError('ROUTER_READY', err);
+        console.warn('[TabsLayout] Redirect to /login failed:', err);
+      }
     } else if (isAuthenticated && redirectAttemptedRef.current) {
       redirectAttemptedRef.current = false;
     }
@@ -75,6 +85,35 @@ export default function TabsLayout() {
       </View>
     );
   }
+
+  // If the safety timeout fired, show a recoverable error screen with a real
+  // bounded action that navigates to login. This never returns null and never
+  // leaves the router without a rendered screen.
+  if (authInitError) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>IVX startup timed out</Text>
+        <Text style={styles.errorText}>{authInitError}</Text>
+        <TouchableOpacity
+          style={styles.retryButton}
+          onPress={() => {
+            setLoadingTimedOut(false);
+            setAuthInitError(null);
+            redirectAttemptedRef.current = false;
+            try {
+              router.replace('/login');
+            } catch (err) {
+              logStartupError('ROUTER_READY', err);
+            }
+          }}
+        >
+          <Text style={styles.retryButtonText}>Open Owner Login</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  logStartup('INITIAL_ROUTE_RENDERED', 'tabs');
   const isOwner = useMemo(() => {
     const role = ((profileData as { role?: string } | null)?.role ?? '').toLowerCase();
     return role === 'owner' || role === 'admin';
@@ -178,12 +217,33 @@ const styles = StyleSheet.create({
     backgroundColor: '#0A0A0F',
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 24,
   },
   loadingText: {
     color: '#FFD700',
     fontSize: 14,
     fontWeight: '600' as const,
     marginTop: 12,
+    textAlign: 'center' as const,
+  },
+  errorText: {
+    color: '#888',
+    fontSize: 12,
+    textAlign: 'center' as const,
+    marginTop: 8,
+    marginBottom: 24,
+    lineHeight: 18,
+  },
+  retryButton: {
+    backgroundColor: '#FFD700',
+    borderRadius: 12,
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+  },
+  retryButtonText: {
+    color: '#000',
+    fontSize: 16,
+    fontWeight: '700' as const,
   },
   tabBar: {
     backgroundColor: tabColors.background,

@@ -9,8 +9,8 @@ const config: ExpoConfig = {
     policy: 'appVersion',
   },
   extra: {
-    buildMarker: 'IVX_BUNDLE_2026_07_15_BUILD_19_ASYNCSTORAGE_FIX',
-    buildTimestamp: '2026-07-15T11:50:00.000000+00:00',
+    buildMarker: 'IVX_BUNDLE_2026_07_15_BUILD_20_STARTUP_RELIABILITY',
+    buildTimestamp: '2026-07-15T13:20:00.000000+00:00',
     sourceCommitSha: 'e3149d5c995d8e3d95a205d9d4ce4ae65a0958f3',
     watchdogPatchVersion: 'ai-mutation-watchdog-fix-v8-startup',
     frontendDeployMarker: 'ivx-frontend-2026-07-15-startup-fix',
@@ -46,7 +46,7 @@ const config: ExpoConfig = {
       backgroundColor: '#000000',
     },
     package: 'com.ivxholdings.app',
-    versionCode: 19,
+    versionCode: 20,
     softwareKeyboardLayoutMode: 'resize',
   },
   web: {

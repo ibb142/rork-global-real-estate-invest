@@ -3,15 +3,25 @@ name: "IVX Holdings Expo app — final owner sign-in stabilization, diagnostic b
 overview: "Fix the installed Expo React Native app root causes: remove the production diagnostics banner, restore and validate the owner Supabase session after app restart, consolidate to one Supabase client, inject real build environment info, and ship a new com.ivxholdings.app APK with direct download."
 createdAt: "2026-07-15T02:20:00.000Z"
 ---
-# IVX Holdings Expo app — final owner sign-in stabilization and diagnostic banner removal
+# IVX Holdings Expo app — startup reliability first, then owner sign-in
 
 The only approved application is the existing Expo React Native project at `expo/`. All other apps, shells, and packages are frozen.
 
-## Background — real-device evidence from the installed APK
+## Priority shift — fix startup reliability before any owner-login changes
 
-- Top diagnostics banner is visible in production with `Git SHA: local` and `API env: unknown`.
-- Owner AI returns `no_supabase_session` after valid owner login.
-- The app must hide diagnostics by default in production, persist and restore the owner session correctly, and display the real build environment.
+Real-device evidence from build 19 shows the app reaches the native splash screen, then after ~5 seconds shows the `IVX is taking longer than expected` fallback, then becomes a permanent black screen. Owner Login never renders. The 5-second fallback is a symptom, not a fix: the root navigator is blocking on startup work, and the fallback's Retry button only resets state instead of recovering the app.
+
+All owner-login persistence / auto-restore / sign-in changes are **paused** until the application can reliably render the first route (Owner Login or a usable offline screen) on a cold launch. The current task is to remove every blocking startup operation and make the root navigator render independent of network, Supabase, or AsyncStorage completion.
+
+## Task 0 — Startup reliability (blocking all other work)
+
+- [x] Audit the root layout, auth context, providers, and tab layout for any operation that blocks the first route render.
+- [x] Add a unique startup trace ID and log checkpoints: `APP_MOUNTED`, `ROOT_LAYOUT_RENDERED`, `PROVIDERS_MOUNTED`, `SPLASH_HIDE_STARTED`, `SPLASH_HIDE_COMPLETED`, `AUTH_INIT_STARTED`, `AUTH_INIT_COMPLETED`, `AUTH_INIT_FAILED`, `ROUTER_READY`, `INITIAL_ROUTE_RENDERED` with elapsed milliseconds.
+- [x] Remove the unconditional 5-second startup timeout in `app/_layout.tsx` that replaces the navigation tree with a non-recovering fallback screen.
+- [x] Make `lib/auth-context.tsx` set `isLoading=false` and unlock the router immediately; run `supabase.auth.signOut({ scope: 'local' })` in the background with a strict timeout.
+- [x] Keep `app/(tabs)/_layout.tsx` auth guard but cap its loading safety net at a short timeout (e.g., 2 seconds) and always redirect to `/login` when it fires.
+- [x] Verify the production APK contains the correct Supabase URL/key fallbacks and contains no development URLs (localhost, 127.0.0.1, ngrok, etc.).
+- [x] Build a new `com.ivxholdings.app` APK (versionCode 20), upload a direct-download link, and provide the user with a real-device log capture script so they can verify `INITIAL_ROUTE_RENDERED` on a physical device.
 
 ## Task 1 — Remove the top diagnostic banner from production
 
@@ -81,6 +91,7 @@ The only approved application is the existing Expo React Native project at `expo
 - [x] Upload the APK to a public HTTPS URL with a direct download link.
 - [x] Re-upload the new build 18 APK and update the direct download link (litter.catbox.moe; gofile.io only served an HTML page).
 - [x] Update `DEPLOYMENT_PROOF.json` with the new build details.
+- [x] Bump the Android `versionCode` to `20` and rebuild after removing the blocking root-layout timeout and making auth init non-blocking (startup reliability fix).
 
 ## Final acceptance
 
@@ -91,7 +102,7 @@ The only approved application is the existing Expo React Native project at `expo
 - [x] Git SHA is not `local` and API environment is not `unknown` in production (build info reads from app.config.ts extra).
 - [x] Owner AI send button is disabled until authentication is ready (explicit auth states + `isAuthBlocked`).
 - [x] Final APK uses `com.ivxholdings.app` and is directly downloadable (build 18 link delivered and verified with HTTP 200 + application/octet-stream + checksum match).
-- [~] Real Android testing passes on the user’s device.
+- [~] Real Android testing passes on the user’s device for build 20: no black screen, no 'taking longer' fallback, Owner Login renders, startup trace shows INITIAL_ROUTE_RENDERED.
 
 ## Blockers
 
