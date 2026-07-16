@@ -87,39 +87,53 @@
     });
   }
 
-  /* ---------- styles ---------- */
+  /* ---------- styles — immersive full-bleed card (matches app reels) ---------- */
   var css = ''
-    + '.ivx-hf-video{grid-column:1/-1;background:#141414;border:1px solid rgba(255,215,0,.25);border-radius:16px;'
-    + 'overflow:hidden;display:flex;flex-direction:column}'
-    + '.ivx-hf-media{position:relative;background:#000;aspect-ratio:16/9;max-height:420px;overflow:hidden}'
+    + '.ivx-hf-video{width:100%;max-width:440px;border-radius:18px;overflow:hidden;background:#000;border:1px solid #2A2A2A;'
+    + 'transition:transform .22s,border-color .22s,box-shadow .22s}'
+    + '.ivx-hf-video:hover{transform:translateY(-5px);border-color:rgba(255,215,0,.22);box-shadow:0 16px 50px rgba(0,0,0,.45)}'
+    + '.ivx-hf-media{position:relative;width:100%;aspect-ratio:9/16;min-height:520px;max-height:720px;overflow:hidden;background:#141414}'
     + '.ivx-hf-media img,.ivx-hf-media video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}'
-    + '.ivx-hf-tag{position:absolute;top:12px;left:12px;z-index:3;background:#FFD700;color:#000;border-radius:6px;'
-    + 'padding:4px 10px;font:800 11px/1 -apple-system,Segoe UI,sans-serif;text-transform:uppercase;letter-spacing:.5px}'
-    + '.ivx-hf-mute{position:absolute;bottom:12px;right:12px;z-index:3;background:rgba(0,0,0,.6);color:#fff;border:none;'
-    + 'border-radius:50%;width:36px;height:36px;font-size:16px;cursor:pointer}'
-    + '.ivx-hf-body{padding:16px;color:#fff;font-family:-apple-system,Segoe UI,sans-serif}'
-    + '.ivx-hf-name{font-weight:800;font-size:17px;margin-bottom:2px}'
-    + '.ivx-hf-loc{color:#9a9a9a;font-size:12.5px;margin-bottom:4px}'
-    + '.ivx-hf-phase{display:inline-block;color:#00C48C;background:rgba(34,197,94,.12);border-radius:5px;'
-    + 'padding:3px 8px;font:700 10.5px/1.2 -apple-system,sans-serif;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}'
-    + '.ivx-hf-stats{display:flex;gap:0;background:#1E1E1E;border-radius:10px;padding:10px 4px;margin-bottom:10px}'
-    + '.ivx-hf-stat{flex:1;text-align:center}'
-    + '.ivx-hf-stat .v{font-weight:800;font-size:14px}'
-    + '.ivx-hf-stat .l{color:#7a7a7a;font-size:9.5px;font-weight:600;text-transform:uppercase;margin-top:2px}'
-    + '.ivx-hf-prog{display:flex;align-items:center;gap:8px;margin-bottom:12px}'
-    + '.ivx-hf-prog .track{flex:1;height:6px;border-radius:3px;background:#1E1E1E;overflow:hidden}'
-    + '.ivx-hf-prog .fill{height:100%;border-radius:3px;background:#FFD700}'
-    + '.ivx-hf-prog .pct{color:#9a9a9a;font-size:11.5px;font-weight:700}'
-    + '.ivx-hf-btns{display:flex;gap:8px}'
-    + '.ivx-hf-btns a{flex:1;text-align:center;border-radius:10px;padding:12px 0;font:700 14px/1 -apple-system,Segoe UI,sans-serif;'
-    + 'text-decoration:none;cursor:pointer}'
-    + '.ivx-hf-view{background:#1E1E1E;color:#fff;border:1px solid rgba(255,255,255,.12)}'
-    + '.ivx-hf-invest{background:#FFD700;color:#000}';
+    + '.ivx-hf-overlay{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;justify-content:space-between;'
+    + 'background:linear-gradient(180deg,rgba(0,0,0,.55) 0%,rgba(0,0,0,.12) 25%,rgba(0,0,0,.12) 60%,rgba(0,0,0,.82) 100%);pointer-events:none}'
+    + '.ivx-hf-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:14px;pointer-events:auto}'
+    + '.ivx-hf-badges{display:flex;gap:8px;flex-wrap:wrap}'
+    + '.ivx-hf-badge{border-radius:8px;padding:5px 10px;font:900 10px/1 -apple-system,Segoe UI,sans-serif;text-transform:uppercase;letter-spacing:.8px}'
+    + '.ivx-hf-badge-filled{background:#FFD700;color:#000}'
+    + '.ivx-hf-badge-outline{background:transparent;color:#FFD700;border:1.5px solid #FFD700}'
+    + '.ivx-hf-actions-right{display:flex;flex-direction:column;align-items:center;gap:10px}'
+    + '.ivx-hf-icon{width:42px;height:42px;border-radius:50%;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.18);'
+    + 'color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer;'
+    + 'backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);transition:transform .15s,background .2s}'
+    + '.ivx-hf-icon:hover{background:rgba(0,0,0,.65);transform:scale(1.08)}'
+    + '.ivx-hf-bottom{padding:14px;padding-top:40px;pointer-events:auto}'
+    + '.ivx-hf-name{font:900 22px/1.1 -apple-system,Segoe UI,sans-serif;color:#fff;text-shadow:0 1px 6px rgba(0,0,0,.45)}'
+    + '.ivx-hf-subtitle{font:700 14px/1.2 -apple-system,Segoe UI,sans-serif;color:#fff;margin-top:2px;text-shadow:0 1px 4px rgba(0,0,0,.45)}'
+    + '.ivx-hf-loc{font:12px/1.4 -apple-system,Segoe UI,sans-serif;color:rgba(255,255,255,.82);margin-top:3px;display:flex;align-items:center;gap:4px}'
+    + '.ivx-hf-stats{display:flex;gap:16px;margin:12px 0}'
+    + '.ivx-hf-stat{display:flex;align-items:baseline;gap:4px}'
+    + '.ivx-hf-stat .v{font:900 16px/1 -apple-system,Segoe UI,sans-serif;color:#FFD700}'
+    + '.ivx-hf-stat .l{font:700 10px/1 -apple-system,Segoe UI,sans-serif;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:.5px}'
+    + '.ivx-hf-actions-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}'
+    + '.ivx-hf-pill{border-radius:8px;padding:5px 10px;font:800 11px/1 -apple-system,Segoe UI,sans-serif;text-transform:uppercase;letter-spacing:.5px}'
+    + '.ivx-hf-pill:nth-child(1){background:rgba(255,215,0,.15);color:#FFD700;border:1px solid rgba(255,215,0,.35)}'
+    + '.ivx-hf-pill:nth-child(2){background:rgba(0,196,140,.15);color:#00C48C;border:1px solid rgba(0,196,140,.35)}'
+    + '.ivx-hf-pill:nth-child(3){background:rgba(74,144,217,.15);color:#4A90D9;border:1px solid rgba(74,144,217,.35)}'
+    + '.ivx-hf-thumb{width:40px;height:40px;border-radius:8px;object-fit:cover;border:1px solid rgba(255,255,255,.2)}'
+    + '.ivx-hf-ai-badge{margin-left:auto;border-radius:100px;padding:5px 10px;background:rgba(255,255,255,.12);'
+    + 'border:1px solid rgba(255,255,255,.22);font:700 11px/1 -apple-system,Segoe UI,sans-serif;color:#fff;display:inline-flex;align-items:center;gap:4px}'
+    + '.ivx-hf-btns{display:flex;gap:10px;align-items:stretch}'
+    + '.ivx-hf-btns a{flex:1;text-align:center;border-radius:12px;padding:13px 0;font:700 14px/1 -apple-system,Segoe UI,sans-serif;text-decoration:none;cursor:pointer}'
+    + '.ivx-hf-view{background:rgba(0,0,0,.35);color:#fff;border:1.5px solid rgba(255,255,255,.2)}'
+    + '.ivx-hf-invest{background:#FFD700;color:#000}'
+    + '.ivx-hf-caption{display:flex;align-items:center;gap:8px;margin-top:12px;background:rgba(0,0,0,.35);'
+    + 'border:1px solid rgba(255,255,255,.12);border-radius:100px;padding:8px 14px;color:rgba(255,255,255,.7);font:12px/1 -apple-system,Segoe UI,sans-serif}'
+    + '@media(max-width:520px){.ivx-hf-media{min-height:480px}.ivx-hf-name{font-size:20px}}';
   var styleEl = document.createElement('style');
   styleEl.textContent = css;
   document.head.appendChild(styleEl);
 
-  /* ---------- featured project video card ---------- */
+  /* ---------- featured project video card (immersive full-bleed) ---------- */
   function buildVideoCard(v) {
     var deal = v.deal || {};
     var card = document.createElement('div');
@@ -127,34 +141,62 @@
     card.setAttribute('data-ivx-home-feed-video', v.id);
 
     var poster = v.poster_url || v.thumbnail_url || v.preview_blur_url || '';
-    var statBits = '';
-    if (deal.investment_amount) statBits += '<div class="ivx-hf-stat"><div class="v">' + money(deal.investment_amount) + '</div><div class="l">Investment</div></div>';
-    if (deal.expected_roi) statBits += '<div class="ivx-hf-stat"><div class="v" style="color:#00C48C">' + esc(deal.expected_roi) + '%</div><div class="l">ROI</div></div>';
-    if (deal.min_investment) statBits += '<div class="ivx-hf-stat"><div class="v">' + money(deal.min_investment) + '</div><div class="l">Minimum</div></div>';
-    var progressRow = '';
-    if (deal.progress_percent != null) {
-      var pct = Math.min(100, Math.max(0, Number(deal.progress_percent) || 0));
-      progressRow = '<div class="ivx-hf-prog"><div class="track"><div class="fill" style="width:' + pct + '%"></div></div>'
-        + '<span class="pct">' + pct + '%</span></div>';
-    }
+    var name = esc(deal.name || v.title || 'IVX Project');
+    var subtitle = esc(deal.projectName || deal.name || v.title || 'IVX Project');
+    var city = esc(deal.city || '');
+    var roi = deal.expected_roi ? esc(String(deal.expected_roi)) + '%' : '—';
+    var min = deal.min_investment ? money(deal.min_investment) : '—';
+    var ownership = deal.min_ownership ? esc(deal.min_ownership) : '0.0016%';
     var dealUrl = deal.url || 'https://ivxholding.com/#deals';
+    var dealType = String(deal.deal_type || deal.type || 'investment').toLowerCase();
+    var typeLabel = dealType === 'jv' ? 'JV Deal' : (dealType === 'development' ? 'Development' : 'Investment');
+    var thumb = poster ? '<img class="ivx-hf-thumb" src="' + esc(poster) + '" alt="" loading="lazy" />' : '';
 
     card.innerHTML = ''
       + '<div class="ivx-hf-media">'
-      + '  <span class="ivx-hf-tag">Featured Project Video</span>'
-      + (poster ? '<img src="' + esc(poster) + '" alt="' + esc(deal.name || v.title || '') + '" loading="lazy"/>' : '')
-      + '  <video playsinline muted loop preload="none"' + (poster ? ' poster="' + esc(poster) + '"' : '') + ' style="opacity:0"></video>'
-      + '  <button class="ivx-hf-mute" aria-label="Unmute">&#128263;</button>'
-      + '</div>'
-      + '<div class="ivx-hf-body">'
-      + '  <div class="ivx-hf-name">' + esc(deal.name || v.title || 'IVX Project') + '</div>'
-      + (deal.city ? '<div class="ivx-hf-loc">&#128205; ' + esc(deal.city) + '</div>' : '')
-      + (deal.phase ? '<span class="ivx-hf-phase">' + esc(deal.phase) + '</span>' : '')
-      + (statBits ? '<div class="ivx-hf-stats">' + statBits + '</div>' : '')
-      + progressRow
-      + '  <div class="ivx-hf-btns">'
-      + '    <a class="ivx-hf-view" href="' + esc(dealUrl) + '">View Deal</a>'
-      + '    <a class="ivx-hf-invest" href="https://chat.ivxholding.com/investor">Invest Now</a>'
+      + (poster ? '<img src="' + esc(poster) + '" alt="' + name + '" loading="lazy" style="z-index:1"/>' : '')
+      + '  <video playsinline muted loop preload="none"' + (poster ? ' poster="' + esc(poster) + '"' : '') + ' style="opacity:0;z-index:1"></video>'
+      + '  <div class="ivx-hf-overlay">'
+      + '    <div class="ivx-hf-top">'
+      + '      <div class="ivx-hf-badges">'
+      + '        <span class="ivx-hf-badge ivx-hf-badge-filled">Featured Video</span>'
+      + '        <span class="ivx-hf-badge ivx-hf-badge-outline">' + esc(typeLabel) + '</span>'
+      + '      </div>'
+      + '      <div class="ivx-hf-actions-right">'
+      + '        <button class="ivx-hf-icon" aria-label="Like" onclick="event.stopPropagation();">&#9825;</button>'
+      + '        <button class="ivx-hf-icon" aria-label="Comment" onclick="event.stopPropagation();">&#128172;</button>'
+      + '        <button class="ivx-hf-icon" aria-label="Save" onclick="event.stopPropagation();">&#128278;</button>'
+      + '        <button class="ivx-hf-icon" aria-label="Share" onclick="event.stopPropagation();">&#8599;</button>'
+      + '        <button class="ivx-hf-icon ivx-hf-mute" aria-label="Unmute">&#128263;</button>'
+      + '      </div>'
+      + '    </div>'
+      + '    <div class="ivx-hf-bottom">'
+      + '      <div class="ivx-hf-name">' + name + '</div>'
+      + '      <div class="ivx-hf-subtitle">' + subtitle + ' &mdash; Project Tour</div>'
+      + (city ? '<div class="ivx-hf-loc">&#128205; ' + city + '</div>' : '')
+      + '      <div class="ivx-hf-stats">'
+      + '        <div class="ivx-hf-stat"><div class="v">' + roi + '</div><div class="l">ROI</div></div>'
+      + '        <div class="ivx-hf-stat"><div class="v">' + min + '</div><div class="l">Min Invest</div></div>'
+      + '        <div class="ivx-hf-stat"><div class="v">' + ownership + '</div><div class="l">Min Ownership</div></div>'
+      + '      </div>'
+      + '      <div class="ivx-hf-actions-row">'
+      + '        <span class="ivx-hf-pill">Tokenized</span>'
+      + '        <span class="ivx-hf-pill">' + esc(typeLabel) + '</span>'
+      + '        <span class="ivx-hf-pill">E</span>'
+      + thumb
+      + '        <span class="ivx-hf-ai-badge">&#10024; Restyle with AI</span>'
+      + '      </div>'
+      + '      <div class="ivx-hf-btns">'
+      + '        <a class="ivx-hf-view" href="' + esc(dealUrl) + '">View Deal</a>'
+      + '        <a class="ivx-hf-invest" href="https://chat.ivxholding.com/investor">Invest Now</a>'
+      + '      </div>'
+      + '      <div class="ivx-hf-caption">'
+      + '        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;color:#FFD700">'
+      + '          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>'
+      + '        </svg>'
+      + '        Add a caption...'
+      + '      </div>'
+      + '    </div>'
       + '  </div>'
       + '</div>';
 
