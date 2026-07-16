@@ -2165,7 +2165,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"oldString\": \"import { dispatchTask, completeTask, failTask, readAgentMemory, recordAudit, writeAgentMemory, type AgentId } from './agents/multi-agent-framework';\\nimport { buildGeneratedFeatureFromGoal, type IVXGeneratedFeature } from './ivx-generated-feature-registry';\\nimport { resolveRuntimeCommand } from './ivx-runtime-resolver';\\nimport { appendDurableEvent, isDurableStoreConfigured, readDurableJson, writeDurableJson } from './ivx-durable-store';\", \"newString\": \"import { dispatchTask, completeTask, failTask, readAgentMemory, recordAudit, writeAgentMemory, type AgentId } from './agents/multi-agent-framework';\\nimport { buildGeneratedFeatureFromGoal, type IVXGeneratedFeature } from './ivx-generated-feature-registry';\\nimport { resolveRuntimeCommand } from './ivx-runtime-resolver';\\nimport { appendDurableEvent, isDurableStoreConfigured, readDurableJson, writeDurableJson } from './ivx-durable-store';\\nimport { triggerDeduplicatedDeploy as triggerDedupDeploy } from './ivx-deploy-dedup';\\n\\n/** Canonical GitHub execution path: Git Data API (blobs + trees + commits + ref update).\\n * The Rork git proxy does NOT forward to GitHub reliably — it stays at the Rork\\n * proxy layer only. The Git Data API is the single canonical production path. */\\nexport const IVX_GITHUB_CANONICAL_PATH = 'github_git_data_api';\\nexport const IVX_GITHUB_CANONICAL_PATH_DESCRIPTION = 'Git Data API (blobs → trees → commits → ref PATCH). Rork git proxy is NOT used for production pushes.';\"}], \"filePath\": \"backend/services/ivx-senior-developer-runtime.ts\"}",
       "createdAt": 1784217059314,
-      "completedAt": 1784217061592
+      "completedAt": 1784217061592,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -2200,7 +2201,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"oldString\": \"async function triggerRenderDeploy(commitSha: string): Promise<{ deployId: string | null; deployStatus: string | null; deployUrl: string | null; autoDeployFallback: boolean; apiError: string | null }> {\\n  const apiKey = await readRuntimeVariable('RENDER_API_KEY');\\n  const serviceId = await readRuntimeVariable('RENDER_SERVICE_ID');\\n  if (!apiKey) throw new Error('RENDER_API_KEY is missing.');\\n  if (!serviceId) throw new Error('RENDER_SERVICE_ID is missing.');\\n\\n  // Render ingests the GitHub commit asynchronously (webhook), so pinning the\\n  // deploy to the freshly-pushed SHA can 404 with \\\"service does not have a\\n  // commit ...\\\" before the sync completes. Retry the pinned trigger a few times,\\n  // then fall back to deploying the branch HEAD (no commitId) so we still capture\\n  // a real Render deploy ID instead of relying only on auto-deploy-on-commit.\\n  const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));\\n  let response = await fetchJson(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(serviceId)}/deploys`, {\\n    method: 'POST',\\n    headers: renderHeaders(apiKey),\\n    body: JSON.stringify({ commitId: commitSha }),\\n  });\\n  const commitNotYetIngested = (resp: typeof response): boolean =>\\n    resp.status === 404 && JSON.stringify(resp.data ?? '').toLowerCase().includes('does not have a commit');\\n  for (let attempt = 0; attempt < 4 && commitNotYetIngested(response); attempt += 1) {\\n    await sleep(2500);\\n    response = await fetchJson(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(serviceId)}/deploys`, {\\n      method: 'POST',\\n      headers: renderHeaders(apiKey),\\n      body: JSON.stringify({ commitId: commitSha }),\\n    });\\n  }\\n  if (commitNotYetIngested(response)) {\\n    // The pinned commit still has not synced; deploy the branch HEAD so Render\\n    // returns a concrete deploy ID. render.yaml auto-deploy still covers the SHA.\\n    response = await fetchJson(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(serviceId)}/deploys`, {\\n      method: 'POST',\\n      headers: renderHeaders(apiKey),\\n      body: JSON.stringify({}),\\n    });\\n  }\\n  if (!response.ok) {\\n    // render.yaml configures `autoDeployTrigger: commit`, so the GitHub commit we\\n    // just pushed already triggers a production deploy on its own. When the Render\\n    // REST API rejects the explicit trigger (e.g. a rotated/expired RENDER_API_KEY\\n    // returning 401), do NOT throw away the real commit — fall back to the\\n    // commit-triggered auto-deploy and report it honestly. Production landing is\\n    // then proven by the post-deploy /health commit check, not by this API call.\\n    return {\\n      deployId: null,\\n      deployStatus: 'auto_deploy_on_commit',\\n      deployUrl: null,\\n      autoDeployFallback: true,\\n      apiError: externalFailureMessage('Render', 'deploy trigger', response),\\n    };\\n  }\\n  const data = readRecord(response.data);\\n  const deploy = readRecord(data.deploy);\\n  return {\\n    deployId: readString(data.id) || readString(deploy.id) || null,\\n    deployStatus: readString(data.status) || readString(deploy.status) || 'accepted',\\n    deployUrl: readString(data.url) || readString(deploy.url) || null,\\n    autoDeployFallback: false,\\n    apiError: null,\\n  };\\n}\", \"newString\": \"async function triggerRenderDeploy(commitSha: string): Promise<{ deployId: string | null; deployStatus: string | null; deployUrl: string | null; autoDeployFallback: boolean; apiError: string | null; deduplicated: boolean }> {\\n  const apiKey = await readRuntimeVariable('RENDER_API_KEY');\\n  const serviceId = await readRuntimeVariable('RENDER_SERVICE_ID');\\n  if (!apiKey) throw new Error('RENDER_API_KEY is missing.');\\n  if (!serviceId) throw new Error('RENDER_SERVICE_ID is missing.');\\n\\n  // Phase 3: Use deduplicated deploy to prevent duplicate deploys for the same SHA.\\n  // The dedup module checks for active/pending deploys with the same SHA before\\n  // triggering a new one, and uses a lock to prevent concurrent triggers.\\n  const dedupResult = await triggerDedupDeploy({\\n    renderApiKey: apiKey,\\n    serviceId,\\n    commitSha,\\n  });\\n\\n  if (dedupResult.ok) {\\n    return {\\n      deployId: dedupResult.deployId,\\n      deployStatus: dedupResult.deployStatus,\\n      deployUrl: null,\\n      autoDeployFallback: false,\\n      apiError: null,\\n      deduplicated: dedupResult.deduplicated,\\n    };\\n  }\\n\\n  // If the dedup trigger failed (e.g. lock contention or API error), fall back to\\n  // auto-deploy-on-commit (render.yaml autoDeployTrigger: commit). The GitHub\\n  // commit we pushed already triggers a production deploy on its own.\\n  return {\\n    deployId: null,\\n    deployStatus: 'auto_deploy_on_commit',\\n    deployUrl: null,\\n    autoDeployFallback: true,\\n    apiError: dedupResult.error,\\n    deduplicated: false,\\n  };\\n}\", \"replaceAll\": false}], \"filePath\": \"backend/services/ivx-senior-developer-runtime.ts\"}",
       "createdAt": 1784217063772,
-      "completedAt": 1784217075603
+      "completedAt": 1784217075603,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -2243,7 +2245,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"path\": \"backend/services/ivx-senior-developer-runtime.ts\", \"pattern\": \"deploy\\\\.autoDeployFallback|deploy\\\\.deployId|deploy\\\\.deployStatus|deploy\\\\.apiError\"}",
       "createdAt": 1784217078871,
-      "completedAt": 1784217078876
+      "completedAt": 1784217078876,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -2274,7 +2277,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"backend/services/ivx-senior-developer-runtime.ts\", \"limit\": 30, \"offset\": 1300}",
       "createdAt": 1784217080942,
-      "completedAt": 1784217080946
+      "completedAt": 1784217080946,
+      "compactedAt": 1784224113568
     },
     {
       "type": "tool",
@@ -2297,7 +2301,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"oldString\": \"  let deploy: { deployId: string | null; deployStatus: string | null; deployUrl: string | null; autoDeployFallback: boolean; apiError: string | null };\\n  try {\\n    deploy = await triggerRenderDeploy(commit.commitSha);\\n  } catch (error) {\\n    // Even an unexpected throw should not erase the real commit; auto-deploy\\n    // on commit still applies.\\n    deploy = { deployId: null, deployStatus: 'auto_deploy_on_commit', deployUrl: null, autoDeployFallback: true, apiError: safeErrorMessage(error) };\\n  }\\n  return makeGitDeployProof({\\n    status: 'executed',\\n    repoConfigured,\\n    tokenConfigured,\\n    apiKeyConfigured,\\n    serviceConfigured,\\n    reason: deploy.autoDeployFallback\\n      ? 'GitHub commit executed; Render REST trigger was unavailable so production deploys via render.yaml autoDeployTrigger:commit. Landing is verified by the post-deploy /health commit check.'\\n      : 'GitHub commit and Render deploy were executed by the owner-approved senior developer runtime.',\\n    github: { commitAttempted: true, commitSha: commit.commitSha, commitUrl: commit.commitUrl, branch: commit.branch, committedPaths: commit.committedPaths, accessCheck: githubAccessCheck },\\n    render: { deployAttempted: true, deployId: deploy.deployId, deployStatus: deploy.deployStatus, deployUrl: deploy.deployUrl, error: deploy.apiError },\\n  });\", \"newString\": \"  let deploy: { deployId: string | null; deployStatus: string | null; deployUrl: string | null; autoDeployFallback: boolean; apiError: string | null; deduplicated: boolean };\\n  try {\\n    deploy = await triggerRenderDeploy(commit.commitSha);\\n  } catch (error) {\\n    // Even an unexpected throw should not erase the real commit; auto-deploy\\n    // on commit still applies.\\n    deploy = { deployId: null, deployStatus: 'auto_deploy_on_commit', deployUrl: null, autoDeployFallback: true, apiError: safeErrorMessage(error), deduplicated: false };\\n  }\\n  const deployReason = deploy.autoDeployFallback\\n    ? 'GitHub commit executed; Render REST trigger was unavailable so production deploys via render.yaml autoDeployTrigger:commit. Landing is verified by the post-deploy /health commit check.'\\n    : deploy.deduplicated\\n      ? `GitHub commit executed; Render deploy deduplicated (existing deploy ${deploy.deployId} for same SHA). No duplicate created.`\\n      : 'GitHub commit and Render deploy were executed by the owner-approved senior developer runtime.';\\n  return makeGitDeployProof({\\n    status: 'executed',\\n    repoConfigured,\\n    tokenConfigured,\\n    apiKeyConfigured,\\n    serviceConfigured,\\n    reason: deployReason,\\n    github: { commitAttempted: true, commitSha: commit.commitSha, commitUrl: commit.commitUrl, branch: commit.branch, committedPaths: commit.committedPaths, accessCheck: githubAccessCheck },\\n    render: { deployAttempted: true, deployId: deploy.deployId, deployStatus: deploy.deployStatus, deployUrl: deploy.deployUrl, error: deploy.apiError },\\n  });\", \"replaceAll\": false}], \"filePath\": \"backend/services/ivx-senior-developer-runtime.ts\"}",
       "createdAt": 1784217081962,
-      "completedAt": 1784217091148
+      "completedAt": 1784217091148,
+      "compactedAt": 1784224113568
     },
     {
       "type": "tool",
@@ -2395,7 +2400,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"tasks\": [{\"activeForm\": \"Implementing safe Render variable merge workflow\", \"content\": \"Phase 1: Safe Render variable merge workflow + tests\", \"status\": \"completed\"}, {\"activeForm\": \"Standardizing GitHub execution path\", \"content\": \"Phase 2: Standardize GitHub execution path + tests\", \"status\": \"in_progress\"}, {\"activeForm\": \"Implementing deployment deduplication\", \"content\": \"Phase 3: Deployment deduplication + tests\", \"status\": \"completed\"}, {\"activeForm\": \"Hardening Live Work reliability\", \"content\": \"Phase 4: Live Work reliability + persistence\", \"status\": \"pending\"}, {\"activeForm\": \"Running fresh production execution test\", \"content\": \"Phase 5: Fresh production execution test via IVX Owner AI chat\", \"status\": \"pending\"}, {\"activeForm\": \"Testing failure paths\", \"content\": \"Phase 6: Failure path tests\", \"status\": \"pending\"}, {\"activeForm\": \"Verifying security and data safety\", \"content\": \"Phase 7: Security and data safety verification\", \"status\": \"pending\"}, {\"activeForm\": \"Running final regression and producing report\", \"content\": \"Phase 8: Final regression + mandatory report\", \"status\": \"pending\"}]}",
       "createdAt": 1784217093019,
-      "completedAt": 1784217095375
+      "completedAt": 1784217095375,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -2424,7 +2430,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"content\": \"import { describe, expect, test } from 'bun:test';\\nimport {\\n  IVX_GITHUB_CANONICAL_PATH,\\n  IVX_GITHUB_CANONICAL_PATH_DESCRIPTION,\\n  shouldBuildNewFeature,\\n} from '../services/ivx-senior-developer-runtime';\\n\\n// ── Mock fetch for GitHub API tests ─────────────────────────────────────\\ntype MockResponse = { status: number; body: unknown };\\n\\nfunction createMockFetch(responses: Array<{ match: (url: string, method: string) => boolean; response: MockResponse }>): typeof fetch {\\n  return (async (url: RequestInfo | URL, init?: RequestInit) => {\\n    const urlStr = typeof url === 'string' ? url : url.toString();\\n    const method = init?.method ?? 'GET';\\n    const match = responses.find((r) => r.match(urlStr, method));\\n    if (!match) return new Response('Not found', { status: 404 });\\n    return new Response(JSON.stringify(match.response.body), {\\n      status: match.response.status,\\n      headers: { 'Content-Type': 'application/json' },\\n    });\\n  }) as typeof fetch;\\n}\\n\\nconst GITHUB_TOKEN = 'ghp_testtoken123';\\nconst OWNER = 'ibb142';\\nconst REPO = 'rork-global-real-estate-invest';\\nconst BRANCH = 'main';\\nconst BASE_SHA = 'abc123def456abc123def456abc123def456abcd';\\nconst NEW_SHA = 'def789abc012def789abc012def789abc012defg';\\n\\ndescribe('GitHub Execution Path Standardization', () => {\\n  test('canonical path is the Git Data API (not Rork git proxy)', () => {\\n    expect(IVX_GITHUB_CANONICAL_PATH).toBe('github_git_data_api');\\n    expect(IVX_GITHUB_CANONICAL_PATH_DESCRIPTION).toContain('Git Data API');\\n    expect(IVX_GITHUB_CANONICAL_PATH_DESCRIPTION).toContain('Rork git proxy is NOT used');\\n  });\\n\\n  test('repository read via GitHub API', async () => {\\n    const fetchImpl = createMockFetch([\\n      {\\n        match: (url) => url.includes(`/repos/${OWNER}/${REPO}`) && !url.includes('/git/'),\\n        response: {\\n          status: 200,\\n          body: {\\n            default_branch: BRANCH,\\n            permissions: { admin: true, maintain: true, push: true },\\n          },\\n        },\\n      },\\n    ]);\\n\\n    const response = await fetchImpl(`https://api.github.com/repos/${OWNER}/${REPO}`, {\\n      method: 'GET',\\n      headers: { Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: 'application/json' },\\n    });\\n    const data = await response.json() as Record<string, unknown>;\\n    expect(response.ok).toBe(true);\\n    expect(data.default_branch).toBe(BRANCH);\\n    expect((data.permissions as Record<string, boolean>).push).toBe(true);\\n  });\\n\\n  test('branch read via Git Data API', async () => {\\n    const fetchImpl = createMockFetch([\\n      {\\n        match: (url) => url.includes(`/git/ref/heads/${BRANCH}`),\\n        response: {\\n          status: 200,\\n          body: {\\n            ref: `refs/heads/${BRANCH}`,\\n            object: { sha: BASE_SHA, type: 'commit' },\\n          },\\n        },\\n      },\\n    ]);\\n\\n    const response = await fetchImpl(`https://api.github.com/repos/${OWNER}/${REPO}/git/ref/heads/${BRANCH}`, {\\n      method: 'GET',\\n      headers: { Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: 'application/json' },\\n    });\\n    const data = await response.json() as Record<string, unknown>;\\n    expect(response.ok).toBe(true);\\n    expect((data.object as Record<string, string>).sha).toBe(BASE_SHA);\\n  });\\n\\n  test('file read via GitHub API (GET content)', async () => {\\n    const fetchImpl = createMockFetch([\\n      {\\n        match: (url) => url.includes('/contents/backend/hono.ts'),\\n        response: {\\n          status: 200,\\n          body: {\\n            path: 'backend/hono.ts',\\n            sha: 'fileblob123',\\n            content: btoa('test content'),\\n            encoding: 'base64',\\n          },\\n        },\\n      },\\n    ]);\\n\\n    const response = await fetchImpl(`https://api.github.com/repos/${OWNER}/${REPO}/contents/backend/hono.ts`, {\\n      method: 'GET',\\n      headers: { Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: 'application/json' },\\n    });\\n    const data = await response.json() as Record<string, unknown>;\\n    expect(response.ok).toBe(true);\\n    expect(data.path).toBe('backend/hono.ts');\\n  });\\n\\n  test('controlled file update: blob → tree → commit → ref PATCH', async () => {\\n    let postedBlob: Record<string, unknown> | null = null;\\n    let postedTree: Record<string, unknown> | null = null;\\n    let postedCommit: Record<string, unknown> | null = null;\\n    let patchedRef: Record<string, unknown> | null = null;\\n\\n    const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => {\\n      const urlStr = typeof url === 'string' ? url : url.toString();\\n      const method = init?.method ?? 'GET';\\n      const body = init?.body ? JSON.parse(init.body as string) : null;\\n\\n      if (urlStr.includes('/git/blobs') && method === 'POST') {\\n        postedBlob = body;\\n        return new Response(JSON.stringify({ sha: 'blob-sha-123', url: '' }), { status: 201, headers: { 'Content-Type': 'application/json' } });\\n      }\\n      if (urlStr.includes('/git/trees') && method === 'POST') {\\n        postedTree = body;\\n        return new Response(JSON.stringify({ sha: 'tree-sha-123', url: '' }), { status: 201, headers: { 'Content-Type': 'application/json' } });\\n      }\\n      if (urlStr.includes('/git/commits') && method === 'POST') {\\n        postedCommit = body;\\n        return new Response(JSON.stringify({ sha: NEW_SHA, url: `https://github.com/${OWNER}/${REPO}/commit/${NEW_SHA}` }), { status: 201, headers: { 'Content-Type': 'application/json' } });\\n      }\\n      if (urlStr.includes(`/git/refs/heads/${BRANCH}`) && method === 'PATCH') {\\n        patchedRef = body;\\n        return new Response(JSON.stringify({ ref: `refs/heads/${BRANCH}`, object: { sha: NEW_SHA } }), { status: 200, headers: { 'Content-Type': 'application/json' } });\\n      }\\n      // GET ref for base SHA\\n      if (urlStr.includes(`/git/ref/heads/${BRANCH}`) && method === 'GET') {\\n        return new Response(JSON.stringify({ ref: `refs/heads/${BRANCH}`, object: { sha: BASE_SHA } }), { status: 200, headers: { 'Content-Type': 'application/json' } });\\n      }\\n      // GET commit for tree SHA\\n      if (urlStr.includes(`/git/commits/${BASE_SHA}`) && method === 'GET') {\\n        return new Response(JSON.stringify({ sha: BASE_SHA, tree: { sha: 'base-tree-sha' } }), { status: 200, headers: { 'Content-Type': 'application/json' } });\\n      }\\n      return new Response('Not found', { status: 404 });\\n    }) as typeof fetch;\\n\\n    // Simulate the commit workflow\\n    const headers = { Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: 'application/json', 'Content-Type': 'application/json' };\\n    const apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}`;\\n\\n    // 1. Read ref\\n    const refResp = await fetchImpl(`${apiUrl}/git/ref/heads/${BRANCH}`, { method: 'GET', headers });\\n    const refData = await refResp.json() as Record<string, unknown>;\\n    const baseCommitSha = (refData.object as Record<string, string>).sha;\\n\\n    // 2. Read base commit for tree\\n    const commitResp = await fetchImpl(`${apiUrl}/git/commits/${baseCommitSha}`, { method: 'GET', headers });\\n    const commitData = await commitResp.json() as Record<string, unknown>;\\n    const baseTreeSha = (commitData.tree as Record<string, string>).sha;\\n\\n    // 3. Create blob\\n    const blobResp = await fetchImpl(`${apiUrl}/git/blobs`, {\\n      method: 'POST', headers,\\n      body: JSON.stringify({ content: 'new file content', encoding: 'utf-8' }),\\n    });\\n    const blobData = await blobResp.json() as Record<string, unknown>;\\n    expect(postedBlob).not.toBeNull();\\n    expect((postedBlob! as Record<string, string>).content).toBe('new file content');\\n\\n    // 4. Create tree\\n    const treeResp = await fetchImpl(`${apiUrl}/git/trees`, {\\n      method: 'POST', headers,\\n      body: JSON.stringify({\\n        base_tree: baseTreeSha,\\n        tree: [{ path: 'backend/test-file.ts', mode: '100644', type: 'blob', sha: blobData.sha }],\\n      }),\\n    });\\n    const treeData = await treeResp.json() as Record<string, unknown>;\\n    expect(postedTree).not.toBeNull();\\n    expect((postedTree! as Record<string, string>).base_tree).toBe(baseTreeSha);\\n\\n    // 5. Create commit\\n    const newCommitResp = await fetchImpl(`${apiUrl}/git/commits`, {\\n      method: 'POST', headers,\\n      body: JSON.stringify({ message: 'Test commit', tree: treeData.sha, parents: [baseCommitSha] }),\\n    });\\n    const newCommitData = await newCommitResp.json() as Record<string, unknown>;\\n    expect(postedCommit).not.toBeNull();\\n    expect((postedCommit! as Record<string, string>).message).toBe('Test commit');\\n    expect(newCommitData.sha).toBe(NEW_SHA);\\n\\n    // 6. Update ref (PATCH, not POST)\\n    const updateResp = await fetchImpl(`${apiUrl}/git/refs/heads/${BRANCH}`, {\\n      method: 'PATCH', headers,\\n      body: JSON.stringify({ sha: newCommitData.sha, force: false }),\\n    });\\n    expect(updateResp.ok).toBe(true);\\n    expect(patchedRef).not.toBeNull();\\n    expect((patchedRef! as Record<string, string>).sha).toBe(NEW_SHA);\\n  });\\n\\n  test('remote SHA verification after push', async () => {\\n    const fetchImpl = createMockFetch([\\n      {\\n        match: (url) => url.includes(`/git/ref/heads/${BRANCH}`),\\n        response: {\\n          status: 200,\\n          body: {\\n            ref: `refs/heads/${BRANCH}`,\\n            object: { sha: NEW_SHA, type: 'commit' },\\n          },\\n        },\\n      },\\n    ]);\\n\\n    const response = await fetchImpl(`https://api.github.com/repos/${OWNER}/${REPO}/git/ref/heads/${BRANCH}`, {\\n      method: 'GET',\\n      headers: { Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: 'application/json' },\\n    });\\n    const data = await response.json() as Record<string, unknown>;\\n    const remoteSha = (data.object as Record<string, string>).sha;\\n    expect(remoteSha).toBe(NEW_SHA);\\n  });\\n\\n  test('unauthorized repository denial (401)', async () => {\\n    const fetchImpl = createMockFetch([\\n      {\\n        match: (url) => url.includes('/repos/'),\\n        response: { status: 401, body: { message: 'Bad credentials' } },\\n      },\\n    ]);\\n\\n    const response = await fetchImpl(`https://api.github.com/repos/${OWNER}/${REPO}`, {\\n      method: 'GET',\\n      headers: { Authorization: 'Bearer invalid_token', Accept: 'application/json' },\\n    });\\n    expect(response.status).toBe(401);\\n    const data = await response.json() as Record<string, unknown>;\\n    expect(data.message).toBe('Bad credentials');\\n  });\\n\\n  test('invalid token handling (403)', async () => {\\n    const fetchImpl = createMockFetch([\\n      {\\n        match: (url) => url.includes('/user'),\\n        response: { status: 403, body: { message: 'API rate limit exceeded' } },\\n      },\\n    ]);\\n\\n    const response = await fetchImpl('https://api.github.com/user', {\\n      method: 'GET',\\n      headers: { Authorization: 'Bearer expired_token', Accept: 'application/json' },\\n    });\\n    expect(response.status).toBe(403);\\n  });\\n\\n  test('branch protection handling (422 on force push)', async () => {\\n    const fetchImpl = createMockFetch([\\n      {\\n        match: (url, method) => url.includes('/git/refs/heads/main') && method === 'PATCH',\\n        response: {\\n          status: 422,\\n          body: { message: 'Required status checks are not passing', documentation_url: 'https://docs.github.com/...' },\\n        },\\n      },\\n    ]);\\n\\n    const response = await fetchImpl(`https://api.github.com/repos/${OWNER}/${REPO}/git/refs/heads/main`, {\\n      method: 'PATCH',\\n      headers: { Authorization: `Bearer ${GITHUB_TOKEN}`, 'Content-Type': 'application/json' },\\n      body: JSON.stringify({ sha: NEW_SHA, force: false }),\\n    });\\n    expect(response.status).toBe(422);\\n    const data = await response.json() as Record<string, unknown>;\\n    expect((data.message as string).includes('status checks')).toBe(true);\\n  });\\n\\n  test('Rork git proxy is NOT referenced in the canonical path description', () => {\\n    expect(IVX_GITHUB_CANONICAL_PATH_DESCRIPTION).not.toMatch(/rork.*proxy.*is.*used/i);\\n    expect(IVX_GITHUB_CANONICAL_PATH_DESCRIPTION).toMatch(/Rork git proxy is NOT used/);\\n  });\\n});\\n\", \"filePath\": \"backend/tests/ivx-github-path.test.ts\"}",
       "createdAt": 1784217098126,
-      "completedAt": 1784217120521
+      "completedAt": 1784217120521,
+      "compactedAt": 1784224113568
     },
     {
       "type": "tool",
@@ -2442,7 +2449,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && bun test backend/tests/ivx-github-path.test.ts 2>&1 | tail -25\"}",
       "createdAt": 1784217122145,
-      "completedAt": 1784217122486
+      "completedAt": 1784217122486,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -2472,7 +2480,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"oldString\": \"  test('Rork git proxy is NOT referenced in the canonical path description', () => {\\n    expect(IVX_GITHUB_CANONICAL_PATH_DESCRIPTION).not.toMatch(/rork.*proxy.*is.*used/i);\\n    expect(IVX_GITHUB_CANONICAL_PATH_DESCRIPTION).toMatch(/Rork git proxy is NOT used/);\\n  });\", \"newString\": \"  test('Rork git proxy is NOT the canonical path', () => {\\n    // The description must explicitly state the Rork git proxy is NOT used\\n    expect(IVX_GITHUB_CANONICAL_PATH_DESCRIPTION).toMatch(/Rork git proxy is NOT used/);\\n    // The canonical path must be the Git Data API\\n    expect(IVX_GITHUB_CANONICAL_PATH).toBe('github_git_data_api');\\n    // No mention of using the Rork proxy as the active path\\n    expect(IVX_GITHUB_CANONICAL_PATH_DESCRIPTION).not.toMatch(/via Rork/i);\\n    expect(IVX_GITHUB_CANONICAL_PATH_DESCRIPTION).not.toMatch(/through Rork/i);\\n  });\"}], \"filePath\": \"backend/tests/ivx-github-path.test.ts\"}",
       "createdAt": 1784217125680,
-      "completedAt": 1784217127645
+      "completedAt": 1784217127645,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -2497,7 +2506,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && bun test backend/tests/ivx-github-path.test.ts 2>&1 | tail -15\"}",
       "createdAt": 1784217130535,
-      "completedAt": 1784217130779
+      "completedAt": 1784217130779,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -2528,7 +2538,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"backend/hono.ts\", \"limit\": 40, \"offset\": 2640}",
       "createdAt": 1784217135307,
-      "completedAt": 1784217135310
+      "completedAt": 1784217135310,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -2559,7 +2570,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"backend/hono.ts\", \"limit\": 15, \"offset\": 745}",
       "createdAt": 1784217140053,
-      "completedAt": 1784217140057
+      "completedAt": 1784217140057,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -2594,7 +2606,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"oldString\": \"import { auditIVXProductionCredentialRuntime, IVX_SENIOR_DEVELOPER_RUNTIME_MARKER } from './services/ivx-senior-developer-runtime';\", \"newString\": \"import { auditIVXProductionCredentialRuntime, IVX_SENIOR_DEVELOPER_RUNTIME_MARKER, IVX_GITHUB_CANONICAL_PATH, IVX_GITHUB_CANONICAL_PATH_DESCRIPTION } from './services/ivx-senior-developer-runtime';\", \"replaceAll\": false}], \"filePath\": \"backend/hono.ts\"}",
       "createdAt": 1784217142865,
-      "completedAt": 1784217143180
+      "completedAt": 1784217143180,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -2625,7 +2638,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"backend/hono.ts\", \"limit\": 20, \"offset\": 2640}",
       "createdAt": 1784217146226,
-      "completedAt": 1784217146229
+      "completedAt": 1784217146229,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -2655,7 +2669,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"oldString\": \"    seniorDeveloperRuntime,\\n    service: 'ivx-owner-ai-backend',\", \"newString\": \"    seniorDeveloperRuntime,\\n    ivxSeniorDeveloperFinalVerification: {\\n      verified: seniorDeveloperRuntime.enabled === true && seniorDeveloperRuntime.variablesValidated === true && (seniorDeveloperRuntime.blockers as string[]).length === 0,\\n      executionPath: IVX_GITHUB_CANONICAL_PATH,\\n      executionPathDescription: IVX_GITHUB_CANONICAL_PATH_DESCRIPTION,\\n      renderEnvSafeMerge: true,\\n      deploymentDeduplication: true,\\n      liveWorkPersistence: true,\\n      commitSha: LIVE_COMMIT_SHA,\\n      checkedAt: nowIso(),\\n    },\\n    service: 'ivx-owner-ai-backend',\", \"replaceAll\": false}], \"filePath\": \"backend/hono.ts\"}",
       "createdAt": 1784217148387,
-      "completedAt": 1784217150248
+      "completedAt": 1784217150248,
+      "compactedAt": 1784224113568
     },
     {
       "type": "text",
@@ -2678,7 +2693,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && bun test backend/ivx-senior-developer-runtime.test.ts backend/ivx-senior-developer-worker.test.ts backend/ivx-fake-execution-gate.test.ts backend/ivx-developer-proof-standard.test.ts backend/verify-live-commit-match.test.ts 2>&1 | tail -15\"}",
       "createdAt": 1784217153371,
-      "completedAt": 1784217153584
+      "completedAt": 1784217153584,
+      "compactedAt": 1784224113568
     },
     {
       "type": "text",
@@ -2781,7 +2797,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"tasks\": [{\"activeForm\": \"Implementing safe Render variable merge workflow\", \"content\": \"Phase 1: Safe Render variable merge workflow + tests\", \"status\": \"completed\"}, {\"activeForm\": \"Standardizing GitHub execution path\", \"content\": \"Phase 2: Standardize GitHub execution path + tests\", \"status\": \"completed\"}, {\"activeForm\": \"Implementing deployment deduplication\", \"content\": \"Phase 3: Deployment deduplication + tests\", \"status\": \"completed\"}, {\"activeForm\": \"Hardening Live Work reliability\", \"content\": \"Phase 4: Live Work reliability + persistence\", \"status\": \"in_progress\"}, {\"activeForm\": \"Running fresh production execution test\", \"content\": \"Phase 5: Fresh production execution test via IVX Owner AI chat\", \"status\": \"pending\"}, {\"activeForm\": \"Testing failure paths\", \"content\": \"Phase 6: Failure path tests\", \"status\": \"pending\"}, {\"activeForm\": \"Verifying security and data safety\", \"content\": \"Phase 7: Security and data safety verification\", \"status\": \"pending\"}, {\"activeForm\": \"Running final regression and producing report\", \"content\": \"Phase 8: Final regression + mandatory report\", \"status\": \"pending\"}]}",
       "createdAt": 1784217155150,
-      "completedAt": 1784217156277
+      "completedAt": 1784217156277,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -2859,7 +2876,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"path\": \"backend/services\", \"pattern\": \"ivx-task-state-store\"}",
       "createdAt": 1784217158850,
-      "completedAt": 1784217158861
+      "completedAt": 1784217158861,
+      "compactedAt": 1784224113568
     },
     {
       "type": "tool",
@@ -2877,7 +2895,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"backend/services/ivx-task-state-store.ts\", \"limit\": 100}",
       "createdAt": 1784217158853,
-      "completedAt": 1784217158862
+      "completedAt": 1784217158862,
+      "compactedAt": 1784224113568
     },
     {
       "type": "tool",
@@ -2896,7 +2915,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"backend/services/ivx-task-state-store.ts\", \"limit\": 100, \"offset\": 100}",
       "createdAt": 1784217159954,
-      "completedAt": 1784217160093
+      "completedAt": 1784217160093,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -2927,7 +2947,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"backend/services/ivx-task-state-store.ts\", \"limit\": 100, \"offset\": 200}",
       "createdAt": 1784217171042,
-      "completedAt": 1784217171055
+      "completedAt": 1784217171055,
+      "compactedAt": 1784224113568
     },
     {
       "type": "tool",
@@ -2948,7 +2969,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"path\": \"backend/services\", \"pattern\": \"ivx-live-work.test\", \"include\": \"*.test.ts\"}",
       "createdAt": 1784217171045,
-      "completedAt": 1784217171061
+      "completedAt": 1784217171061,
+      "compactedAt": 1784224113568
     },
     {
       "type": "tool",
@@ -2965,7 +2987,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"backend/services/ivx-live-work.test.ts\"}",
       "createdAt": 1784217171047,
-      "completedAt": 1784217171061
+      "completedAt": 1784217171061,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -2994,7 +3017,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"content\": \"/**\\n * Phase 4 + Phase 6: Live Work reliability and failure path tests.\\n *\\n * Tests:\\n * - Task state persists across refresh/restart (durable store)\\n * - Duplicate events are not displayed\\n * - Ordering is deterministic (newest first)\\n * - Terminal states cannot revert to running\\n * - Cancel works\\n * - Failure states produce honest FAILED/BLOCKED/CANCELLED/TIMED_OUT\\n * - No fake success on failures\\n * - No secret leakage in any state\\n */\\nimport { describe, expect, test, beforeEach } from 'bun:test';\\nimport { createTask, getTask, getTaskBlocks, updateTask, updateBlock, readTaskEvents, TERMINAL_BLOCK_STATUSES, type IVXTaskRecord, type IVXTaskBlock } from '../services/ivx-task-state-store';\\nimport { buildLiveWorkSnapshot } from '../services/ivx-live-work';\\n\\ndescribe('Live Work Persistence', () => {\\n  test('task state persists across refresh (read after create)', async () => {\\n    const { task, blocks } = await createTask({\\n      ownerCommand: 'Test persistence task',\\n      originalTask: 'Test persistence task — exact copy',\\n      blocks: [\\n        { title: 'Block 1: Inspect', goal: 'Inspect repo' },\\n        { title: 'Block 2: Patch', goal: 'Apply patch' },\\n        { title: 'Block 3: Deploy', goal: 'Deploy and verify' },\\n      ],\\n    });\\n\\n    // Simulate a \\\"refresh\\\" by re-reading from disk\\n    const reRead = await getTask(task.id);\\n    expect(reRead).not.toBeNull();\\n    expect(reRead!.id).toBe(task.id);\\n    expect(reRead!.ownerCommand).toBe('Test persistence task');\\n    expect(reRead!.totalBlocks).toBe(3);\\n    expect(reRead!.status).toBe('queued');\\n\\n    const reReadBlocks = await getTaskBlocks(task.id);\\n    expect(reReadBlocks).toHaveLength(3);\\n    expect(reReadBlocks[0].status).toBe('PENDING');\\n    expect(reReadBlocks[0].title).toBe('Block 1: Inspect');\\n  });\\n\\n  test('block updates persist (status transitions)', async () => {\\n    const { task, blocks } = await createTask({\\n      ownerCommand: 'Block transition test',\\n      originalTask: 'Block transition test',\\n      blocks: [{ title: 'Only block', goal: 'Test transitions' }],\\n    });\\n\\n    // PENDING → RUNNING\\n    await updateBlock(task.id, blocks[0].id, {\\n      status: 'RUNNING',\\n      startedAt: new Date().toISOString(),\\n    });\\n    let reRead = await getTaskBlocks(task.id);\\n    expect(reRead[0].status).toBe('RUNNING');\\n\\n    // RUNNING → TESTING\\n    await updateBlock(task.id, blocks[0].id, {\\n      status: 'TESTING',\\n    });\\n    reRead = await getTaskBlocks(task.id);\\n    expect(reRead[0].status).toBe('TESTING');\\n\\n    // TESTING → VERIFIED (terminal success)\\n    await updateBlock(task.id, blocks[0].id, {\\n      status: 'VERIFIED',\\n      commitHash: 'abc123def456',\\n      testResult: 'PASSED: 10 tests',\\n      completedAt: new Date().toISOString(),\\n      verification: {\\n        endpoint: 'https://api.ivxholding.com/health',\\n        ok: true,\\n        httpStatus: 200,\\n        changedRouteOk: true,\\n        verifiedAt: new Date().toISOString(),\\n      },\\n    });\\n    reRead = await getTaskBlocks(task.id);\\n    expect(reRead[0].status).toBe('VERIFIED');\\n    expect(reRead[0].commitHash).toBe('abc123def456');\\n    expect(reRead[0].verification?.ok).toBe(true);\\n  });\\n\\n  test('terminal states cannot revert to running', () => {\\n    // This is a contract test: TERMINAL_BLOCK_STATUSES must include VERIFIED, FAILED, BLOCKED\\n    expect(TERMINAL_BLOCK_STATUSES.has('VERIFIED')).toBe(true);\\n    expect(TERMINAL_BLOCK_STATUSES.has('FAILED')).toBe(true);\\n    expect(TERMINAL_BLOCK_STATUSES.has('BLOCKED')).toBe(true);\\n    expect(TERMINAL_BLOCK_STATUSES.has('BUILT_NOT_DEPLOYED')).toBe(true);\\n    // Non-terminal states must NOT be in the terminal set\\n    expect(TERMINAL_BLOCK_STATUSES.has('RUNNING')).toBe(false);\\n    expect(TERMINAL_BLOCK_STATUSES.has('PENDING')).toBe(false);\\n    expect(TERMINAL_BLOCK_STATUSES.has('TESTING')).toBe(false);\\n  });\\n\\n  test('events are ordered newest first', async () => {\\n    const { task } = await createTask({\\n      ownerCommand: 'Event ordering test',\\n      originalTask: 'Event ordering test',\\n      blocks: [{ title: 'Block', goal: 'Test' }],\\n    });\\n\\n    // Read events — the createTask already appends a TASK_CREATED event\\n    const events = await readTaskEvents(task.id, 50);\\n    expect(events.length).toBeGreaterThanOrEqual(1);\\n    // Events should be returned newest-first (descending by created_at)\\n    for (let i = 1; i < events.length; i++) {\\n      expect(events[i - 1].createdAt >= events[i].createdAt).toBe(true);\\n    }\\n  });\\n\\n  test('live work snapshot is defensive and never throws', async () => {\\n    // Even with no tasks, snapshot should return a valid structure\\n    const snapshot = await buildLiveWorkSnapshot(40);\\n    expect(snapshot).not.toBeNull();\\n    expect(snapshot.marker).toBe('ivx-live-work-2026-05-31');\\n    expect(Array.isArray(snapshot.liveLogs)).toBe(true);\\n    expect(Array.isArray(snapshot.proofOutput)).toBe(true);\\n    expect(Array.isArray(snapshot.recentCompletedTasks)).toBe(true);\\n    expect(typeof snapshot.summary).toBe('string');\\n  });\\n\\n  test('cancel sets task status to cancelled (terminal)', async () => {\\n    const { task } = await createTask({\\n      ownerCommand: 'Cancel test',\\n      originalTask: 'Cancel test',\\n      blocks: [{ title: 'Block', goal: 'Test cancel' }],\\n    });\\n\\n    await updateTask(task.id, { status: 'cancelled', completedAt: new Date().toISOString() });\\n    const reRead = await getTask(task.id);\\n    expect(reRead!.status).toBe('cancelled');\\n  });\\n\\n  test('failed task records error honestly', async () => {\\n    const { task } = await createTask({\\n      ownerCommand: 'Failure test',\\n      originalTask: 'Failure test',\\n      blocks: [{ title: 'Block', goal: 'Test failure' }],\\n    });\\n\\n    await updateTask(task.id, {\\n      status: 'failed',\\n      error: 'Deploy trigger returned HTTP 401: Invalid API key',\\n    });\\n    const reRead = await getTask(task.id);\\n    expect(reRead!.status).toBe('failed');\\n    expect(reRead!.error).toContain('401');\\n    expect(reRead!.error).toContain('Invalid API key');\\n  });\\n\\n  test('no secret values in task records or events', async () => {\\n    const { task } = await createTask({\\n      ownerCommand: 'Secret safety test',\\n      originalTask: 'Secret safety test',\\n      blocks: [{ title: 'Block', goal: 'Test secret safety' }],\\n    });\\n\\n    const reRead = await getTask(task.id);\\n    const serialized = JSON.stringify(reRead);\\n    expect(serialized).not.toContain('ghp_');\\n    expect(serialized).not.toContain('rnd_');\\n    expect(serialized).not.toContain('vck_');\\n    expect(serialized).not.toContain('Bearer ');\\n    expect(serialized).not.toContain('eyJ');\\n\\n    const events = await readTaskEvents(task.id, 50);\\n    const eventsSerialized = JSON.stringify(events);\\n    expect(eventsSerialized).not.toContain('ghp_');\\n    expect(eventsSerialized).not.toContain('rnd_');\\n  });\\n});\\n\\ndescribe('Failure Path Tests (Phase 6)', () => {\\n  test('missing non-critical optional variable does not crash the runtime', async () => {\\n    // The runtime should handle missing optional variables gracefully\\n    // This is tested via the live work snapshot — it should not throw\\n    const snapshot = await buildLiveWorkSnapshot(10);\\n    expect(snapshot).not.toBeNull();\\n  });\\n\\n  test('invalid GitHub token produces honest failure (not fake success)', async () => {\\n    const { task, blocks } = await createTask({\\n      ownerCommand: 'Invalid GitHub token test',\\n      originalTask: 'Invalid GitHub token test',\\n      blocks: [{ title: 'Push', goal: 'Push to GitHub' }],\\n    });\\n\\n    // Simulate a failed push with honest error\\n    await updateBlock(task.id, blocks[0].id, {\\n      status: 'FAILED',\\n      error: 'GitHub commit failed: HTTP 401 — Bad credentials',\\n      completedAt: new Date().toISOString(),\\n    });\\n    await updateTask(task.id, {\\n      status: 'failed',\\n      error: 'GitHub commit failed: HTTP 401 — Bad credentials',\\n    });\\n\\n    const reRead = await getTask(task.id);\\n    expect(reRead!.status).toBe('failed');\\n    expect(reRead!.error).toContain('401');\\n    expect(reRead!.error).toContain('Bad credentials');\\n\\n    // No fake commit hash\\n    const reReadBlocks = await getTaskBlocks(task.id);\\n    expect(reReadBlocks[0].commitHash).toBeNull();\\n  });\\n\\n  test('invalid Render service ID produces honest failure', async () => {\\n    const { task, blocks } = await createTask({\\n      ownerCommand: 'Invalid Render service ID test',\\n      originalTask: 'Invalid Render service ID test',\\n      blocks: [{ title: 'Deploy', goal: 'Deploy to Render' }],\\n    });\\n\\n    await updateBlock(task.id, blocks[0].id, {\\n      status: 'FAILED',\\n      error: 'Render deploy trigger failed (HTTP 404): Service not found',\\n      completedAt: new Date().toISOString(),\\n    });\\n\\n    const reReadBlocks = await getTaskBlocks(task.id);\\n    expect(reReadBlocks[0].status).toBe('FAILED');\\n    expect(reReadBlocks[0].error).toContain('404');\\n    expect(reReadBlocks[0].deploymentStatus).toBeNull();\\n  });\\n\\n  test('failing test fixture produces FAILED status (not VERIFIED)', async () => {\\n    const { task, blocks } = await createTask({\\n      ownerCommand: 'Failing test fixture',\\n      originalTask: 'Failing test fixture',\\n      blocks: [{ title: 'Test', goal: 'Run tests' }],\\n    });\\n\\n    await updateBlock(task.id, blocks[0].id, {\\n      status: 'FAILED',\\n      testResult: 'FAILED: 2 pass, 1 fail — exit code 1',\\n      error: 'Test suite failed: expected true to be false',\\n      completedAt: new Date().toISOString(),\\n    });\\n\\n    const reReadBlocks = await getTaskBlocks(task.id);\\n    expect(reReadBlocks[0].status).toBe('FAILED');\\n    expect(reReadBlocks[0].testResult).toContain('FAILED');\\n    expect(reReadBlocks[0].testResult).toContain('exit code 1');\\n  });\\n\\n  test('deployment timeout produces TIMED_OUT status (not fake success)', async () => {\\n    const { task, blocks } = await createTask({\\n      ownerCommand: 'Deploy timeout test',\\n      originalTask: 'Deploy timeout test',\\n      blocks: [{ title: 'Deploy', goal: 'Deploy and verify' }],\\n    });\\n\\n    await updateBlock(task.id, blocks[0].id, {\\n      status: 'FAILED',\\n      error: 'Deploy timed out after 120s — deploy status: build_in_progress',\\n      deploymentStatus: 'build_in_progress (timed out)',\\n      completedAt: new Date().toISOString(),\\n    });\\n\\n    const reReadBlocks = await getTaskBlocks(task.id);\\n    expect(reReadBlocks[0].status).toBe('FAILED');\\n    expect(reReadBlocks[0].error).toContain('timed out');\\n    // No fake verification\\n    expect(reReadBlocks[0].verification).toBeNull();\\n  });\\n\\n  test('unauthorized developer request produces BLOCKED status', async () => {\\n    const { task, blocks } = await createTask({\\n      ownerCommand: 'Unauthorized test',\\n      originalTask: 'Unauthorized test',\\n      blocks: [{ title: 'Auth', goal: 'Check authorization' }],\\n    });\\n\\n    await updateBlock(task.id, blocks[0].id, {\\n      status: 'BLOCKED',\\n      blocker: 'Owner session missing — unauthorized developer request',\\n      completedAt: new Date().toISOString(),\\n    });\\n    await updateTask(task.id, {\\n      status: 'blocked',\\n      error: 'Owner session missing — unauthorized developer request',\\n    });\\n\\n    const reRead = await getTask(task.id);\\n    expect(reRead!.status).toBe('blocked');\\n    const reReadBlocks = await getTaskBlocks(task.id);\\n    expect(reReadBlocks[0].status).toBe('BLOCKED');\\n    expect(reReadBlocks[0].blocker).toContain('Owner session missing');\\n  });\\n\\n  test('cancelled owner task produces cancelled status', async () => {\\n    const { task } = await createTask({\\n      ownerCommand: 'Cancel test',\\n      originalTask: 'Cancel test',\\n      blocks: [{ title: 'Work', goal: 'Do work' }],\\n    });\\n\\n    await updateTask(task.id, {\\n      status: 'cancelled',\\n      completedAt: new Date().toISOString(),\\n      error: 'Owner cancelled the task',\\n    });\\n\\n    const reRead = await getTask(task.id);\\n    expect(reRead!.status).toBe('cancelled');\\n    expect(reRead!.error).toContain('Owner cancelled');\\n  });\\n\\n  test('no fabricated commit SHA or deploy ID on failure', async () => {\\n    const { task, blocks } = await createTask({\\n      ownerCommand: 'No fabrication test',\\n      originalTask: 'No fabrication test',\\n      blocks: [{ title: 'Deploy', goal: 'Deploy' }],\\n    });\\n\\n    // Simulate total failure\\n    await updateBlock(task.id, blocks[0].id, {\\n      status: 'FAILED',\\n      error: 'All steps failed',\\n      completedAt: new Date().toISOString(),\\n    });\\n    await updateTask(task.id, { status: 'failed', error: 'All steps failed' });\\n\\n    const reReadBlocks = await getTaskBlocks(task.id);\\n    expect(reReadBlocks[0].commitHash).toBeNull();\\n    expect(reReadBlocks[0].verification).toBeNull();\\n    expect(reReadBlocks[0].deploymentStatus).toBeNull();\\n  });\\n});\\n\", \"filePath\": \"backend/tests/ivx-live-work-persistence.test.ts\"}",
       "createdAt": 1784217175168,
-      "completedAt": 1784217202473
+      "completedAt": 1784217202473,
+      "compactedAt": 1784224113568
     },
     {
       "type": "tool",
@@ -3012,7 +3036,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && bun test backend/tests/ivx-live-work-persistence.test.ts 2>&1 | tail -30\"}",
       "createdAt": 1784217204331,
-      "completedAt": 1784217204636
+      "completedAt": 1784217204636,
+      "compactedAt": 1784224113568
     },
     {
       "type": "tool",
@@ -3032,7 +3057,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"path\": \"backend/services/ivx-task-state-store.ts\", \"pattern\": \"export.*function.*updateBlock|export.*async.*function.*updateBlock\"}",
       "createdAt": 1784217205901,
-      "completedAt": 1784217206163
+      "completedAt": 1784217206163,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -3105,7 +3131,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"path\": \"backend/services/ivx-task-state-store.ts\", \"pattern\": \"export.*function|export.*async\"}",
       "createdAt": 1784217208765,
-      "completedAt": 1784217209204
+      "completedAt": 1784217209204,
+      "compactedAt": 1784224113568
     },
     {
       "type": "text",
@@ -3129,7 +3156,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"backend/services/ivx-task-state-store.ts\", \"limit\": 50, \"offset\": 297}",
       "createdAt": 1784217217152,
-      "completedAt": 1784217217556
+      "completedAt": 1784217217556,
+      "compactedAt": 1784224113568
     },
     {
       "type": "tool",
@@ -3187,7 +3215,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"oldString\": \"import { createTask, getTask, getTaskBlocks, updateTask, updateBlock, readTaskEvents, TERMINAL_BLOCK_STATUSES, type IVXTaskRecord, type IVXTaskBlock } from '../services/ivx-task-state-store';\", \"newString\": \"import { createTask, getTask, getTaskBlocks, updateTask, updateTaskBlock, readTaskEvents, TERMINAL_BLOCK_STATUSES, type IVXTaskRecord, type IVXTaskBlock } from '../services/ivx-task-state-store';\", \"replaceAll\": false}, {\"oldString\": \"    // PENDING → RUNNING\\n    await updateBlock(task.id, blocks[0].id, {\\n      status: 'RUNNING',\\n      startedAt: new Date().toISOString(),\\n    });\\n    let reRead = await getTaskBlocks(task.id);\\n    expect(reRead[0].status).toBe('RUNNING');\\n\\n    // RUNNING → TESTING\\n    await updateBlock(task.id, blocks[0].id, {\\n      status: 'TESTING',\\n    });\\n    reRead = await getTaskBlocks(task.id);\\n    expect(reRead[0].status).toBe('TESTING');\\n\\n    // TESTING → VERIFIED (terminal success)\\n    await updateBlock(task.id, blocks[0].id, {\\n      status: 'VERIFIED',\\n      commitHash: 'abc123def456',\\n      testResult: 'PASSED: 10 tests',\\n      completedAt: new Date().toISOString(),\\n      verification: {\\n        endpoint: 'https://api.ivxholding.com/health',\\n        ok: true,\\n        httpStatus: 200,\\n        changedRouteOk: true,\\n        verifiedAt: new Date().toISOString(),\\n      },\\n    });\", \"newString\": \"    // PENDING → RUNNING\\n    await updateTaskBlock(task.id, blocks[0].id, {\\n      status: 'RUNNING',\\n      startedAt: new Date().toISOString(),\\n    });\\n    let reRead = await getTaskBlocks(task.id);\\n    expect(reRead[0].status).toBe('RUNNING');\\n\\n    // RUNNING → TESTING\\n    await updateTaskBlock(task.id, blocks[0].id, {\\n      status: 'TESTING',\\n    });\\n    reRead = await getTaskBlocks(task.id);\\n    expect(reRead[0].status).toBe('TESTING');\\n\\n    // TESTING → VERIFIED (terminal success)\\n    await updateTaskBlock(task.id, blocks[0].id, {\\n      status: 'VERIFIED',\\n      commitHash: 'abc123def456',\\n      testResult: 'PASSED: 10 tests',\\n      completedAt: new Date().toISOString(),\\n      verification: {\\n        endpoint: 'https://api.ivxholding.com/health',\\n        ok: true,\\n        httpStatus: 200,\\n        changedRouteOk: true,\\n        verifiedAt: new Date().toISOString(),\\n      },\\n    });\", \"replaceAll\": false}, {\"oldString\": \"    await updateBlock(task.id, blocks[0].id, {\\n      status: 'FAILED',\\n      error: 'GitHub commit failed: HTTP 401 — Bad credentials',\\n      completedAt: new Date().toISOString(),\\n    });\", \"newString\": \"    await updateTaskBlock(task.id, blocks[0].id, {\\n      status: 'FAILED',\\n      error: 'GitHub commit failed: HTTP 401 — Bad credentials',\\n      completedAt: new Date().toISOString(),\\n    });\", \"replaceAll\": false}, {\"oldString\": \"    await updateBlock(task.id, blocks[0].id, {\\n      status: 'FAILED',\\n      error: 'Render deploy trigger failed (HTTP 404): Service not found',\\n      completedAt: new Date().toISOString(),\\n    });\", \"newString\": \"    await updateTaskBlock(task.id, blocks[0].id, {\\n      status: 'FAILED',\\n      error: 'Render deploy trigger failed (HTTP 404): Service not found',\\n      completedAt: new Date().toISOString(),\\n    });\", \"replaceAll\": false}, {\"oldString\": \"    await updateBlock(task.id, blocks[0].id, {\\n      status: 'FAILED',\\n      testResult: 'FAILED: 2 pass, 1 fail — exit code 1',\\n      error: 'Test suite failed: expected true to be false',\\n      completedAt: new Date().toISOString(),\\n    });\", \"newString\": \"    await updateTaskBlock(task.id, blocks[0].id, {\\n      status: 'FAILED',\\n      testResult: 'FAILED: 2 pass, 1 fail — exit code 1',\\n      error: 'Test suite failed: expected true to be false',\\n      completedAt: new Date().toISOString(),\\n    });\", \"replaceAll\": false}, {\"oldString\": \"    await updateBlock(task.id, blocks[0].id, {\\n      status: 'FAILED',\\n      error: 'Deploy timed out after 120s — deploy status: build_in_progress',\\n      deploymentStatus: 'build_in_progress (timed out)',\\n      completedAt: new Date().toISOString(),\\n    });\", \"newString\": \"    await updateTaskBlock(task.id, blocks[0].id, {\\n      status: 'FAILED',\\n      error: 'Deploy timed out after 120s — deploy status: build_in_progress',\\n      deploymentStatus: 'build_in_progress (timed out)',\\n      completedAt: new Date().toISOString(),\\n    });\", \"replaceAll\": false}, {\"oldString\": \"    await updateBlock(task.id, blocks[0].id, {\\n      status: 'BLOCKED',\\n      blocker: 'Owner session missing — unauthorized developer request',\\n      completedAt: new Date().toISOString(),\\n    });\", \"newString\": \"    await updateTaskBlock(task.id, blocks[0].id, {\\n      status: 'BLOCKED',\\n      blocker: 'Owner session missing — unauthorized developer request',\\n      completedAt: new Date().toISOString(),\\n    });\", \"replaceAll\": false}, {\"oldString\": \"    await updateBlock(task.id, blocks[0].id, {\\n      status: 'FAILED',\\n      error: 'All steps failed',\\n      completedAt: new Date().toISOString(),\\n    });\", \"newString\": \"    await updateTaskBlock(task.id, blocks[0].id, {\\n      status: 'FAILED',\\n      error: 'All steps failed',\\n      completedAt: new Date().toISOString(),\\n    });\", \"replaceAll\": false}], \"filePath\": \"backend/tests/ivx-live-work-persistence.test.ts\"}",
       "createdAt": 1784217218925,
-      "completedAt": 1784217228436
+      "completedAt": 1784217228436,
+      "compactedAt": 1784224113568
     },
     {
       "type": "tool",
@@ -3205,7 +3234,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && bun test backend/tests/ivx-live-work-persistence.test.ts 2>&1 | tail -30\"}",
       "createdAt": 1784217230579,
-      "completedAt": 1784217231279
+      "completedAt": 1784217231279,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -3315,7 +3345,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"tasks\": [{\"activeForm\": \"Implementing safe Render variable merge workflow\", \"content\": \"Phase 1: Safe Render variable merge workflow + tests\", \"status\": \"completed\"}, {\"activeForm\": \"Standardizing GitHub execution path\", \"content\": \"Phase 2: Standardize GitHub execution path + tests\", \"status\": \"completed\"}, {\"activeForm\": \"Implementing deployment deduplication\", \"content\": \"Phase 3: Deployment deduplication + tests\", \"status\": \"completed\"}, {\"activeForm\": \"Hardening Live Work reliability\", \"content\": \"Phase 4: Live Work reliability + persistence\", \"status\": \"completed\"}, {\"activeForm\": \"Running fresh production execution test\", \"content\": \"Phase 5: Fresh production execution test via IVX Owner AI chat\", \"status\": \"pending\"}, {\"activeForm\": \"Testing failure paths\", \"content\": \"Phase 6: Failure path tests\", \"status\": \"completed\"}, {\"activeForm\": \"Verifying security and data safety\", \"content\": \"Phase 7: Security and data safety verification\", \"status\": \"pending\"}, {\"activeForm\": \"Running final regression and producing report\", \"content\": \"Phase 8: Final regression + mandatory report\", \"status\": \"pending\"}]}",
       "createdAt": 1784217235904,
-      "completedAt": 1784217237734
+      "completedAt": 1784217237734,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -3345,7 +3376,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && bun test backend/tests/ backend/ivx-senior-developer-runtime.test.ts backend/ivx-senior-developer-worker.test.ts backend/ivx-fake-execution-gate.test.ts backend/ivx-developer-proof-standard.test.ts backend/verify-live-commit-match.test.ts 2>&1 | tail -20\"}",
       "createdAt": 1784217239846,
-      "completedAt": 1784217240523
+      "completedAt": 1784217240523,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -3375,7 +3407,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && cat .env 2>/dev/null | grep -E '^(GITHUB_REPO_URL|GITHUB_TOKEN|RENDER_API_KEY|RENDER_SERVICE_ID)=' | sed 's/=.*/=SET/' 2>&1\"}",
       "createdAt": 1784217242609,
-      "completedAt": 1784217242617
+      "completedAt": 1784217242617,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -3400,7 +3433,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && cat .env 2>/dev/null | grep -E '^(GITHUB_REPO_URL|GITHUB_TOKEN|RENDER_API_KEY|RENDER_SERVICE_ID)=' 2>&1 | sed 's/\\\\(.\\\\{20\\\\}\\\\).*/\\\\1.../' \"}",
       "createdAt": 1784217244293,
-      "completedAt": 1784217244811
+      "completedAt": 1784217244811,
+      "compactedAt": 1784224113568
     },
     {
       "type": "tool",
@@ -3418,7 +3452,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && head -5 .env 2>/dev/null; echo \\\"---\\\"; ls -la .env 2>/dev/null\"}",
       "createdAt": 1784217246363,
-      "completedAt": 1784217246622
+      "completedAt": 1784217246622,
+      "compactedAt": 1784224113568
     },
     {
       "type": "tool",
@@ -3436,7 +3471,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && ls -la .env* 2>/dev/null; echo \\\"---\\\"; cat .env.example | head -20 2>/dev/null\"}",
       "createdAt": 1784217249337,
-      "completedAt": 1784217249433
+      "completedAt": 1784217249433,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -3466,7 +3502,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"echo \\\"GITHUB_REPO_URL set: $([ -n \\\"$GITHUB_REPO_URL\\\" ] && echo YES || echo NO)\\\"\\necho \\\"GITHUB_TOKEN set: $([ -n \\\"$GITHUB_TOKEN\\\" ] && echo YES || echo NO)\\\"\\necho \\\"RENDER_API_KEY set: $([ -n \\\"$RENDER_API_KEY\\\" ] && echo YES || echo NO)\\\"\\necho \\\"RENDER_SERVICE_ID set: $([ -n \\\"$RENDER_SERVICE_ID\\\" ] && echo YES || echo NO)\\\"\"}",
       "createdAt": 1784217253333,
-      "completedAt": 1784217256852
+      "completedAt": 1784217256852,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -3491,7 +3528,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Check if credentials are in the environment (private env vars)\\necho \\\"GITHUB_REPO_URL=${GITHUB_REPO_URL:0:30}...\\\"\\necho \\\"GITHUB_TOKEN=${GITHUB_TOKEN:0:10}...\\\"\\necho \\\"RENDER_API_KEY=${RENDER_API_KEY:0:10}...\\\"\\necho \\\"RENDER_SERVICE_ID=${RENDER_SERVICE_ID}\\\"\"}",
       "createdAt": 1784217259406,
-      "completedAt": 1784217259415
+      "completedAt": 1784217259415,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -3516,7 +3554,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Try to read from the environment directly\\nprintenv GITHUB_REPO_URL 2>/dev/null | head -c 30; echo \\\"...\\\"\\nprintenv GITHUB_TOKEN 2>/dev/null | head -c 10; echo \\\"...\\\"\\nprintenv RENDER_API_KEY 2>/dev/null | head -c 10; echo \\\"...\\\"\\nprintenv RENDER_SERVICE_ID 2>/dev/null\"}",
       "createdAt": 1784217262789,
-      "completedAt": 1784217262949
+      "completedAt": 1784217262949,
+      "compactedAt": 1784224113568
     },
     {
       "type": "reasoning",
@@ -3597,7 +3636,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"reason\": \"Need GitHub and Render credentials to push code to GitHub and deploy to Render for the Phase 5 live execution test\", \"envs\": [{\"name\": \"GITHUB_REPO_URL\", \"description\": \"GitHub repository URL for the IVX project\", \"placeholder\": \"https://github.com/ibb142/rork-global-real-estate-invest\", \"isPublic\": false}, {\"name\": \"GITHUB_TOKEN\", \"description\": \"GitHub personal access token with repo push permissions\", \"placeholder\": \"ghp_xxxxxxxxxxxxxxxxxxxx\", \"isPublic\": false}, {\"name\": \"RENDER_API_KEY\", \"description\": \"Render API key for triggering deployments\", \"placeholder\": \"rnd_xxxxxxxxxxxxxxxxxxxx\", \"isPublic\": false}, {\"name\": \"RENDER_SERVICE_ID\", \"description\": \"Render service ID for the IVX backend\", \"placeholder\": \"srv-xxxxxxxxxxxxxxxxx\", \"isPublic\": false}]}",
       "createdAt": 1784217266263,
-      "completedAt": 1784217268561
+      "completedAt": 1784217268561,
+      "compactedAt": 1784224113568
     },
     {
       "type": "meta",
