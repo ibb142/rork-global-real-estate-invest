@@ -37,7 +37,7 @@ const config: ExpoConfig = {
   scheme: 'ivx-app',
   userInterfaceStyle: 'dark',
   backgroundColor: '#000000',
-  newArchEnabled: false,
+  newArchEnabled: true,
   updates: {
     enabled: false,
     checkAutomatically: 'NEVER',
