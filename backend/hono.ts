@@ -997,7 +997,7 @@ import {
   getPublicChatHealthSnapshot,
   mapRoomMessagesToPublicChatHistory,
 } from './public-chat-ai';
-import { validateIVXAIStartup } from './ivx-ai-runtime';
+import { validateIVXAIStartup, requestIVXAIText, getIVXAIProviderType } from './ivx-ai-runtime';
 import { routeDeploymentCommand, isDeploymentCommand } from './services/ivx-deployment-chat-brain';
 import {
   handleChatPost,
@@ -2585,9 +2585,11 @@ app.get('/health', (context) => {
     aiStartupValidation: {
       ok: aiStartup.ok,
       provider: aiStartup.provider,
+      providerType: aiStartup.providerType,
       model: aiStartup.model,
       adapterVersion: aiStartup.adapterVersion,
       keyLoaded: aiStartup.keyLoaded,
+      keyPrefix: aiStartup.keyPrefix,
       baseUrl: aiStartup.baseUrl,
       errors: aiStartup.errors,
     },
@@ -4098,6 +4100,53 @@ app.options('/audio/transcribe', () => ownerTranscriptionOptions());
 app.options('/api/audio/transcribe', () => ownerTranscriptionOptions());
 app.post('/audio/transcribe', async (c) => handleOwnerAudioTranscribe(c.req.raw));
 app.post('/api/audio/transcribe', async (c) => handleOwnerAudioTranscribe(c.req.raw));
+
+// Diagnostic AI provider test — makes a real OpenAI call and returns the
+// result or the exact error (status, response body, error name). Never
+// exposes the API key value. Used to diagnose silent fallback failures.
+app.options('/api/ivx/ai-test', () => publicJson({ ok: true }, 204));
+app.get('/api/ivx/ai-test', async (context) => {
+  const providerType = getIVXAIProviderType();
+  const startup = validateIVXAIStartup();
+  const testPrompt = 'Reply with exactly: IVX_AI_TEST_OK';
+  const testStartedAt = Date.now();
+  try {
+    const result = await requestIVXAIText({
+      module: 'ai-test',
+      requestId: `ai-test-${Date.now()}`,
+      prompt: testPrompt,
+      maxOutputTokens: 20,
+    });
+    return context.json({
+      ok: true,
+      providerType,
+      keyPrefix: startup.keyPrefix,
+      baseUrl: startup.baseUrl,
+      model: startup.model,
+      adapterVersion: startup.adapterVersion,
+      responseText: result.text,
+      responseModel: result.providerMetadata.model,
+      responseEndpoint: result.providerMetadata.endpoint,
+      latencyMs: Date.now() - testStartedAt,
+      timestamp: nowIso(),
+    });
+  } catch (error) {
+    const err = error as Error & { traceId?: string };
+    return context.json({
+      ok: false,
+      providerType,
+      keyPrefix: startup.keyPrefix,
+      baseUrl: startup.baseUrl,
+      model: startup.model,
+      adapterVersion: startup.adapterVersion,
+      errorName: err?.name ?? 'Unknown',
+      errorMessage: err?.message ?? 'Unknown error',
+      traceId: err?.traceId ?? null,
+      latencyMs: Date.now() - testStartedAt,
+      timestamp: nowIso(),
+    });
+  }
+});
 
 // Owner-only video worker (ffmpeg frame/audio extraction -> transcription -> AI frame analysis)
 app.options('/api/video/jobs', () => ownerVideoWorkerOptions());
