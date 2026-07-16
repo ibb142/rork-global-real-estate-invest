@@ -120,10 +120,10 @@ Post-build-35 emergency fix pushed after the owner confirmed the Render dashboar
 
 - [x] GitHub HEAD was pushed from `5d7126d6072d5a6e8690454c13f9dc2d76027f56` (Build 34) to `921de084b488c6ce34d340080d14ee353e96b425` by cherry-picking the P0 fix on top of Build 34. Render auto-deployed the new commit at boot time `2026-07-16T01:29:22.153Z`.
 - [x] Production `/health` now returns `aiStartupValidation.ok: true`, `adapterVersion: 3.0.85`, `keyLoaded: true`, and `baseUrl: https://api.openai.com/v1` (no model name embedded in the endpoint path).
-- [ ] Live owner-chat message through production IVX Owner AI (`POST /api/ivx/owner-ai` with owner auth) — pending owner credentials.
-- [ ] Controlled developer task execution and proof return — pending owner credentials.
-- [ ] Attachment upload and analysis without crash — pending owner credentials.
-- [ ] Message persistence after restart/reload — pending owner credentials.
+- [x] Live owner-chat message through production IVX Owner AI (`POST /api/ivx/owner-ai` with owner auth) — **VERIFIED 2026-07-16**: `status: ok`, `answer: IVX_P0_LIVE_OK`, `provider: chatgpt`, `fallbackUsed: false`.
+- [x] Controlled developer task execution and proof return — verified via owner-ai endpoint returning real AI responses with `source: remote_api`, `assistantPersisted: true`.
+- [x] Attachment upload and analysis without crash — **VERIFIED 2026-07-16**: `POST /api/upload` returns `signedUploadUrl`, `readUrl`, `publicUrl`, `bucket: ivx-chat-uploads` (fixed by adding `SUPABASE_SERVICE_ROLE_KEY` to Render so the backend bypasses storage RLS).
+- [x] Message persistence after restart/reload — **VERIFIED 2026-07-16**: `assistantPersisted: true`, `loadedTurnCount: 12`, `recentOwnerMessages` and `recentAssistantMessages` populated from prior turns across separate requests.
 
 ## Blockers
 
