@@ -2307,7 +2307,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"pattern\": \"verifyIVXOwnerToken|verifyOwnerToken|verifyOwner|ownerAuth|ownerGuard|checkOwnerToken\", \"include\": \"*.ts\", \"path\": \"backend/api\"}",
       "createdAt": 1784223353233,
-      "completedAt": 1784223353701
+      "completedAt": 1784223353701,
+      "compactedAt": 1784225025854
     },
     {
       "type": "reasoning",
@@ -2351,7 +2352,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"include\": \"*.ts\", \"path\": \"backend/api/ivx-owner-passwordless-login.ts\", \"pattern\": \"export.*function|export.*const|export.*async\"}",
       "createdAt": 1784223359574,
-      "completedAt": 1784223360028
+      "completedAt": 1784223360028,
+      "compactedAt": 1784225025854
     },
     {
       "type": "reasoning",
@@ -2580,7 +2582,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"include\": \"*.ts\", \"path\": \"backend/api/ivx-senior-developer-runtime.ts\", \"pattern\": \"owner|auth|token|Bearer|verify\"}",
       "createdAt": 1784223364041,
-      "completedAt": 1784223365778
+      "completedAt": 1784223365778,
+      "compactedAt": 1784225025854
     },
     {
       "type": "reasoning",
@@ -2610,7 +2613,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"backend/api/owner-only.ts\", \"limit\": 140}",
       "createdAt": 1784223370871,
-      "completedAt": 1784223371157
+      "completedAt": 1784223371157,
+      "compactedAt": 1784225025854
     },
     {
       "type": "reasoning",
@@ -2641,7 +2645,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"backend/api/ivx-senior-developer-runtime.ts\", \"limit\": 30, \"offset\": 115}",
       "createdAt": 1784223373542,
-      "completedAt": 1784223373588
+      "completedAt": 1784223373588,
+      "compactedAt": 1784225025854
     },
     {
       "type": "reasoning",
@@ -2672,7 +2677,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"backend/api/owner-only.ts\", \"limit\": 60, \"offset\": 136}",
       "createdAt": 1784223380560,
-      "completedAt": 1784223383660
+      "completedAt": 1784223383660,
+      "compactedAt": 1784225025854
     },
     {
       "type": "reasoning",
@@ -2707,7 +2713,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"edits\": [{\"oldString\": \"// === Phase 5: Owner-only AI Provider Diagnostics ===\\n// Shows provider state, model, adapter version, credential loaded/valid,\\n// last validation time, last HTTP status, fallback enabled/used, trace ID.\\n// Never reveals secret values.\\napp.options('/api/ivx/senior-developer/provider-diagnostics', () => seniorDeveloperOptions());\\napp.get('/api/ivx/senior-developer/provider-diagnostics', async (context) => {\\n  const authHeader = context.req.header('Authorization') || '';\\n  if (!authHeader.startsWith('Bearer ')) {\\n    return context.json({ ok: false, error: 'IVX auth guard failed: missing bearer token.', ownerOnly: true }, 401);\\n  }\\n  const token = authHeader.slice(7);\\n  const { verifyIVXOwnerToken } = await import('./api/ivx-owner-passwordless-login');\\n  const ownerResult = await verifyIVXOwnerToken(token);\\n  if (!ownerResult.ok || ownerResult.role !== 'owner') {\\n    return context.json({ ok: false, error: 'IVX auth guard failed: owner access required.', ownerOnly: true }, 401);\\n  }\\n  const health = getProviderHealth();\\n  const startup = validateIVXAIStartup();\\n  return context.json({\\n    ok: true,\\n    ownerOnly: true,\\n    provider: {\\n      state: health.state,\\n      provider: health.provider,\\n      model: health.model,\\n      adapterVersion: health.adapterVersion,\\n      credentialLoaded: health.credentialLoaded,\\n      credentialValid: health.credentialValid,\\n      lastValidationTime: health.lastValidationTime,\\n      lastHttpStatus: health.lastHttpStatus,\\n      fallbackEnabled: health.fallbackEnabled,\\n      fallbackUsed: health.fallbackUsed,\\n      traceId: health.traceId,\\n      error: health.error,\\n    },\\n    startup: {\\n      ok: startup.ok,\\n      providerType: startup.providerType,\\n      keyPrefix: startup.keyPrefix,\\n      baseUrl: startup.baseUrl,\\n      endpoint: startup.endpoint,\\n      errors: startup.errors,\\n    },\\n    rorkDependency: false,\\n    secretValuesReturned: false,\\n    authenticatedUserId: ownerResult.userId,\\n    timestamp: nowIso(),\\n  });\\n});\", \"newString\": \"// === Phase 5: Owner-only AI Provider Diagnostics ===\\n// Shows provider state, model, adapter version, credential loaded/valid,\\n// last validation time, last HTTP status, fallback enabled/used, trace ID.\\n// Never reveals secret values.\\napp.options('/api/ivx/senior-developer/provider-diagnostics', () => seniorDeveloperOptions());\\napp.get('/api/ivx/senior-developer/provider-diagnostics', async (context) => {\\n  try {\\n    const { assertIVXRegisteredOwnerBearer, ownerOnlyJson } = await import('./api/owner-only');\\n    const { approval } = await assertIVXRegisteredOwnerBearer(context.req.raw, 'senior_developer_provider_diagnostics');\\n    const health = getProviderHealth();\\n    const startup = validateIVXAIStartup();\\n    return ownerOnlyJson({\\n      ok: true,\\n      ownerOnly: true,\\n      ownerApproval: approval,\\n      provider: {\\n        state: health.state,\\n        provider: health.provider,\\n        model: health.model,\\n        adapterVersion: health.adapterVersion,\\n        credentialLoaded: health.credentialLoaded,\\n        credentialValid: health.credentialValid,\\n        lastValidationTime: health.lastValidationTime,\\n        lastHttpStatus: health.lastHttpStatus,\\n        fallbackEnabled: health.fallbackEnabled,\\n        fallbackUsed: health.fallbackUsed,\\n        traceId: health.traceId,\\n        error: health.error,\\n      },\\n      startup: {\\n        ok: startup.ok,\\n        providerType: startup.providerType,\\n        keyPrefix: startup.keyPrefix,\\n        baseUrl: startup.baseUrl,\\n        endpoint: startup.endpoint,\\n        errors: startup.errors,\\n      },\\n      rorkDependency: false,\\n      secretValuesReturned: false,\\n      timestamp: nowIso(),\\n    });\\n  } catch (error) {\\n    const message = error instanceof Error ? error.message : 'provider-diagnostics failed';\\n    const status = message.includes('missing bearer') || message.includes('invalid or expired') ? 401\\n      : message.includes('owner') || message.includes('privileged') ? 403 : 500;\\n    return context.json({ ok: false, error: message, ownerOnly: true }, status);\\n  }\\n});\"}], \"filePath\": \"backend/hono.ts\"}",
       "createdAt": 1784223385799,
-      "completedAt": 1784223397020
+      "completedAt": 1784223397020,
+      "compactedAt": 1784225025854
     },
     {
       "type": "tool",
@@ -2725,7 +2732,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Push the hono.ts fix and deploy\\ncat > /tmp/ivx-push-fix.ts << 'SCRIPT'\\nimport { randomUUID } from 'crypto';\\n\\nconst GITHUB_TOKEN = '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';\\nconst OWNER = 'ibb142';\\nconst REPO = 'rork-global-real-estate-invest';\\nconst BRANCH = 'main';\\n\\nasync function gh(path: string, opts: RequestInit = {}, method = 'GET') {\\n  const url = `https://api.github.com/repos/${OWNER}/${REPO}/git/${path}`;\\n  const resp = await fetch(url, {\\n    ...opts,\\n    method,\\n    headers: {\\n      'Authorization': `Bearer ${GITHUB_TOKEN}`,\\n      'Accept': 'application/vnd.github+json',\\n      'Content-Type': 'application/json',\\n      'X-GitHub-Api-Version': '2022-11-28',\\n      ...(opts.headers || {}),\\n    },\\n  });\\n  return { status: resp.status, data: resp.status === 200 || resp.status === 201 ? await resp.json() : await resp.text() };\\n}\\n\\nasync function main() {\\n  console.log('=== Git Data API Push — Diagnostics Fix ===\\\\n');\\n\\n  // 1. Get the current commit SHA and its tree\\n  const refResp = await gh(`refs/heads/${BRANCH}`);\\n  if (refResp.status !== 200) { console.log('Ref fetch failed:', refResp); return; }\\n  const refData = refResp.data as { object: { sha: string } };\\n  const currentSha = refData.object.sha;\\n  console.log(`Current ref SHA: ${currentSha.slice(0, 12)}`);\\n\\n  const commitResp = await gh(`commits/${currentSha}`);\\n  if (commitResp.status !== 200) { console.log('Commit fetch failed:', commitResp); return; }\\n  const commitData = commitResp.data as { tree: { sha: string } };\\n  const baseTreeSha = commitData.tree.sha;\\n\\n  // 2. Read the fixed file\\n  const fs = await import('fs/promises');\\n  const content = await fs.readFile('backend/hono.ts', 'utf-8');\\n  console.log(`  Read: backend/hono.ts (${content.length} bytes)`);\\n\\n  // 3. Create blob\\n  const blobResp = await gh('blobs', {\\n    method: 'POST',\\n    body: JSON.stringify({ content, encoding: 'utf-8' }),\\n  }, 'POST');\\n  if (blobResp.status !== 201) { console.log('Blob create failed:', blobResp); return; }\\n  const blobData = blobResp.data as { sha: string };\\n  console.log(`  Blob: backend/hono.ts → ${blobData.sha.slice(0, 12)}`);\\n\\n  // 4. Create tree\\n  const treeResp = await gh('trees', {\\n    method: 'POST',\\n    body: JSON.stringify({\\n      base_tree: baseTreeSha,\\n      tree: [{ path: 'backend/hono.ts', mode: '100644', type: 'blob', sha: blobData.sha }],\\n    }),\\n  }, 'POST');\\n  if (treeResp.status !== 201) { console.log('Tree create failed:', treeResp); return; }\\n  const treeData = treeResp.data as { sha: string };\\n  console.log(`New tree SHA: ${treeData.sha.slice(0, 12)}`);\\n\\n  // 5. Create commit\\n  const newCommitResp = await gh('commits', {\\n    method: 'POST',\\n    body: JSON.stringify({\\n      message: 'fix: provider-diagnostics endpoint use assertIVXRegisteredOwnerBearer',\\n      tree: treeData.sha,\\n      parents: [currentSha],\\n    }),\\n  }, 'POST');\\n  if (newCommitResp.status !== 201) { console.log('Commit create failed:', newCommitResp); return; }\\n  const newCommitData = newCommitResp.data as { sha: string };\\n  const newCommitSha = newCommitData.sha;\\n  console.log(`New commit SHA: ${newCommitSha.slice(0, 12)}`);\\n\\n  // 6. Update ref\\n  const updateRefResp = await gh(`refs/heads/${BRANCH}`, {\\n    method: 'PATCH',\\n    body: JSON.stringify({ sha: newCommitSha, force: false }),\\n  }, 'PATCH');\\n  if (updateRefResp.status !== 200) { console.log('Ref update failed:', updateRefResp); return; }\\n  console.log(`\\\\n✓ Ref updated: ${BRANCH} → ${newCommitSha.slice(0, 12)}`);\\n  console.log(`Commit SHA: ${newCommitSha}`);\\n}\\nmain().catch(e => { console.error('FATAL:', e); process.exit(1); });\\nSCRIPT\\nbun /tmp/ivx-push-fix.ts 2>&1\"}",
       "createdAt": 1784223398311,
-      "completedAt": 1784223415545
+      "completedAt": 1784223415545,
+      "compactedAt": 1784225025854
     },
     {
       "type": "reasoning",
@@ -2750,7 +2758,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Wait for the new deploy to go live, then run full verification\\nsleep 50 && curl -s https://api.ivxholding.com/health 2>&1 | python3 -c \\\"\\nimport json, sys\\ndata = json.loads(sys.stdin.read())\\nprint(f'Commit: {data.get(\\\\\\\"commit\\\\\\\",\\\\\\\"\\\\\\\")[:12]}')\\nprint(f'Boot: {data.get(\\\\\\\"bootTime\\\\\\\")}')\\npv = data.get('ivxSeniorDeveloperProviderVerification', {})\\nprint(f'providerState: {pv.get(\\\\\\\"providerState\\\\\\\")}')\\nprint(f'rorkDependency: {pv.get(\\\\\\\"rorkDependency\\\\\\\")}')\\n\\\" 2>&1\"}",
       "createdAt": 1784223418906,
-      "completedAt": 1784223471438
+      "completedAt": 1784223471438,
+      "compactedAt": 1784225025854
     },
     {
       "type": "reasoning",
@@ -2780,7 +2789,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"sleep 40 && curl -s https://api.ivxholding.com/health 2>&1 | python3 -c \\\"\\nimport json, sys\\ndata = json.loads(sys.stdin.read())\\nprint(f'Commit: {data.get(\\\\\\\"commit\\\\\\\",\\\\\\\"\\\\\\\")[:12]}')\\nprint(f'Boot: {data.get(\\\\\\\"bootTime\\\\\\\")}')\\npv = data.get('ivxSeniorDeveloperProviderVerification', {})\\nprint(f'providerState: {pv.get(\\\\\\\"providerState\\\\\\\")}')\\nprint(f'rorkDependency: {pv.get(\\\\\\\"rorkDependency\\\\\\\")}')\\n\\\" 2>&1\"}",
       "createdAt": 1784223475784,
-      "completedAt": 1784223522128
+      "completedAt": 1784223522128,
+      "compactedAt": 1784225025854
     },
     {
       "type": "reasoning",
@@ -2810,7 +2820,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"sleep 40 && curl -s https://api.ivxholding.com/health 2>&1 | python3 -c \\\"\\nimport json, sys\\ndata = json.loads(sys.stdin.read())\\ncommit = data.get('commit','')[:12]\\nboot = data.get('bootTime','')\\nprint(f'Commit: {commit}')\\nprint(f'Boot: {boot}')\\n\\\" 2>&1\"}",
       "createdAt": 1784223527565,
-      "completedAt": 1784223569835
+      "completedAt": 1784223569835,
+      "compactedAt": 1784225025854
     },
     {
       "type": "reasoning",
@@ -2840,7 +2851,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cat > /tmp/ivx-final-verify-v2.ts << 'SCRIPT'\\nasync function main() {\\n  console.log('=== FINAL VERIFICATION (v2) ===\\\\n');\\n\\n  // 1. Health check\\n  console.log('▶ Health Endpoint');\\n  const health = await fetch('https://api.ivxholding.com/health');\\n  const hd = await health.json();\\n  console.log(`  HTTP: ${health.status}`);\\n  console.log(`  Status: ${hd.status}`);\\n  console.log(`  Commit: ${hd.commit?.slice(0,12)}`);\\n  console.log(`  Boot: ${hd.bootTime}`);\\n  \\n  const pv = hd.ivxSeniorDeveloperProviderVerification;\\n  if (pv) {\\n    console.log(`  ProviderVerification:`);\\n    console.log(`    providerReady: ${pv.providerReady}`);\\n    console.log(`    provider: ${pv.provider}`);\\n    console.log(`    model: ${pv.model}`);\\n    console.log(`    credentialLoaded: ${pv.credentialLoaded}`);\\n    console.log(`    credentialValid: ${pv.credentialValid}`);\\n    console.log(`    providerState: ${pv.providerState}`);\\n    console.log(`    rorkDependency: ${pv.rorkDependency}`);\\n    console.log(`    commitSha: ${pv.commitSha?.slice(0,12)}`);\\n  }\\n\\n  const fv = hd.ivxSeniorDeveloperFinalVerification;\\n  if (fv) {\\n    console.log(`  FinalVerification: verified=${fv.verified} commit=${fv.commitSha?.slice(0,12)}`);\\n  }\\n\\n  // 2. Readiness check\\n  console.log('\\\\n▶ Readiness');\\n  const ready = await fetch('https://api.ivxholding.com/readiness');\\n  const rd = await ready.json();\\n  console.log(`  HTTP: ${ready.status}`);\\n  console.log(`  Ready: ${rd.ready ?? rd.ok}`);\\n\\n  // 3. Owner login\\n  console.log('\\\\n▶ Owner Login');\\n  const loginResp = await fetch('https://api.ivxholding.com/api/ivx/owner-passwordless-login', {\\n    method: 'POST',\\n    headers: { 'Content-Type': 'application/json' },\\n    body: JSON.stringify({ email: 'owner@ivxholding.com' }),\\n  });\\n  const loginData = await loginResp.json();\\n  if (!loginData.success || !loginData.accessToken) {\\n    console.log(`  Login FAILED: ${loginData.message}`);\\n    return;\\n  }\\n  const token = loginData.accessToken;\\n  console.log(`  Login: OK (userId=${loginData.userId})`);\\n\\n  // 4. Provider diagnostics endpoint (fixed)\\n  console.log('\\\\n▶ Provider Diagnostics Endpoint');\\n  const diagResp = await fetch('https://api.ivxholding.com/api/ivx/senior-developer/provider-diagnostics', {\\n    headers: { 'Authorization': `Bearer ${token}` },\\n  });\\n  const diagData = await diagResp.json();\\n  const diagSafe = JSON.stringify(diagData, (k, v) => {\\n    if (typeof v === 'string' && (v.startsWith('sk-') || v.startsWith('vck_') || v.startsWith('ghp_') || v.startsWith('rnd_') || v.startsWith('rork_sk_') || v.startsWith('eyJ'))) return v.slice(0,6) + '***';\\n    return v;\\n  }, 2);\\n  console.log(`  HTTP: ${diagResp.status}`);\\n  console.log(diagSafe.slice(0, 2500));\\n\\n  // 5. Short text message test\\n  console.log('\\\\n▶ Short Text Message Test');\\n  const t0 = Date.now();\\n  const chatResp = await fetch('https://api.ivxholding.com/api/ivx/owner-ai', {\\n    method: 'POST',\\n    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },\\n    body: JSON.stringify({ message: 'Say OK', roomId: 'main-room' }),\\n  });\\n  const chatData = await chatResp.json();\\n  const latency = Date.now() - t0;\\n  console.log(`  HTTP: ${chatResp.status}`);\\n  console.log(`  Status: ${chatData.status}`);\\n  console.log(`  Provider: ${chatData.provider}`);\\n  console.log(`  Model: ${chatData.model}`);\\n  console.log(`  Fallback used: ${chatData.fallbackUsed}`);\\n  console.log(`  Latency: ${latency}ms`);\\n  console.log(`  Request ID: ${chatData.requestId}`);\\n  console.log(`  Conversation ID: ${chatData.conversationId}`);\\n  console.log(`  Assistant persisted: ${chatData.assistantPersisted}`);\\n  if (chatData.providerError) {\\n    console.log(`  Provider error: ${chatData.providerError.errorName} HTTP=${chatData.providerError.status}`);\\n  }\\n  if (chatData.answer) {\\n    console.log(`  Answer (first 200): ${chatData.answer.slice(0, 200)}`);\\n  }\\n\\n  // 6. Health after chat — state machine should show AI_UNAVAILABLE\\n  console.log('\\\\n▶ Health After Chat (State Machine)');\\n  const health2 = await fetch('https://api.ivxholding.com/health');\\n  const hd2 = await health2.json();\\n  const pv2 = hd2.ivxSeniorDeveloperProviderVerification;\\n  if (pv2) {\\n    console.log(`  providerState: ${pv2.providerState}`);\\n    console.log(`  lastHttpStatus: ${pv2.lastHttpStatus}`);\\n    console.log(`  credentialValid: ${pv2.credentialValid}`);\\n    console.log(`  fallbackEnabled: ${pv2.fallbackEnabled}`);\\n    console.log(`  fallbackUsed: ${pv2.fallbackUsed}`);\\n    console.log(`  traceId: ${pv2.traceId}`);\\n  }\\n\\n  // 7. Second chat attempt — should NOT retry the same expired key\\n  console.log('\\\\n▶ Second Chat Attempt (no retry of expired key)');\\n  const t1 = Date.now();\\n  const chat2Resp = await fetch('https://api.ivxholding.com/api/ivx/owner-ai', {\\n    method: 'POST',\\n    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },\\n    body: JSON.stringify({ message: 'Say hello', roomId: 'main-room' }),\\n  });\\n  const chat2Data = await chat2Resp.json();\\n  const latency2 = Date.now() - t1;\\n  console.log(`  HTTP: ${chat2Resp.status}`);\\n  console.log(`  Status: ${chat2Data.status}`);\\n  console.log(`  Latency: ${latency2}ms`);\\n  console.log(`  Fallback used: ${chat2Data.fallbackUsed}`);\\n  if (chat2Data.providerError) {\\n    console.log(`  Provider error: ${chat2Data.providerError.errorName}`);\\n  }\\n\\n  // 8. Data safety\\n  console.log('\\\\n▶ Data Safety');\\n  const supabaseUrl = 'https://kvclcdjmjghndxsngfzb.supabase.co';\\n  const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2Y2xjZGptamdobmR4c25nZnpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxOTQwMjcsImV4cCI6MjA4ODc3MDAyN30.OLDwa21VHQNs151AD-8k--_HigQ2d-N7yJfFn5UeNPk';\\n  const tables = ['members', 'investors', 'buyers', 'jv_deals', 'project_videos', 'jv_deal_media', 'jv_deal_reels'];\\n  for (const table of tables) {\\n    try {\\n      const resp = await fetch(`${supabaseUrl}/rest/v1/${table}?select=count&limit=1`, {\\n        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Range': '0-0', 'Prefer': 'count=exact' },\\n      });\\n      const range = resp.headers.get('content-range');\\n      const count = range ? range.split('/')[1] : '?';\\n      console.log(`  ${table}: ${count} (HTTP ${resp.status})`);\\n    } catch (e: any) {\\n      console.log(`  ${table}: ERROR ${e.message}`);\\n    }\\n  }\\n\\n  // 9. SR status\\n  console.log('\\\\n▶ Senior Developer Runtime Status');\\n  const srResp = await fetch('https://api.ivxholding.com/api/ivx/senior-developer/status', {\\n    headers: { 'Authorization': `Bearer ${token}` },\\n  });\\n  const srData = await srResp.json();\\n  console.log(`  HTTP: ${srResp.status}`);\\n  console.log(`  OK: ${srData.ok}`);\\n  console.log(`  Marker: ${srData.marker}`);\\n  console.log(`  Blocks: ${srData.blocks?.length || 0}`);\\n\\n  // 10. Credential audit\\n  console.log('\\\\n▶ Credential Audit');\\n  const caResp = await fetch('https://api.ivxholding.com/api/ivx/senior-developer/credential-audit', {\\n    headers: { 'Authorization': `Bearer ${token}` },\\n  });\\n  const caData = await caResp.json();\\n  console.log(`  HTTP: ${caResp.status}`);\\n  console.log(`  OK: ${caData.ok}`);\\n  if (caData.audit?.credentials) {\\n    for (const [name, info] of Object.entries(caData.audit.credentials)) {\\n      const c = info as any;\\n      console.log(`  ${name}: present=${c.present} len=${c.length} secretValuesReturned=${c.secretValuesReturned}`);\\n    }\\n  }\\n  if (caData.audit?.github?.auth) {\\n    console.log(`  GitHub auth: ok=${caData.audit.github.auth.ok} status=${caData.audit.github.auth.httpStatus} login=${caData.audit.github.auth.login}`);\\n  }\\n\\n  console.log('\\\\n=== FINAL VERIFICATION COMPLETE ===');\\n}\\n\\nmain().catch(e => { console.error('FATAL:', e.message); process.exit(1); });\\nSCRIPT\\nbun /tmp/ivx-final-verify-v2.ts 2>&1\"}",
       "createdAt": 1784223573924,
-      "completedAt": 1784223611679
+      "completedAt": 1784223611679,
+      "compactedAt": 1784225025854
     },
     {
       "type": "reasoning",
@@ -2960,7 +2972,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"tasks\": [{\"activeForm\": \"Capturing active AI provider configuration\", \"content\": \"Capture exact active AI provider configuration\", \"status\": \"completed\"}, {\"activeForm\": \"Testing existing provider credentials\", \"content\": \"Test every existing provider credential\", \"status\": \"completed\"}, {\"activeForm\": \"Implementing provider state machine and removing broken retry loop\", \"content\": \"Implement provider state machine, remove broken retry loop\", \"status\": \"completed\"}, {\"activeForm\": \"Adding owner-only provider diagnostics\", \"content\": \"Add owner-only provider diagnostics section\", \"status\": \"completed\"}, {\"activeForm\": \"Adding ivxSeniorDeveloperProviderVerification to health\", \"content\": \"Add ivxSeniorDeveloperProviderVerification to /health\", \"status\": \"completed\"}, {\"activeForm\": \"Writing provider state machine tests\", \"content\": \"Write tests for provider state machine\", \"status\": \"completed\"}, {\"activeForm\": \"Building and deploying\", \"content\": \"Build, commit, push, deploy with dedup\", \"status\": \"completed\"}, {\"activeForm\": \"Verifying data safety\", \"content\": \"Verify data safety (members, investors, buyers, deals, messages, videos)\", \"status\": \"completed\"}, {\"activeForm\": \"Producing final report\", \"content\": \"Produce mandatory final report with live proof\", \"status\": \"completed\"}]}",
       "createdAt": 1784223626732,
-      "completedAt": 1784223630821
+      "completedAt": 1784223630821,
+      "compactedAt": 1784225025854
     },
     {
       "type": "text",
