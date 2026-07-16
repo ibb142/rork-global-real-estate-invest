@@ -5,95 +5,39 @@
  *
  *   Featured Deal 1–3 → 1 Featured Project Video → Deal 4–6 → 1 video → repeat.
  *
- * Deal blocks render the rich TrustDealCard when the deal exists in the local
- * jv_deals cache; otherwise a compact card built from the canonical payload
- * (name, city, phase, investment, ROI, min investment, progress %, View Deal
- * + Invest Now). Video blocks are Instagram-style DealVideoCards attached to
- * a real project — never random videos.
+ * All blocks render the shared CanonicalInvestmentReelCard — the approved
+ * full-screen immersive reel design — in feed mode. No old Instagram-style
+ * cards are used.
  */
-import React, { Component, useMemo, type ReactNode } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
+import React, { Component, useCallback, useMemo, type ReactNode } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, useWindowDimensions } from 'react-native';
+import { Share } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { Landmark, MapPin, Sparkles, TrendingUp } from 'lucide-react-native';
+import { Landmark, Sparkles, TrendingUp } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import TrustDealCard from '@/components/TrustDealCard';
-import DealVideoCard from '@/components/DealVideoCard';
-import { fetchHomeFeed, type HomeFeedBlock, type HomeFeedDeal } from '@/lib/video-feed';
-import { formatCurrencyCompact } from '@/lib/formatters';
+import CanonicalInvestmentReelCard, {
+  feedVideoToReelData,
+  homeFeedDealToReelData,
+  parsedDealToReelData,
+  type CanonicalReelData,
+} from '@/components/CanonicalInvestmentReelCard';
+import { fetchHomeFeed, type HomeFeedBlock } from '@/lib/video-feed';
 import type { ParsedJVDeal } from '@/lib/parse-deal';
 import type { JVAgreement } from '@/types/jv';
+import { toggleProjectLike, trackProjectShare } from '@/lib/project-engagement';
+import { toggleVideoSave, getViewerId, buildVideoShareUrl } from '@/lib/video-platform';
 
-function RemoteDealCard({ deal, onView, onInvest }: { deal: HomeFeedDeal; onView: () => void; onInvest: () => void }) {
-  return (
-    <View style={styles.remoteCard} testID={`home-feed-deal-${deal.id}`}>
-      {deal.photo_url ? (
-        <Image source={{ uri: deal.photo_url }} style={styles.remotePhoto} resizeMode="cover" />
-      ) : (
-        <View style={[styles.remotePhoto, styles.remotePhotoFallback]}>
-          <Landmark size={32} color={Colors.primary} />
-        </View>
-      )}
-      <View style={styles.remoteBody}>
-        <Text style={styles.remoteName} numberOfLines={1}>{deal.name ?? 'Investment Opportunity'}</Text>
-        {deal.city ? (
-          <View style={styles.remoteLocationRow}>
-            <MapPin size={11} color={Colors.textTertiary} />
-            <Text style={styles.remoteLocation} numberOfLines={1}>{deal.city}</Text>
-          </View>
-        ) : null}
-        {deal.phase ? <Text style={styles.remotePhase}>{deal.phase}</Text> : null}
-        <View style={styles.remoteStats}>
-          {deal.investment_amount != null ? (
-            <View style={styles.remoteStat}>
-              <Text style={styles.remoteStatVal}>{formatCurrencyCompact(deal.investment_amount)}</Text>
-              <Text style={styles.remoteStatLbl}>Investment</Text>
-            </View>
-          ) : null}
-          {deal.expected_roi ? (
-            <View style={styles.remoteStat}>
-              <Text style={[styles.remoteStatVal, { color: Colors.success }]}>{deal.expected_roi}%</Text>
-              <Text style={styles.remoteStatLbl}>ROI</Text>
-            </View>
-          ) : null}
-          {deal.min_investment != null ? (
-            <View style={styles.remoteStat}>
-              <Text style={styles.remoteStatVal}>{formatCurrencyCompact(deal.min_investment)}</Text>
-              <Text style={styles.remoteStatLbl}>Minimum</Text>
-            </View>
-          ) : null}
-        </View>
-        {deal.progress_percent != null ? (
-          <View style={styles.progressWrap}>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${Math.min(100, Math.max(0, deal.progress_percent))}%` }]} />
-            </View>
-            <Text style={styles.progressText}>{deal.progress_percent}%</Text>
-          </View>
-        ) : null}
-        <View style={styles.remoteBtnRow}>
-          <TouchableOpacity style={styles.viewBtn} onPress={onView} activeOpacity={0.8} testID={`home-feed-view-${deal.id}`}>
-            <Text style={styles.viewBtnText}>View Deal</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.investBtn} onPress={onInvest} activeOpacity={0.8} testID={`home-feed-invest-${deal.id}`}>
-            <Text style={styles.investBtnText}>Invest Now</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-/** Per-video error boundary so one bad DealVideoCard never crashes the home feed */
+/** Per-card error boundary so one bad reel never crashes the home feed */
 class VideoCardBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
   state = { hasError: false };
   static getDerivedStateFromError() { return { hasError: true }; }
-  componentDidCatch(err: Error) { console.warn('[InvestorFirstFeed] Video card crashed:', err.message); }
+  componentDidCatch(err: Error) { console.warn('[InvestorFirstFeed] Card crashed:', err.message); }
   render() {
     if (this.state.hasError) {
       return (
         <View style={{ padding: 20, alignItems: 'center' }}>
-          <Text style={{ color: Colors.textSecondary, fontSize: 13 }}>Video temporarily unavailable</Text>
+          <Text style={{ color: Colors.textSecondary, fontSize: 13 }}>Content temporarily unavailable</Text>
         </View>
       );
     }
@@ -109,9 +53,10 @@ export default function InvestorFirstFeed({ jvDeals, jvDealsLoading, isXs, cardW
   openQuickBuy: (deal: JVAgreement) => void;
 }) {
   const router = useRouter();
+  const { width: screenWidth } = useWindowDimensions();
+  const [muted, setMuted] = React.useState<boolean>(true);
   const padH = isXs ? 16 : 20;
-  // Ensure galleryWidth never exceeds available width after padding
-  const safeCardWidth = Math.max(cardWidth - padH * 2 - 4, 280);
+  const feedHeight = Math.min(screenWidth - padH * 2, 520);
 
   const homeFeedQuery = useQuery({
     queryKey: ['ivx-home-feed'],
@@ -155,9 +100,31 @@ export default function InvestorFirstFeed({ jvDeals, jvDealsLoading, isXs, cardW
     }));
   }, [homeFeedQuery.data?.blocks, jvDeals]);
 
-  const goToDeal = (dealId: string) => {
+  const goToDeal = useCallback((dealId: string) => {
     router.push({ pathname: '/jv-invest', params: { jvId: dealId } } as any);
-  };
+  }, [router]);
+
+  const handleReelLike = useCallback(async (data: CanonicalReelData) => {
+    const id = data.dealId ?? data.reelId;
+    void toggleProjectLike(id, null).catch(() => {});
+  }, []);
+
+  const handleReelSave = useCallback(async (data: CanonicalReelData) => {
+    const viewerId = await getViewerId().catch(() => null);
+    void toggleVideoSave(data.reelId, viewerId).catch(() => {});
+  }, []);
+
+  const handleReelShare = useCallback(async (data: CanonicalReelData) => {
+    const url = data.dealUrl ?? buildVideoShareUrl(data.reelId);
+    try {
+      await Share.share({ message: `${data.title} — ${url}` });
+      void trackProjectShare(data.reelId, 'social', null);
+    } catch {}
+  }, []);
+
+  const handleReelComment = useCallback((data: CanonicalReelData) => {
+    router.push({ pathname: '/videos', params: { type: 'reel', focus: data.reelId } } as any);
+  }, [router]);
 
   const isLoading = (homeFeedQuery.isLoading && jvDealsLoading) || (homeFeedQuery.isLoading && blocks.length === 0);
 
@@ -189,30 +156,58 @@ export default function InvestorFirstFeed({ jvDeals, jvDealsLoading, isXs, cardW
         <View style={{ paddingHorizontal: padH, gap: 14 }}>
           {blocks.map((block) => {
             if (block.type === 'video') {
+              const reelData = feedVideoToReelData(block.video);
               return (
                 <VideoCardBoundary key={`video-${block.video.id}`}>
-                  <DealVideoCard video={block.video} />
+                  <CanonicalInvestmentReelCard
+                    data={reelData}
+                    mode="feed"
+                    isActive={false}
+                    shouldMountVideo={false}
+                    isMuted={muted}
+                    feedHeight={feedHeight}
+                    onToggleMute={() => setMuted(m => !m)}
+                    onLike={handleReelLike}
+                    onComment={handleReelComment}
+                    onSave={handleReelSave}
+                    onShare={handleReelShare}
+                    onOpenDeal={(d) => goToDeal(d.dealId ?? d.reelId)}
+                    onInvest={(d) => goToDeal(d.dealId ?? d.reelId)}
+                    testIDPrefix="home-reel"
+                  />
                 </VideoCardBoundary>
               );
             }
             const local = localById.get(block.deal.id);
+            let reelData: CanonicalReelData;
             if (local) {
-              return (
-                <TrustDealCard
-                  key={`deal-${block.deal.id}`}
-                  deal={local as unknown as ParsedJVDeal}
-                  galleryWidth={safeCardWidth}
-                  onViewDetails={() => goToDeal(block.deal.id)}
-                  onInvestNow={() => openQuickBuy(local)}
-                />
-              );
+              reelData = parsedDealToReelData(local as unknown as ParsedJVDeal);
+            } else {
+              reelData = homeFeedDealToReelData(block.deal);
             }
             return (
-              <RemoteDealCard
+              <CanonicalInvestmentReelCard
                 key={`deal-${block.deal.id}`}
-                deal={block.deal}
-                onView={() => goToDeal(block.deal.id)}
-                onInvest={() => goToDeal(block.deal.id)}
+                data={reelData}
+                mode="feed"
+                isActive={false}
+                shouldMountVideo={false}
+                isMuted={muted}
+                feedHeight={feedHeight}
+                onToggleMute={() => setMuted(m => !m)}
+                onLike={handleReelLike}
+                onComment={handleReelComment}
+                onSave={handleReelSave}
+                onShare={handleReelShare}
+                onOpenDeal={(d) => goToDeal(d.dealId ?? d.reelId)}
+                onInvest={(d) => {
+                  if (local) {
+                    openQuickBuy(local);
+                  } else {
+                    goToDeal(d.dealId ?? d.reelId);
+                  }
+                }}
+                testIDPrefix="home-reel"
               />
             );
           })}
@@ -280,125 +275,5 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     fontSize: 12,
     marginTop: 4,
-  },
-  remoteCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-    overflow: 'hidden' as const,
-  },
-  remotePhoto: {
-    width: '100%' as const,
-    height: 180,
-    backgroundColor: Colors.backgroundSecondary,
-  },
-  remotePhotoFallback: {
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-  },
-  remoteBody: {
-    padding: 14,
-  },
-  remoteName: {
-    color: Colors.text,
-    fontSize: 16,
-    fontWeight: '800' as const,
-  },
-  remoteLocationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 3,
-  },
-  remoteLocation: {
-    color: Colors.textTertiary,
-    fontSize: 12,
-  },
-  remotePhase: {
-    color: Colors.primary,
-    fontSize: 11,
-    fontWeight: '700' as const,
-    marginTop: 4,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.4,
-  },
-  remoteStats: {
-    flexDirection: 'row',
-    backgroundColor: Colors.backgroundSecondary,
-    borderRadius: 10,
-    paddingVertical: 10,
-    marginTop: 10,
-  },
-  remoteStat: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  remoteStatVal: {
-    color: Colors.text,
-    fontSize: 14,
-    fontWeight: '800' as const,
-  },
-  remoteStatLbl: {
-    color: Colors.textTertiary,
-    fontSize: 9,
-    fontWeight: '600' as const,
-    marginTop: 2,
-  },
-  progressWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 10,
-  },
-  progressTrack: {
-    flex: 1,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: Colors.backgroundSecondary,
-    overflow: 'hidden' as const,
-  },
-  progressFill: {
-    height: '100%' as const,
-    borderRadius: 3,
-    backgroundColor: Colors.primary,
-  },
-  progressText: {
-    color: Colors.textSecondary,
-    fontSize: 11,
-    fontWeight: '700' as const,
-  },
-  remoteBtnRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
-  },
-  viewBtn: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.backgroundSecondary,
-    borderRadius: 10,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: Colors.surfaceBorder,
-  },
-  viewBtnText: {
-    color: Colors.text,
-    fontSize: 14,
-    fontWeight: '700' as const,
-  },
-  investBtn: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.primary,
-    borderRadius: 10,
-    paddingVertical: 12,
-  },
-  investBtnText: {
-    color: '#000',
-    fontSize: 14,
-    fontWeight: '800' as const,
   },
 });

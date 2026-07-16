@@ -1,8 +1,0 @@
-{
-  "id": "a2nk6pt8bx0f5pti8d5mj",
-  "role": "user",
-  "content": "import { AppState, Platform } from \"react-native\";\nimport { createClient } from \"@supabase/supabase-js\";\n\nconst supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;\nconst supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;\n\nif (!supabaseUrl || !supabaseAnonKey) {\n  throw new Error(\n    \"Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY\"\n  );\n}\n\nexport const supabase = createClient(supabaseUrl, supabaseAnonKey, {\n  auth: {\n    // Critical: never restore an owner session after restarting the app.\n    persistSession: false,\n\n    // Refresh only while the current manually-created session is active.\n    autoRefreshToken: true,\n\n    // Native apps must not inspect browser URLs for login sessions.\n    detectSessionInUrl: false,\n\n    // Do not place the owner session in AsyncStorage or localStorage.\n    storage: undefined,\n  },\n});\n\nif (Platform.OS !== \"web\") {\n  AppState.addEventListener(\"change\", (state) => {\n    if (state === \"active\") {\n      supabase.auth.startAutoRefresh();\n    } else {\n      supabase.auth.stopAutoRefresh();\n    }\n  });\n}",
-  "attachments": [],
-  "sourceAttachments": [],
-  "userId": "4ad45f53-a7da-448f-ae4e-e47b4076b098"
-}

@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   RefreshControl,
   Modal,
+  Share,
   useWindowDimensions,
   ActivityIndicator,
   Animated,
@@ -52,7 +53,10 @@ import { filterValidPhotos, usePublishedJVDeals, triggerManualJVRefresh } from '
 import type { ParsedJVDeal } from '@/lib/parse-deal';
 import { getFallbackPhotosForDeal, sanitizeDealPhotosForDeal } from '@/constants/deal-photos';
 import QuickBuyModal from '@/components/QuickBuyModal';
-import TrustDealCard from '@/components/TrustDealCard';
+import CanonicalInvestmentReelCard, {
+  parsedDealToReelData,
+  type CanonicalReelData,
+} from '@/components/CanonicalInvestmentReelCard';
 import { CANONICAL_MIN_INVESTMENT } from '@/lib/published-deal-card-model';
 
 
@@ -196,26 +200,41 @@ export default function InvestScreen() {
         </View>
       ) : (
         <>
-          {publishedDealsData.data?.deals.map((deal) => (
-            <View
-              key={deal.id}
-              onLayout={(e) => {
-                const w = e.nativeEvent.layout.width;
-                if (w > 0 && w !== galleryWidth) setGalleryWidth(w);
-              }}
-            >
-              <TrustDealCard
-                deal={deal as ParsedJVDeal}
-                galleryWidth={galleryWidth}
-                onInvestNow={(d) => {
-                  openQuickBuy(d);
+          {publishedDealsData.data?.deals.map((deal) => {
+            const reelData = parsedDealToReelData(deal as ParsedJVDeal);
+            return (
+              <View
+                key={deal.id}
+                onLayout={(e) => {
+                  const w = e.nativeEvent.layout.width;
+                  if (w > 0 && w !== galleryWidth) setGalleryWidth(w);
                 }}
-                onViewDetails={(d) => {
-                  router.push(`/jv-invest?jvId=${d.id}` as any);
-                }}
-              />
-            </View>
-          ))}
+              >
+                <CanonicalInvestmentReelCard
+                  data={reelData}
+                  mode="feed"
+                  isActive={false}
+                  shouldMountVideo={false}
+                  isMuted={true}
+                  feedHeight={Math.min(galleryWidth, 520)}
+                  onToggleMute={() => {}}
+                  onLike={() => {}}
+                  onComment={() => {}}
+                  onSave={() => {}}
+                  onShare={async (d: CanonicalReelData) => {
+                    try { await Share.share({ message: `${d.title} — ${d.dealUrl}` }); } catch {}
+                  }}
+                  onOpenDeal={(d) => {
+                    router.push(`/jv-invest?jvId=${d.dealId}` as any);
+                  }}
+                  onInvest={() => {
+                    openQuickBuy(deal);
+                  }}
+                  testIDPrefix="invest-reel"
+                />
+              </View>
+            );
+          })}
 
           <TouchableOpacity
             style={styles.liveJvAllBtn}

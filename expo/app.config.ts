@@ -6,18 +6,11 @@ import { execSync } from 'child_process';
 // This breaks the circular dependency where hardcoding the SHA
 // creates a new commit with a different SHA.
 let _sourceCommitSha = 'unknown';
-// Prefer the explicit env var (set to the GitHub remote HEAD SHA)
-// over the local git HEAD, because the Rork git router rewrites
-// commit SHAs on push — local HEAD != GitHub remote HEAD.
-const _envSha = process.env.EXPO_PUBLIC_SOURCE_COMMIT_SHA;
-if (_envSha && _envSha.length === 40) {
-  _sourceCommitSha = _envSha;
-} else {
-  try {
-    _sourceCommitSha = execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
-  } catch {
-    _sourceCommitSha = 'unknown';
-  }
+try {
+  _sourceCommitSha = execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
+} catch {
+  // Fallback for environments without git
+  _sourceCommitSha = process.env.EXPO_PUBLIC_SOURCE_COMMIT_SHA || 'unknown';
 }
 
 const config: ExpoConfig = {
@@ -29,7 +22,7 @@ const config: ExpoConfig = {
     policy: 'appVersion',
   },
   extra: {
-    buildMarker: 'IVX_BUNDLE_2026_07_16_BUILD_35_CRM_INDEPENDENT_TILES',
+    buildMarker: 'IVX_BUNDLE_2026_07_16_BUILD_34_INSTAGRAM_STYLE_MODULES',
     buildTimestamp: '2026-07-15T22:45:00.000000+00:00',
     sourceCommitSha: _sourceCommitSha,
     watchdogPatchVersion: 'ai-mutation-watchdog-fix-v12-enterprise-verify',
@@ -66,7 +59,7 @@ const config: ExpoConfig = {
       backgroundColor: '#000000',
     },
     package: 'com.ivxholdings.app',
-    versionCode: 35,
+    versionCode: 34,
     softwareKeyboardLayoutMode: 'resize',
   },
   web: {

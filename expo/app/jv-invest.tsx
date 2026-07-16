@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -464,6 +464,38 @@ export default function JVInvestScreen() {
     success: 'Success',
   };
 
+  // Timeout: if loading takes more than 10 seconds, show retry state
+  const [loadingTimedOut, setLoadingTimedOut] = useState<boolean>(false);
+  useEffect(() => {
+    if (!dealQuery.isLoading) {
+      setLoadingTimedOut(false);
+      return;
+    }
+    const timer = setTimeout(() => setLoadingTimedOut(true), 10000);
+    return () => clearTimeout(timer);
+  }, [dealQuery.isLoading]);
+
+  if (dealQuery.isLoading && loadingTimedOut) {
+    return (
+      <View style={styles.container}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.centerWrap}>
+          <View style={styles.errorCircle}>
+            <Clock size={36} color={Colors.warning} />
+          </View>
+          <Text style={styles.errorTitle}>Request Timed Out</Text>
+          <Text style={styles.errorSubtext}>The deal is taking too long to load. Check your connection and try again.</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => { setLoadingTimedOut(false); void dealQuery.refetch(); }} testID="retry-btn">
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.goBackBtn} onPress={() => router.back()}>
+            <Text style={styles.goBackBtnText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
   if (dealQuery.isLoading) {
     return (
       <View style={styles.container}>
@@ -480,6 +512,9 @@ export default function JVInvestScreen() {
   }
 
   if (dealQuery.isError || !deal) {
+    const errorMsg = dealQuery.error instanceof Error ? dealQuery.error.message : '';
+    const isNotFound = errorMsg.includes('not found') || errorMsg.includes('Deal not found');
+    const isNetworkError = errorMsg.includes('network') || errorMsg.includes('fetch') || errorMsg.includes('connect');
     return (
       <View style={styles.container}>
         <Stack.Screen options={{ headerShown: false }} />
@@ -488,12 +523,14 @@ export default function JVInvestScreen() {
             <Info size={36} color={Colors.textTertiary} />
           </View>
           <Text style={styles.errorTitle}>
-            {dealQuery.isError ? 'Failed to Load' : 'Deal Not Found'}
+            {isNotFound ? 'Deal Not Found' : isNetworkError ? 'Network Error' : dealQuery.isError ? 'Failed to Load' : 'Deal Not Found'}
           </Text>
           <Text style={styles.errorSubtext}>
-            {dealQuery.isError
-              ? 'Could not connect to the server. Check your connection and try again.'
-              : `Deal "${jvId}" was not found. It may need to be published from the admin panel.`}
+            {isNotFound
+              ? `Deal "${jvId}" was not found. It may need to be published from the admin panel.`
+              : isNetworkError
+                ? 'Could not connect to the server. Check your connection and try again.'
+                : 'An unexpected error occurred. Please try again.'}
           </Text>
           <TouchableOpacity style={styles.retryBtn} onPress={() => void dealQuery.refetch()} testID="retry-btn">
             <Text style={styles.retryBtnText}>Retry</Text>

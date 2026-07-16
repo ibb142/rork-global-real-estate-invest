@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Alert,
+  Share,
   useWindowDimensions,
   type LayoutChangeEvent,
 } from 'react-native';
@@ -57,8 +58,10 @@ import { fetchCanonicalDeals } from '@/lib/canonical-deals';
 import type { PublishedDealCardModel } from '@/lib/published-deal-card-model';
 import type { ParsedJVDeal } from '@/lib/parse-deal';
 import InvestorIntakeForm from '@/components/InvestorIntakeForm';
-import TrustDealCard from '@/components/TrustDealCard';
-import InstagramProjectCard from '@/components/InstagramProjectCard';
+import CanonicalInvestmentReelCard, {
+  publishedCardToReelData,
+  type CanonicalReelData,
+} from '@/components/CanonicalInvestmentReelCard';
 import InvestorSupportChat, { type HumanSupportRequestResult } from '@/components/InvestorSupportChat';
 import {
   diagnoseDealPhotos,
@@ -469,19 +472,30 @@ function LandingDealsShowcase({ scrollToForm }: { scrollToForm: () => void }) {
             {deals.map((deal, idx) => {
               const sharedDeal = buildLandingShowcaseDeal(deal);
 
+              const reelData = publishedCardToReelData(deal, deal.resolvedPhotos);
               return (
                 <View key={deal.id || `deal-${idx}`} style={{ width: cardWidth, marginRight: idx < deals.length - 1 ? 14 : 0 }} testID={`landing-deal-card-${deal.id || idx}`}>
-                  <InstagramProjectCard
-                    deal={sharedDeal}
-                    userId={userId}
-                    galleryWidth={cardWidth}
-                    showVideo={true}
-                    onViewDetails={(selectedDeal) => {
-                      router.push(`/jv-invest?jvId=${selectedDeal.id}` as any);
+                  <CanonicalInvestmentReelCard
+                    data={reelData}
+                    mode="feed"
+                    isActive={false}
+                    shouldMountVideo={false}
+                    isMuted={true}
+                    feedHeight={cardWidth}
+                    onToggleMute={() => {}}
+                    onLike={() => {}}
+                    onComment={() => {}}
+                    onSave={() => {}}
+                    onShare={async (d: CanonicalReelData) => {
+                      try { await Share.share({ message: `${d.title} — ${d.dealUrl}` }); } catch {}
                     }}
-                    onInvestNow={() => {
+                    onOpenDeal={(d) => {
+                      router.push(`/jv-invest?jvId=${d.dealId}` as any);
+                    }}
+                    onInvest={() => {
                       scrollToForm();
                     }}
+                    testIDPrefix="landing-reel"
                   />
                 </View>
               );

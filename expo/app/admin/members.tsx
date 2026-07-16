@@ -45,8 +45,6 @@ import {
   upsertStoredMemberRegistryRecord,
   getLastRegistryFetchStatus,
   RegistryFetchStatus,
-  loadStoredMemberRegistry,
-  type MemberRegistryRecord,
 } from '@/lib/member-registry';
 
 type FilterType = 'all' | 'active' | 'pending_kyc' | 'suspended';
@@ -109,51 +107,9 @@ export default function MembersScreen() {
     setDisplayCount(PAGE_SIZE);
   }, [debouncedSearch]);
 
-  // Cached-first display: load from AsyncStorage immediately,
-  // then fetch fresh data from the API in the background.
-  // The user sees cached rows instantly; the query silently replaces
-  // them when the fresh fetch arrives (stale-while-revalidate).
-  const [cachedMembers, setCachedMembers] = useState<MemberRegistryRecord[]>([]);
-  const [cacheLoaded, setCacheLoaded] = useState<boolean>(false);
-
-  useEffect(() => {
-    void loadStoredMemberRegistry().then((cached) => {
-      if (cached.length > 0) {
-        setCachedMembers(cached);
-      }
-      setCacheLoaded(true);
-    });
-  }, []);
-
-  // Realtime: subscribe to profiles table changes so new members,
-  // updates, and suspensions appear live without manual refresh.
-  useEffect(() => {
-    const channel = supabase
-      .channel('members-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'profiles' },
-        (payload) => {
-          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-            void upsertStoredMemberRegistryRecord({
-              ...(payload.new as Record<string, unknown>),
-              source: 'supabase',
-            }).then(() => {
-              void membersQuery.refetch();
-            });
-          } else if (payload.eventType === 'DELETE') {
-            void membersQuery.refetch();
-          }
-        },
-      )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
+  // Single query — fetches all members once, filters client-side.
+  // staleTime 30s prevents aggressive refetching; keepPreviousData
+  // ensures cached rows stay visible during background refresh.
   const membersQuery = useQuery({
     queryKey: ['members.list', { search: debouncedSearch || undefined }],
     queryFn: async () => {
@@ -164,7 +120,6 @@ export default function MembersScreen() {
     },
     staleTime: 30_000,
     refetchInterval: 60_000,
-    placeholderData: (prev) => prev,
   });
 
   // Derive stats from the same query — eliminates the duplicate
@@ -239,10 +194,7 @@ export default function MembersScreen() {
   });
 
   const members = useMemo(() => {
-    // Use fresh query data if available, fall back to cached AsyncStorage data
-    // so the list renders immediately on cold launch without a full-screen loader.
-    const rawSource = membersQuery.data?.members ?? (membersQuery.isLoading && cacheLoaded ? cachedMembers : []);
-    const rawItems = rawSource as any[];
+    const rawItems = membersQuery.data?.members ?? [];
     const items: MemberItem[] = rawItems.map((m: any) => ({
       id: m.id || '',
       email: m.email || '',
@@ -303,7 +255,7 @@ export default function MembersScreen() {
     }
 
     return sorted;
-  }, [membersQuery.data?.members, cachedMembers, cacheLoaded, membersQuery.isLoading, filter, typeFilter, verifiedFilter, sortOrder]);
+  }, [membersQuery.data?.members, filter, typeFilter, verifiedFilter, sortOrder]);
 
 
 
@@ -772,27 +724,11 @@ export default function MembersScreen() {
         </TouchableOpacity>
       </ScrollView>
 
-      {membersQuery.isLoading && !cacheLoaded ? (
-        // Skeleton loading: show placeholder cards while first fetch completes
-        <FlatList
-          data={Array.from({ length: 6 }, (_, i) => ({ id: `skeleton-${i}` }))}
-          keyExtractor={(item) => item.id}
-          renderItem={() => (
-            <View style={styles.skeletonCard}>
-              <View style={styles.skeletonRow}>
-                <View style={styles.skeletonAvatar} />
-                <View style={styles.skeletonInfo}>
-                  <View style={styles.skeletonLine} />
-                  <View style={[styles.skeletonLine, { width: '70%' }]} />
-                  <View style={[styles.skeletonLine, { width: '50%' }]} />
-                </View>
-              </View>
-            </View>
-          )}
-          style={styles.list}
-          contentContainerStyle={styles.listContent}
-          scrollEnabled={false}
-        />
+      {membersQuery.isLoading && !membersQuery.data ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Loading members...</Text>
+        </View>
       ) : members.length === 0 ? (
         <View style={styles.emptyContainer}>
           <View style={styles.emptyIconWrap}>
@@ -1240,34 +1176,5 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center' as const,
     lineHeight: 20,
-  },
-  skeletonCard: {
-    backgroundColor: Colors.card,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  skeletonRow: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-  },
-  skeletonAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: Colors.border,
-  },
-  skeletonInfo: {
-    flex: 1,
-    marginLeft: 12,
-    gap: 6,
-  },
-  skeletonLine: {
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: Colors.border,
-    width: '90%',
   },
 });

@@ -31,21 +31,7 @@ import {
 } from 'react-native';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import {
-  X,
-  Heart,
-  MessageCircle,
-  Share2,
-  Volume2,
-  VolumeX,
-  Play,
-  Bookmark,
-  Hexagon,
-  Users,
-  Home,
-} from 'lucide-react-native';
-import { Image } from 'expo-image';
+import { X } from 'lucide-react-native';
 import { RefreshControl } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useQuery } from '@tanstack/react-query';
@@ -60,7 +46,10 @@ import {
 } from '@/lib/video-platform';
 import ProjectCommentsSheet from '@/components/ProjectCommentsSheet';
 import ProjectShareSheet from '@/components/ProjectShareSheet';
-import ReelVideoPlayer from '@/components/ReelVideoPlayer';
+import CanonicalInvestmentReelCard, {
+  feedVideoToReelData,
+  type CanonicalReelData,
+} from '@/components/CanonicalInvestmentReelCard';
 import { useReelPlayback } from '@/hooks/useReelPlayback';
 import { useReelEngagement, type EngagementState } from '@/hooks/useReelEngagement';
 import { ModuleErrorBoundary } from '@/components/ModuleErrorBoundary';
@@ -73,61 +62,6 @@ import {
 import { supabase } from '@/lib/supabase';
 
 const GOLD = Colors.primary;
-const LIKE_RED = Colors.error;
-
-function formatCount(n: number): string {
-  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-  return String(n);
-}
-
-function compactCurrency(value: number): string {
-  if (value >= 1_000_000) {
-    const m = value / 1_000_000;
-    return `$${m % 1 === 0 ? m.toFixed(0) : m.toFixed(1)}M`;
-  }
-  if (value >= 1_000) {
-    const k = value / 1_000;
-    return `$${k % 1 === 0 ? k.toFixed(0) : k.toFixed(1)}K`;
-  }
-  return `$${Math.round(value)}`;
-}
-
-function parseVideoTitle(video: FeedVideo): { title: string; location: string | null; tourLabel: string } {
-  const raw = video.title ?? video.deal?.title ?? 'IVX Holdings';
-  const locationMatch = raw.match(/(.+?)\s*[—–]\s*([^,]+,\s*[A-Z]{2})/);
-  if (locationMatch) {
-    return { title: locationMatch[1].trim(), location: locationMatch[2].trim(), tourLabel: 'Property Tour' };
-  }
-  const tourMatch = raw.match(/(.+?)\s*[—–]\s*(.+)/);
-  if (tourMatch) {
-    const tour = tourMatch[2].trim();
-    const isLocation = /,\s*[A-Z]{2}/.test(tour);
-    return { title: tourMatch[1].trim(), location: isLocation ? tour : null, tourLabel: isLocation ? 'Property Tour' : tour };
-  }
-  return { title: raw, location: null, tourLabel: 'Property Tour' };
-}
-
-function useInvestmentOptions(dealType: string | null | undefined) {
-  const t = (dealType ?? '').toLowerCase();
-  const tokenized = { id: 'tokenized', label: 'Tokenized', icon: <Hexagon size={16} color={GOLD} />, tint: GOLD };
-  const jvDeals = { id: 'jvDeals', label: 'JV Deal', icon: <Users size={16} color={Colors.blue} />, tint: Colors.blue };
-  const buyers = { id: 'buyers', label: 'Buyer', icon: <Home size={16} color={Colors.green} />, tint: Colors.green };
-  switch (t) {
-    case 'jv':
-    case 'equity_split':
-    case 'hybrid':
-      return [tokenized, jvDeals, buyers];
-    case 'development':
-    case 'new_construction':
-    case 'rehab_construction':
-      return [jvDeals, tokenized, buyers];
-    case 'profit_sharing':
-      return [tokenized, buyers, jvDeals];
-    default:
-      return [tokenized, jvDeals, buyers];
-  }
-}
 
 type ReelChannel = 'all' | 'investment' | 'buyer' | 'seller';
 
@@ -137,271 +71,6 @@ const CHANNELS: { id: ReelChannel; label: string }[] = [
   { id: 'buyer', label: 'Buyers' },
   { id: 'seller', label: 'Sellers' },
 ];
-
-interface FeedItemProps {
-  video: FeedVideo;
-  isActive: boolean;
-  shouldMount: boolean;
-  height: number;
-  muted: boolean;
-  engagement: EngagementState;
-  onToggleMute: () => void;
-  onLike: (video: FeedVideo) => void;
-  onDoubleTapLike: (video: FeedVideo) => void;
-  onComment: (video: FeedVideo) => void;
-  onShare: (video: FeedVideo) => void;
-  onSave: (video: FeedVideo) => void;
-  onFollow: (video: FeedVideo) => void;
-  onReport: (video: FeedVideo) => void;
-  onViewDeal: (video: FeedVideo) => void;
-  onInvestNow: (video: FeedVideo) => void;
-}
-
-const FeedItem = React.memo(function FeedItem({
-  video,
-  isActive,
-  shouldMount,
-  height,
-  muted,
-  engagement,
-  onToggleMute,
-  onLike,
-  onDoubleTapLike,
-  onComment,
-  onShare,
-  onSave,
-  onFollow,
-  onReport,
-  onViewDeal,
-  onInvestNow,
-}: FeedItemProps) {
-  const [paused, setPaused] = useState<boolean>(false);
-  const [showHeart, setShowHeart] = useState<boolean>(false);
-  const [progress, setProgress] = useState<number>(0);
-  const insets = useSafeAreaInsets();
-  const lastTapRef = useRef<number>(0);
-  const shouldPlay = isActive && !paused;
-
-  const deal = video.deal ?? null;
-  const investmentOptions = useInvestmentOptions(deal?.deal_type);
-
-  const handleTap = () => {
-    const now = Date.now();
-    if (now - lastTapRef.current < 320) {
-      lastTapRef.current = 0;
-      setShowHeart(true);
-      setTimeout(() => setShowHeart(false), 800);
-      onDoubleTapLike(video);
-    } else {
-      lastTapRef.current = now;
-      setTimeout(() => {
-        if (lastTapRef.current === now) {
-          setPaused(p => !p);
-        }
-      }, 330);
-    }
-  };
-
-  const parsed = parseVideoTitle(video);
-  const propertyTitle = deal?.title ?? parsed.title;
-  const isActiveStatus = (video.status ?? 'published') === 'published';
-
-  return (
-    <View style={[styles.item, { height }]}>
-      <TouchableOpacity
-        style={StyleSheet.absoluteFill}
-        activeOpacity={1}
-        onPress={handleTap}
-        onLongPress={() => onReport(video)}
-        testID={`video-item-${video.id}`}
-      >
-        {shouldMount ? (
-          <ReelVideoPlayer
-            videoId={video.id}
-            uri={video.video_url}
-            hlsUri={video.hls_url}
-            posterUri={video.poster_url ?? video.thumbnail_url}
-            previewBlurUri={video.preview_blur_url}
-            shouldPlay={shouldPlay}
-            isMuted={muted}
-            onProgress={(p) => setProgress(p)}
-            testID={`video-player-${video.id}`}
-          />
-        ) : (
-          // Unmounted: show poster image to preserve scroll position and avoid black frame
-          <View style={StyleSheet.absoluteFill}>
-            {video.poster_url || video.thumbnail_url ? (
-              <Image
-                source={{ uri: video.poster_url || video.thumbnail_url || undefined }}
-                style={StyleSheet.absoluteFill}
-                contentFit="cover"
-                transition={150}
-              />
-            ) : video.preview_blur_url ? (
-              <Image
-                source={{ uri: video.preview_blur_url }}
-                style={StyleSheet.absoluteFill}
-                contentFit="cover"
-                blurRadius={20}
-                transition={100}
-              />
-            ) : (
-              <View style={[StyleSheet.absoluteFill, { backgroundColor: '#111' }]} />
-            )}
-          </View>
-        )}
-      </TouchableOpacity>
-
-      {/* Progress bar */}
-      <View style={styles.progressBar}>
-        <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
-      </View>
-
-      {!shouldPlay && shouldMount && (
-        <View pointerEvents="none" style={styles.centerPlay}>
-          <View style={styles.centerPlayCircle}>
-            <Play size={30} color="#000" fill="#000" />
-          </View>
-        </View>
-      )}
-
-      {showHeart && (
-        <View pointerEvents="none" style={styles.burstHeart}>
-          <Heart size={96} color={LIKE_RED} fill={LIKE_RED} />
-        </View>
-      )}
-
-      {/* Right action rail */}
-      <View style={[styles.rail, { bottom: insets.bottom + 96 }]}>
-        <TouchableOpacity
-          style={styles.railBtn}
-          onPress={() => onLike(video)}
-          testID={`video-like-${video.id}`}
-        >
-          <Heart
-            size={30}
-            color={engagement.liked ? LIKE_RED : '#fff'}
-            fill={engagement.liked ? LIKE_RED : 'transparent'}
-          />
-          <Text style={styles.railCount}>{formatCount(engagement.likeCount)}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.railBtn}
-          onPress={() => onComment(video)}
-          testID={`video-comment-${video.id}`}
-        >
-          <MessageCircle size={30} color="#fff" />
-          <Text style={styles.railCount}>{formatCount(engagement.commentCount)}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.railBtn}
-          onPress={() => onSave(video)}
-          testID={`video-save-${video.id}`}
-        >
-          <Bookmark
-            size={30}
-            color={engagement.saved ? GOLD : '#fff'}
-            fill={engagement.saved ? GOLD : 'transparent'}
-          />
-          <Text style={styles.railCount}>{formatCount(engagement.saveCount)}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.railBtn}
-          onPress={() => onShare(video)}
-          testID={`video-share-${video.id}`}
-        >
-          <Share2 size={30} color="#fff" />
-          <Text style={styles.railCount}>{formatCount(engagement.shareCount)}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.railBtn} onPress={onToggleMute} testID={`video-mute-${video.id}`}>
-          {muted ? <VolumeX size={26} color="#fff" /> : <Volume2 size={26} color="#fff" />}
-        </TouchableOpacity>
-      </View>
-
-      {/* Bottom info + CTAs */}
-      <View pointerEvents="box-none" style={[styles.info, { bottom: insets.bottom + 32 }]}>
-        <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.82)']}
-          locations={[0, 0.35, 1]}
-          style={styles.bottomGradient}
-        />
-        <View style={styles.badgeRow}>
-          {deal ? <Text style={styles.badgeInvestment}>INVESTMENT</Text> : null}
-          {isActiveStatus ? <Text style={styles.badgeActive}>ACTIVE</Text> : null}
-        </View>
-        <Text style={styles.infoTitle} numberOfLines={1}>
-          {`${parsed.title} — ${parsed.tourLabel}`}
-        </Text>
-        <Text style={styles.infoPropertyTitle} numberOfLines={1}>
-          {propertyTitle}
-        </Text>
-        {parsed.location ? (
-          <Text style={styles.infoLocation} numberOfLines={1}>
-            {parsed.location}
-          </Text>
-        ) : null}
-        <View style={styles.metricRow}>
-          {deal?.expected_roi ? (
-            <View style={styles.metric}>
-              <Text style={styles.metricValue}>{deal.expected_roi}%</Text>
-              <Text style={styles.metricLabel}>ROI</Text>
-            </View>
-          ) : null}
-          {deal?.min_investment && deal.min_investment > 0 ? (
-            <View style={styles.metric}>
-              <Text style={styles.metricValue}>{compactCurrency(deal.min_investment)}</Text>
-              <Text style={styles.metricLabel}>MIN INVEST</Text>
-            </View>
-          ) : null}
-          {deal?.price && deal.price > 0 ? (
-            <View style={styles.metric}>
-              <Text style={styles.metricValue}>{((deal.min_investment ?? 0) / deal.price * 100).toFixed(4)}%</Text>
-              <Text style={styles.metricLabel}>MIN OWNERSHIP</Text>
-            </View>
-          ) : null}
-        </View>
-
-        <View style={styles.optionsRow}>
-          {investmentOptions.map((option) => (
-            <View key={option.id} style={styles.optionIcon}>
-              <View style={[styles.optionIconCircle, { borderColor: `${option.tint}66` }]}>
-                {option.icon}
-              </View>
-              <Text style={styles.optionIconLabel}>{option.label}</Text>
-            </View>
-          ))}
-        </View>
-
-        <View style={styles.ctaRowInner}>
-          {deal?.url || deal?.id ? (
-            <TouchableOpacity
-              style={styles.viewDealBtn}
-              onPress={() => onViewDeal(video)}
-              activeOpacity={0.85}
-              testID={`video-view-deal-${video.id}`}
-            >
-              <Text style={styles.viewDealText}>View Deal</Text>
-            </TouchableOpacity>
-          ) : null}
-          {deal?.id ? (
-            <TouchableOpacity
-              style={styles.investNowBtn}
-              onPress={() => onInvestNow(video)}
-              activeOpacity={0.85}
-              testID={`video-invest-${video.id}`}
-            >
-              <Text style={styles.investNowText}>Invest Now</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
-      </View>
-    </View>
-  );
-});
 
 export default function VideosScreen() {
   const router = useRouter();
@@ -684,27 +353,37 @@ export default function VideosScreen() {
   );
 
   const renderItem = useCallback(
-    ({ item, index }: { item: FeedVideo; index: number }) => (
-      <FeedItem
-        video={item}
-        isActive={playback.shouldPlay(index)}
-        shouldMount={playback.shouldMount(index, filteredVideos.length)}
-        height={windowHeight}
-        muted={muted}
-        engagement={getEngagement(item.id, item)}
-        onToggleMute={() => setMuted(m => !m)}
-        onLike={handleLike}
-        onDoubleTapLike={handleDoubleTapLike}
-        onComment={handleComment}
-        onShare={handleShare}
-        onSave={handleSave}
-        onFollow={handleFollow}
-        onReport={handleReport}
-        onViewDeal={handleViewDeal}
-        onInvestNow={handleInvestNow}
-      />
-    ),
-    [playback, filteredVideos.length, windowHeight, muted, getEngagement, handleLike, handleDoubleTapLike, handleComment, handleShare, handleSave, handleFollow, handleReport, handleViewDeal, handleInvestNow]
+    ({ item, index }: { item: FeedVideo; index: number }) => {
+      const reelData = feedVideoToReelData(item);
+      const eng = getEngagement(item.id, item);
+      const mergedData: CanonicalReelData = {
+        ...reelData,
+        isLiked: eng.liked,
+        isSaved: eng.saved,
+        likeCount: eng.likeCount,
+        saveCount: eng.saveCount,
+        shareCount: eng.shareCount,
+        commentCount: eng.commentCount,
+      };
+      return (
+        <CanonicalInvestmentReelCard
+          data={mergedData}
+          mode="reel"
+          isActive={playback.shouldPlay(index)}
+          shouldMountVideo={playback.shouldMount(index, filteredVideos.length)}
+          isMuted={muted}
+          feedHeight={windowHeight}
+          onToggleMute={() => setMuted(m => !m)}
+          onLike={(d) => handleLike(item)}
+          onComment={(d) => handleComment(item)}
+          onSave={(d) => handleSave(item)}
+          onShare={(d) => handleShare(item)}
+          onOpenDeal={(d) => handleViewDeal(item)}
+          onInvest={(d) => handleInvestNow(item)}
+        />
+      );
+    },
+    [playback, filteredVideos.length, windowHeight, muted, getEngagement, handleLike, handleComment, handleShare, handleSave, handleViewDeal, handleInvestNow]
   );
 
   const itemHeight = windowHeight;
@@ -891,221 +570,6 @@ const styles = StyleSheet.create({
   emptyText: {
     color: 'rgba(255,255,255,0.5)',
     fontSize: 15,
-  },
-  item: {
-    width: '100%',
-    backgroundColor: '#000',
-    overflow: 'hidden',
-  },
-  progressBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 3,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    zIndex: 21,
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: GOLD,
-  },
-  centerPlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 25,
-  },
-  centerPlayCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: 'rgba(255,255,255,0.85)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  burstHeart: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    marginLeft: -48,
-    marginTop: -48,
-    zIndex: 26,
-  },
-  bottomGradient: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: -32,
-    height: 280,
-    zIndex: -1,
-  },
-  rail: {
-    position: 'absolute',
-    right: 8,
-    zIndex: 20,
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: 18,
-  },
-  railBtn: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  railCount: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 4,
-    textShadowColor: 'rgba(0,0,0,0.6)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  info: {
-    position: 'absolute',
-    left: 14,
-    right: 84,
-    zIndex: 20,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 8,
-  },
-  badgeInvestment: {
-    backgroundColor: GOLD,
-    borderRadius: 5,
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    color: '#000',
-    fontSize: 10,
-    fontWeight: '800' as const,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.4,
-    overflow: 'hidden',
-  },
-  badgeActive: {
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderWidth: 1,
-    borderColor: GOLD,
-    borderRadius: 5,
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    color: GOLD,
-    fontSize: 10,
-    fontWeight: '800' as const,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.4,
-    overflow: 'hidden',
-  },
-  infoTitle: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '700',
-    lineHeight: 20,
-    textShadowColor: 'rgba(0,0,0,0.7)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-  infoPropertyTitle: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: '800' as const,
-    marginTop: 2,
-    textShadowColor: 'rgba(0,0,0,0.7)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-  infoLocation: {
-    color: 'rgba(255,255,255,0.85)',
-    fontSize: 13,
-    marginTop: 2,
-    textShadowColor: 'rgba(0,0,0,0.7)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-  metricRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 8,
-    flexWrap: 'wrap',
-  },
-  metric: {
-    alignItems: 'center',
-  },
-  metricValue: {
-    color: GOLD,
-    fontSize: 18,
-    fontWeight: '800' as const,
-  },
-  metricLabel: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 10.5,
-    fontWeight: '500',
-    marginTop: 5,
-    textTransform: 'uppercase' as const,
-  },
-  optionsRow: {
-    flexDirection: 'row',
-    gap: 14,
-    marginTop: 10,
-  },
-  optionIcon: {
-    alignItems: 'center',
-  },
-  optionIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  optionIconLabel: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '600',
-    marginTop: 4,
-    textShadowColor: 'rgba(0,0,0,0.7)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  ctaRowInner: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 14,
-  },
-  viewDealBtn: {
-    flex: 1,
-    borderWidth: 1.5,
-    borderColor: GOLD,
-    borderRadius: 999,
-    paddingVertical: 12,
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.45)',
-  },
-  viewDealText: {
-    color: GOLD,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  investNowBtn: {
-    flex: 1,
-    backgroundColor: GOLD,
-    borderRadius: 999,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  investNowText: {
-    color: '#000',
-    fontSize: 15,
-    fontWeight: '700',
   },
   toast: {
     position: 'absolute',
