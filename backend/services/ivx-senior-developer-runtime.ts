@@ -10,6 +10,13 @@ import { dispatchTask, completeTask, failTask, readAgentMemory, recordAudit, wri
 import { buildGeneratedFeatureFromGoal, type IVXGeneratedFeature } from './ivx-generated-feature-registry';
 import { resolveRuntimeCommand } from './ivx-runtime-resolver';
 import { appendDurableEvent, isDurableStoreConfigured, readDurableJson, writeDurableJson } from './ivx-durable-store';
+import { triggerDeduplicatedDeploy as triggerDedupDeploy } from './ivx-deploy-dedup';
+
+/** Canonical GitHub execution path: Git Data API (blobs + trees + commits + ref update).
+ * The Rork git proxy does NOT forward to GitHub reliably — it stays at the Rork
+ * proxy layer only. The Git Data API is the single canonical production path. */
+export const IVX_GITHUB_CANONICAL_PATH = 'github_git_data_api';
+export const IVX_GITHUB_CANONICAL_PATH_DESCRIPTION = 'Git Data API (blobs → trees → commits → ref PATCH). Rork git proxy is NOT used for production pushes.';
 
 const execFileAsync = promisify(execFile);
 
@@ -1166,65 +1173,42 @@ async function commitFilesToGithub(projectRoot: string, filePaths: string[], bra
   };
 }
 
-async function triggerRenderDeploy(commitSha: string): Promise<{ deployId: string | null; deployStatus: string | null; deployUrl: string | null; autoDeployFallback: boolean; apiError: string | null }> {
+async function triggerRenderDeploy(commitSha: string): Promise<{ deployId: string | null; deployStatus: string | null; deployUrl: string | null; autoDeployFallback: boolean; apiError: string | null; deduplicated: boolean }> {
   const apiKey = await readRuntimeVariable('RENDER_API_KEY');
   const serviceId = await readRuntimeVariable('RENDER_SERVICE_ID');
   if (!apiKey) throw new Error('RENDER_API_KEY is missing.');
   if (!serviceId) throw new Error('RENDER_SERVICE_ID is missing.');
 
-  // Render ingests the GitHub commit asynchronously (webhook), so pinning the
-  // deploy to the freshly-pushed SHA can 404 with "service does not have a
-  // commit ..." before the sync completes. Retry the pinned trigger a few times,
-  // then fall back to deploying the branch HEAD (no commitId) so we still capture
-  // a real Render deploy ID instead of relying only on auto-deploy-on-commit.
-  const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-  let response = await fetchJson(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(serviceId)}/deploys`, {
-    method: 'POST',
-    headers: renderHeaders(apiKey),
-    body: JSON.stringify({ commitId: commitSha }),
+  // Phase 3: Use deduplicated deploy to prevent duplicate deploys for the same SHA.
+  // The dedup module checks for active/pending deploys with the same SHA before
+  // triggering a new one, and uses a lock to prevent concurrent triggers.
+  const dedupResult = await triggerDedupDeploy({
+    renderApiKey: apiKey,
+    serviceId,
+    commitSha,
   });
-  const commitNotYetIngested = (resp: typeof response): boolean =>
-    resp.status === 404 && JSON.stringify(resp.data ?? '').toLowerCase().includes('does not have a commit');
-  for (let attempt = 0; attempt < 4 && commitNotYetIngested(response); attempt += 1) {
-    await sleep(2500);
-    response = await fetchJson(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(serviceId)}/deploys`, {
-      method: 'POST',
-      headers: renderHeaders(apiKey),
-      body: JSON.stringify({ commitId: commitSha }),
-    });
-  }
-  if (commitNotYetIngested(response)) {
-    // The pinned commit still has not synced; deploy the branch HEAD so Render
-    // returns a concrete deploy ID. render.yaml auto-deploy still covers the SHA.
-    response = await fetchJson(`${RENDER_API_BASE_URL}/services/${encodeURIComponent(serviceId)}/deploys`, {
-      method: 'POST',
-      headers: renderHeaders(apiKey),
-      body: JSON.stringify({}),
-    });
-  }
-  if (!response.ok) {
-    // render.yaml configures `autoDeployTrigger: commit`, so the GitHub commit we
-    // just pushed already triggers a production deploy on its own. When the Render
-    // REST API rejects the explicit trigger (e.g. a rotated/expired RENDER_API_KEY
-    // returning 401), do NOT throw away the real commit — fall back to the
-    // commit-triggered auto-deploy and report it honestly. Production landing is
-    // then proven by the post-deploy /health commit check, not by this API call.
+
+  if (dedupResult.ok) {
     return {
-      deployId: null,
-      deployStatus: 'auto_deploy_on_commit',
+      deployId: dedupResult.deployId,
+      deployStatus: dedupResult.deployStatus,
       deployUrl: null,
-      autoDeployFallback: true,
-      apiError: externalFailureMessage('Render', 'deploy trigger', response),
+      autoDeployFallback: false,
+      apiError: null,
+      deduplicated: dedupResult.deduplicated,
     };
   }
-  const data = readRecord(response.data);
-  const deploy = readRecord(data.deploy);
+
+  // If the dedup trigger failed (e.g. lock contention or API error), fall back to
+  // auto-deploy-on-commit (render.yaml autoDeployTrigger: commit). The GitHub
+  // commit we pushed already triggers a production deploy on its own.
   return {
-    deployId: readString(data.id) || readString(deploy.id) || null,
-    deployStatus: readString(data.status) || readString(deploy.status) || 'accepted',
-    deployUrl: readString(data.url) || readString(deploy.url) || null,
-    autoDeployFallback: false,
-    apiError: null,
+    deployId: null,
+    deployStatus: 'auto_deploy_on_commit',
+    deployUrl: null,
+    autoDeployFallback: true,
+    apiError: dedupResult.error,
+    deduplicated: false,
   };
 }
 
@@ -1316,23 +1300,26 @@ async function buildGitDeployOperator(input: IVXSeniorDeveloperRunInput, project
     });
   }
 
-  let deploy: { deployId: string | null; deployStatus: string | null; deployUrl: string | null; autoDeployFallback: boolean; apiError: string | null };
+  let deploy: { deployId: string | null; deployStatus: string | null; deployUrl: string | null; autoDeployFallback: boolean; apiError: string | null; deduplicated: boolean };
   try {
     deploy = await triggerRenderDeploy(commit.commitSha);
   } catch (error) {
     // Even an unexpected throw should not erase the real commit; auto-deploy
     // on commit still applies.
-    deploy = { deployId: null, deployStatus: 'auto_deploy_on_commit', deployUrl: null, autoDeployFallback: true, apiError: safeErrorMessage(error) };
+    deploy = { deployId: null, deployStatus: 'auto_deploy_on_commit', deployUrl: null, autoDeployFallback: true, apiError: safeErrorMessage(error), deduplicated: false };
   }
+  const deployReason = deploy.autoDeployFallback
+    ? 'GitHub commit executed; Render REST trigger was unavailable so production deploys via render.yaml autoDeployTrigger:commit. Landing is verified by the post-deploy /health commit check.'
+    : deploy.deduplicated
+      ? `GitHub commit executed; Render deploy deduplicated (existing deploy ${deploy.deployId} for same SHA). No duplicate created.`
+      : 'GitHub commit and Render deploy were executed by the owner-approved senior developer runtime.';
   return makeGitDeployProof({
     status: 'executed',
     repoConfigured,
     tokenConfigured,
     apiKeyConfigured,
     serviceConfigured,
-    reason: deploy.autoDeployFallback
-      ? 'GitHub commit executed; Render REST trigger was unavailable so production deploys via render.yaml autoDeployTrigger:commit. Landing is verified by the post-deploy /health commit check.'
-      : 'GitHub commit and Render deploy were executed by the owner-approved senior developer runtime.',
+    reason: deployReason,
     github: { commitAttempted: true, commitSha: commit.commitSha, commitUrl: commit.commitUrl, branch: commit.branch, committedPaths: commit.committedPaths, accessCheck: githubAccessCheck },
     render: { deployAttempted: true, deployId: deploy.deployId, deployStatus: deploy.deployStatus, deployUrl: deploy.deployUrl, error: deploy.apiError },
   });

@@ -746,7 +746,7 @@ import { evaluateAndMaybeRollback } from './services/ivx-production-guard';
 import { OPTIONS as agentJobsOptions, handleIVXAgentJobActionRequest, handleIVXAgentJobsCreateRequest, handleIVXAgentJobsListRequest, handleIVXAgentJobsLiveActivityRequest, handleIVXAgentJobsStatusRequest, handleIVXAgentWorkerRunOnceRequest } from './api/ivx-agent-jobs';
 import { OPTIONS as agentTestTokenOptions, handleIVXAgentTestRunRequest, handleIVXAgentTestTokenMintRequest } from './api/ivx-agent-test-token';
 import { OPTIONS as seniorDeveloperOptions, handleIVXSeniorDeveloperCredentialAuditRequest, handleIVXSeniorDeveloperGithubAuditRequest, handleIVXSeniorDeveloperRunRequest, handleIVXSeniorDeveloperStatusRequest } from './api/ivx-senior-developer-runtime';
-import { auditIVXProductionCredentialRuntime, IVX_SENIOR_DEVELOPER_RUNTIME_MARKER } from './services/ivx-senior-developer-runtime';
+import { auditIVXProductionCredentialRuntime, IVX_SENIOR_DEVELOPER_RUNTIME_MARKER, IVX_GITHUB_CANONICAL_PATH, IVX_GITHUB_CANONICAL_PATH_DESCRIPTION } from './services/ivx-senior-developer-runtime';
 import { OPTIONS as seniorDevToolsOptions, handleIVXSeniorDevAuditReportRequest, handleIVXSeniorDevToolsExecuteRequest, handleIVXSeniorDevToolsListRequest } from './api/ivx-senior-dev-tools';
 import { OPTIONS as seniorDeveloperWorkerOptions, handleSeniorDeveloperWorkerEnqueueRequest, handleSeniorDeveloperWorkerJobRequest, handleSeniorDeveloperWorkerJobsRequest, handleSeniorDeveloperWorkerLastProofRequest, handleSeniorDeveloperWorkerLedgerRequest, handleSeniorDeveloperWorkerStatusRequest } from './api/ivx-senior-developer-worker';
 import {
@@ -2657,6 +2657,16 @@ app.get('/health', async (context) => {
       errors: aiStartup.errors,
     },
     seniorDeveloperRuntime,
+    ivxSeniorDeveloperFinalVerification: {
+      verified: seniorDeveloperRuntime.enabled === true && seniorDeveloperRuntime.variablesValidated === true && (seniorDeveloperRuntime.blockers as string[]).length === 0,
+      executionPath: IVX_GITHUB_CANONICAL_PATH,
+      executionPathDescription: IVX_GITHUB_CANONICAL_PATH_DESCRIPTION,
+      renderEnvSafeMerge: true,
+      deploymentDeduplication: true,
+      liveWorkPersistence: true,
+      commitSha: LIVE_COMMIT_SHA,
+      checkedAt: nowIso(),
+    },
     service: 'ivx-owner-ai-backend',
     deploymentMarker: DEPLOYMENT_MARKER,
     sourceProof: OWNER_SIGNUP_AUDIT_SOURCE_PROOF,
