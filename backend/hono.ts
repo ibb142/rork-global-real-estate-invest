@@ -997,7 +997,7 @@ import {
   getPublicChatHealthSnapshot,
   mapRoomMessagesToPublicChatHistory,
 } from './public-chat-ai';
-import { validateIVXAIStartup, requestIVXAIText, getIVXAIProviderType } from './ivx-ai-runtime';
+import { validateIVXAIStartup, requestIVXAIText } from './ivx-ai-runtime';
 import { routeDeploymentCommand, isDeploymentCommand } from './services/ivx-deployment-chat-brain';
 import {
   handleChatPost,
@@ -4106,8 +4106,8 @@ app.post('/api/audio/transcribe', async (c) => handleOwnerAudioTranscribe(c.req.
 // exposes the API key value. Used to diagnose silent fallback failures.
 app.options('/api/ivx/ai-test', () => publicJson({ ok: true }, 204));
 app.get('/api/ivx/ai-test', async (context) => {
-  const providerType = getIVXAIProviderType();
   const startup = validateIVXAIStartup();
+  const providerType = startup.providerType;
   const testPrompt = 'Reply with exactly: IVX_AI_TEST_OK';
   const testStartedAt = Date.now();
   try {
