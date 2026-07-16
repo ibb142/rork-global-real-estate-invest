@@ -90,9 +90,12 @@ export async function handleBuyerDiscoveryGetRequest(request: Request): Promise<
     buyerTypes: url.searchParams.get('buyerTypes') ?? url.searchParams.get('types') ?? undefined,
   };
   const result = await discoverBuyers(buildOptions(source));
+  const buyers = Array.isArray(result.buyers) ? result.buyers : [];
   return ownerOnlyJson({
     ok: result.ok,
     marker: IVX_BUYER_DISCOVERY_MARKER,
+    buyers,
+    resultCount: buyers.length,
     buyerTypes: BUYER_TYPES.map((type) => ({ type, label: BUYER_TYPE_LABEL[type] })),
     discovery: result as unknown as Record<string, unknown>,
   });
@@ -103,9 +106,12 @@ export async function handleBuyerDiscoveryScanRequest(request: Request): Promise
   if (denied) return denied;
   const body = await readJsonBody(request);
   const result = await discoverBuyers(buildOptions(body));
+  const buyers = Array.isArray(result.buyers) ? result.buyers : [];
   return ownerOnlyJson({
     ok: result.ok,
     marker: IVX_BUYER_DISCOVERY_MARKER,
+    buyers,
+    resultCount: buyers.length,
     discovery: result as unknown as Record<string, unknown>,
   });
 }
