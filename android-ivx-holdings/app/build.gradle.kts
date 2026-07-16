@@ -13,23 +13,14 @@ android {
         applicationId = "com.rork.ivxholdings"
         minSdk = 24
         targetSdk = 36
-        versionCode = 12
-        versionName = "1.4.3"
-    }
-
-    signingConfigs {
-        create("rorkPlayUpload") {
-            storeFile = file("/home/user/rork-app/android-ivx-holdings/app/play-upload-key.jks")
-            storePassword = "rork-play-upload"
-            keyAlias = "upload"
-            keyPassword = "rork-play-upload"
-        }
+        versionCode = 1
+        versionName = "1.0"
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("rorkPlayUpload")
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -71,7 +62,6 @@ dependencies {
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.android)
     implementation(libs.ktor.client.content.negotiation)
-    implementation(libs.ktor.client.logging)
     implementation(libs.ktor.serialization.json)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
