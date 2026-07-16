@@ -1,5 +1,4 @@
 {
-  "id": "72d41mceljh64vwd6z0lj",
   "role": "assistant",
   "responseMessageContents": [
     {
@@ -26,7 +25,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"TOKEN=$(cat /tmp/owner-token.txt)\\n\\necho \\\"=== DEPLOYMENT STATUS CHECK ===\\\"\\n\\n# 1. Health\\necho \\\"\\\"\\necho \\\"1. Production Health:\\\"\\ncurl -s -m 10 \\\"https://api.ivxholding.com/health\\\" 2>/dev/null | python3 -c \\\"\\nimport sys,json; d=json.load(sys.stdin)\\nprint(f'   SHA: {d.get(\\\\\\\"commit\\\\\\\",\\\\\\\"?\\\\\\\")[:16]}')\\nprint(f'   Status: {d.get(\\\\\\\"status\\\\\\\")}')\\nprint(f'   Boot: {d.get(\\\\\\\"bootTime\\\\\\\",\\\\\\\"?\\\\\\\")[:19]}')\\n\\\"\\n\\n# 2. Deploy status\\necho \\\"\\\"\\necho \\\"2. Render Deploy Status:\\\"\\ncurl -s -m 15 \\\"https://api.ivxholding.com/api/ivx/deploy/status\\\" 2>/dev/null | python3 -c \\\"\\nimport sys,json; d=json.load(sys.stdin)\\nld = d.get('lastDeploy',{})\\nprint(f'   Status: {ld.get(\\\\\\\"status\\\\\\\")}')\\nprint(f'   SHA: {str(ld.get(\\\\\\\"commitSha\\\\\\\",\\\\\\\"?\\\\\\\"))[:16]}')\\nprint(f'   Finished: {ld.get(\\\\\\\"finishedAt\\\\\\\",\\\\\\\"?\\\\\\\")[:19]}')\\n\\\"\\n\\n# 3. Home feed\\necho \\\"\\\"\\necho \\\"3. Live Home Feed:\\\"\\ncurl -s -m 15 \\\"https://api.ivxholding.com/api/ivx/video-platform/home-feed?limit=10\\\" 2>/dev/null | python3 -c \\\"\\nimport sys,json; d=json.load(sys.stdin)\\nblocks = d.get('blocks',[])\\nprint(f'   Pattern: {d.get(\\\\\\\"pattern\\\\\\\")}')\\nprint(f'   Blocks: {len(blocks)} | Deals: {d.get(\\\\\\\"deal_count\\\\\\\")} | Videos: {d.get(\\\\\\\"video_count\\\\\\\")}')\\nfor i, b in enumerate(blocks):\\n    t = b.get('type')\\n    card = 'InvestmentCard' if t == 'deal' else 'ReelCard'\\n    name = b.get('deal',{}).get('name','?') if t=='deal' else b.get('video',{}).get('title','?')\\n    print(f'   [{i}] {card} | {name[:30]}')\\n\\\"\\n\\n# 4. Landing page\\necho \\\"\\\"\\necho \\\"4. Landing Page (ivxholding.com):\\\"\\ncurl -s -m 10 -o /dev/null -w '   HTTP %{http_code}' 'https://ivxholding.com' 2>/dev/null\\n\\necho \\\"\\\"\\necho \\\"\\\"\\n\\n# 5. Git status\\necho \\\"5. Git Status:\\\"\\ncd /home/user/rork-app && echo \\\"   Local HEAD: $(git rev-parse HEAD | cut -c1-16)\\\" && echo \\\"   Rork router: $(git ls-remote origin refs/heads/main 2>/dev/null | cut -c1-16)\\\"\\n\", \"cwd\": \"/home/user/rork-app\"}",
       "createdAt": 1784237410664,
-      "completedAt": 1784237421751
+      "completedAt": 1784237421751,
+      "compactedAt": 1784242185978
     },
     {
       "type": "reasoning",
@@ -38,10 +38,10 @@
     {
       "type": "text",
       "text": "**YES.**\n\nAll deployments are live:\n\n- **Production API** (`api.ivxholding.com`): healthy, booted today at 21:17:56\n- **Render deploy**: status `live`\n- **Home feed**: returns 3 InvestmentCards + 1 ReelCard in correct order\n- **Landing page** (`ivxholding.com`): HTTP 200, synced with the same mixed feed\n- **Tests**: 70/70 pass\n- **Git**: local and Rork router in sync at `f34f162d`\n\nThe mixed feed implementation is deployed and working end to end.",
-      "id": "pw18u084con3vlaxdxla2",
-      "createdAt": 1784237429354
+      "id": "pw18u084con3vlaxdxla2"
     }
   ],
+  "id": "72d41mceljh64vwd6z0lj",
   "snapshotId": "72d41mceljh64vwd6z0lj",
   "finishStats": {
     "contextTokens": 99248,
