@@ -80,6 +80,85 @@ function json(data: unknown, status = 200): Response {
 
 export const videoPlatformOptions = (): Response => new Response(null, { status: 204, headers: CORS_HEADERS });
 
+/* ---------------- TTL Response Cache ----------------
+ * In-process TTL cache for read-heavy feed endpoints.
+ * Caches the serialized JSON response for a short window (default 30s)
+ * so that burst traffic serves from memory instead of hitting Supabase.
+ * Per-cache-key locking prevents thundering-herd on cache miss.
+ */
+type CacheEntry = { body: string; status: number; expiresAt: number };
+const FEED_CACHE = new Map<string, CacheEntry>();
+const FEED_CACHE_LOCKS = new Map<string, Promise<CacheEntry>>();
+const FEED_CACHE_TTL_MS = 30_000;
+const FEED_CACHE_MAX = 100;
+
+function feedCacheKey(path: string): string {
+  return path;
+}
+
+function getCachedEntry(key: string): CacheEntry | null {
+  const entry = FEED_CACHE.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    FEED_CACHE.delete(key);
+    return null;
+  }
+  return entry;
+}
+
+function setCachedEntry(key: string, body: string, status: number): void {
+  if (FEED_CACHE.size >= FEED_CACHE_MAX) {
+    const oldest = [...FEED_CACHE.entries()].sort((a, b) => a[1].expiresAt - b[1].expiresAt)[0];
+    if (oldest) FEED_CACHE.delete(oldest[0]);
+  }
+  FEED_CACHE.set(key, { body, status, expiresAt: Date.now() + FEED_CACHE_TTL_MS });
+}
+
+function cachedJson(body: string, status: number): Response {
+  return new Response(body, {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'public, max-age=30, stale-while-revalidate=60',
+      'X-IVX-Cache': 'HIT',
+      ...CORS_HEADERS,
+    },
+  });
+}
+
+async function withFeedCache(key: string, handler: () => Promise<Response>): Promise<Response> {
+  const cached = getCachedEntry(key);
+  if (cached) return cachedJson(cached.body, cached.status);
+
+  const inflight = FEED_CACHE_LOCKS.get(key);
+  if (inflight) {
+    const entry = await inflight;
+    return cachedJson(entry.body, entry.status);
+  }
+
+  const promise = (async () => {
+    const resp = await handler();
+    const body = await resp.text();
+    setCachedEntry(key, body, resp.status);
+    return { body, status: resp.status, expiresAt: Date.now() + FEED_CACHE_TTL_MS };
+  })();
+  FEED_CACHE_LOCKS.set(key, promise);
+  try {
+    const entry = await promise;
+    return new Response(entry.body, {
+      status: entry.status,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, max-age=30, stale-while-revalidate=60',
+        'X-IVX-Cache': 'MISS',
+        ...CORS_HEADERS,
+      },
+    });
+  } finally {
+    FEED_CACHE_LOCKS.delete(key);
+  }
+}
+
 async function readBody(req: Request): Promise<Record<string, unknown>> {
   try { return await req.json() as Record<string, unknown>; } catch { return {}; }
 }
@@ -225,6 +304,8 @@ async function loadFeedDeals(sb: any, candidates: string[], titles: Record<strin
 }
 
 export async function handlePlatformFeed(req: Request): Promise<Response> {
+  const cacheKey = feedCacheKey(req.url);
+  return withFeedCache(cacheKey, async () => {
   try {
     const url = new URL(req.url);
     const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || '6'), 1), 20);
@@ -398,6 +479,7 @@ export async function handlePlatformFeed(req: Request): Promise<Response> {
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : 'feed failed', marker: VIDEO_PLATFORM_MARKER }, 500);
   }
+  }); // withFeedCache
 }
 
 /* ---------------- investor-first HOME feed ---------------- */
@@ -503,6 +585,8 @@ function sortHomeFeedDeals(deals: HomeFeedDeal[]): HomeFeedDeal[] {
  * unattached videos never appear. One admin publish updates every platform.
  */
 export async function handlePlatformHomeFeed(req: Request): Promise<Response> {
+  const cacheKey = feedCacheKey(req.url);
+  return withFeedCache(cacheKey, async () => {
   try {
     const url = new URL(req.url);
     const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || '60'), 1), 120);
@@ -664,6 +748,7 @@ export async function handlePlatformHomeFeed(req: Request): Promise<Response> {
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : 'home feed failed', marker: VIDEO_PLATFORM_MARKER }, 500);
   }
+  }); // withFeedCache
 }
 
 /**
