@@ -2038,10 +2038,18 @@ async function handleRenderAutoDeployFixRequest(req: Request): Promise<Response>
   }
 }
 
-// ── Non-auth self-deploy trigger ──────────────────────────────────────────
+// ── Owner-auth self-deploy trigger ─────────────────────────────────────────
 // Triggers a Render deploy using the backend's own Render credentials.
-// No owner auth required — the backend acts as a secure proxy.
+// Owner auth REQUIRED — prevents unauthorized deploy triggers.
 async function handleSelfDeployRequest(req: Request): Promise<Response> {
+  const { assertIVXRegisteredOwnerBearer, ownerOnlyJson } = await import('./api/owner-only');
+  try {
+    await assertIVXRegisteredOwnerBearer(req, 'self_deploy');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'IVX owner authentication failed.';
+    const status = /missing bearer/i.test(message) || /invalid or expired/i.test(message) ? 401 : 403;
+    return Response.json({ ok: false, error: message }, { status });
+  }
   const creds = getRenderCredentials();
   if (!creds) {
     return Response.json({
@@ -3557,7 +3565,7 @@ app.options('/api/ivx/render-auto-deploy/status', () => publicJson({ ok: true },
 app.get('/api/ivx/render-auto-deploy/status', async (context) => handleRenderAutoDeployStatusRequest(context.req.raw));
 app.options('/api/ivx/render-auto-deploy/fix', () => publicJson({ ok: true }, 204));
 app.post('/api/ivx/render-auto-deploy/fix', async (context) => handleRenderAutoDeployFixRequest(context.req.raw));
-// Non-auth self-deploy trigger — backend proxies Render deploy using its own credentials
+// Owner-auth self-deploy trigger — backend proxies Render deploy using its own credentials
 app.options('/api/ivx/deploy', () => publicJson({ ok: true }, 204));
 app.post('/api/ivx/deploy', async (context) => handleSelfDeployRequest(context.req.raw));
 app.options('/api/ivx/senior-developer/status', () => seniorDeveloperOptions());
