@@ -120,8 +120,8 @@ export interface HomeFeedDeal {
 
 /** One block of the investor-first home layout: a deal card or a featured project video. */
 export type HomeFeedBlock =
-  | { position: number; type: 'deal'; deal: HomeFeedDeal }
-  | { position: number; type: 'video'; video: FeedVideo };
+  | { position: number; type: 'deal'; display_type: 'investment_card'; deal: HomeFeedDeal }
+  | { position: number; type: 'video'; display_type: 'reel'; video: FeedVideo };
 
 export interface HomeFeedResponse {
   pattern: string;

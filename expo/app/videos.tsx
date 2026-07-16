@@ -386,7 +386,8 @@ export default function VideosScreen() {
     [playback, filteredVideos.length, windowHeight, muted, getEngagement, handleLike, handleComment, handleShare, handleSave, handleViewDeal, handleInvestNow]
   );
 
-  const itemHeight = windowHeight;
+  const usableReelHeight = Math.max(0, windowHeight - insets.top - insets.bottom - (Platform.OS === 'android' ? 48 : 0));
+  const itemHeight = usableReelHeight;
 
   return (
     <View style={styles.container}>

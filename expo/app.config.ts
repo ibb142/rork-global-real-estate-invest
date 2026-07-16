@@ -22,8 +22,8 @@ const config: ExpoConfig = {
     policy: 'appVersion',
   },
   extra: {
-    buildMarker: 'IVX_BUNDLE_2026_07_16_BUILD_36_PRODUCTION_RELEASE',
-    buildTimestamp: '2026-07-16T11:00:00.000000+00:00',
+    buildMarker: 'IVX_BUNDLE_2026_07_16_BUILD_37_P0_HOME_FEED_RESTORE',
+    buildTimestamp: '2026-07-16T13:30:00.000000+00:00',
     sourceCommitSha: _sourceCommitSha,
     watchdogPatchVersion: 'ai-mutation-watchdog-fix-v12-enterprise-verify',
     frontendDeployMarker: 'ivx-frontend-2026-07-15-enterprise-verification',
@@ -51,7 +51,7 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: false,
     bundleIdentifier: 'com.ivxholdings.app',
-    buildNumber: '1',
+    buildNumber: '2',
   },
   android: {
     adaptiveIcon: {
@@ -59,7 +59,7 @@ const config: ExpoConfig = {
       backgroundColor: '#000000',
     },
     package: 'com.ivxholdings.app',
-    versionCode: 36,
+    versionCode: 37,
     softwareKeyboardLayoutMode: 'resize',
   },
   web: {

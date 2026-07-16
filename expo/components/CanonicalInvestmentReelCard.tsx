@@ -221,7 +221,10 @@ const CanonicalInvestmentReelCard = memo(function CanonicalInvestmentReelCard({
   const viewRef = useRef<View>(null);
 
   const isReel = mode === 'reel';
-  const cardHeight = isReel ? screenHeight : feedHeight;
+  const usableReelHeight = isReel
+    ? Math.max(0, screenHeight - insets.top - insets.bottom - (Platform.OS === 'android' ? 48 : 0))
+    : feedHeight;
+  const cardHeight = isReel ? usableReelHeight : feedHeight;
 
   // Fetch viewer ID for engagement tracking
   useEffect(() => {
@@ -343,8 +346,8 @@ const CanonicalInvestmentReelCard = memo(function CanonicalInvestmentReelCard({
   }, [onInvest, data]);
 
   // Rail position: account for safe area in reel mode, fixed offset in feed mode
-  const railBottom = isReel ? insets.bottom + 96 : 96;
-  const infoBottom = isReel ? insets.bottom + 32 : 32;
+  const railBottom = isReel ? Math.max(insets.bottom, 12) + 96 : 96;
+  const infoBottom = isReel ? Math.max(insets.bottom, 12) + 32 : 32;
 
   const renderMedia = () => {
     if (data.mediaType === 'video' && data.mediaUrl) {

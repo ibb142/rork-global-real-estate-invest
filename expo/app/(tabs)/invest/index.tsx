@@ -53,6 +53,7 @@ import { filterValidPhotos, usePublishedJVDeals, triggerManualJVRefresh } from '
 import type { ParsedJVDeal } from '@/lib/parse-deal';
 import { getFallbackPhotosForDeal, sanitizeDealPhotosForDeal } from '@/constants/deal-photos';
 import QuickBuyModal from '@/components/QuickBuyModal';
+import TrustDealCard from '@/components/TrustDealCard';
 import CanonicalInvestmentReelCard, {
   parsedDealToReelData,
   type CanonicalReelData,
@@ -199,8 +200,27 @@ export default function InvestScreen() {
         </View>
       ) : (
         <>
-          {publishedDealsData.data?.deals.map((deal) => {
-            const reelData = parsedDealToReelData(deal as ParsedJVDeal);
+          {publishedDealsData.data?.deals.map((deal, idx) => {
+            const parsed = deal as ParsedJVDeal;
+            if (idx < 3) {
+              return (
+                <View
+                  key={`invest-card-${deal.id}`}
+                  onLayout={(e) => {
+                    const w = e.nativeEvent.layout.width;
+                    if (w > 0 && w !== galleryWidth) setGalleryWidth(w);
+                  }}
+                >
+                  <TrustDealCard
+                    deal={parsed}
+                    onInvestNow={() => openQuickBuy(deal)}
+                    onViewDetails={() => router.push(`/jv-invest?jvId=${deal.id}` as any)}
+                    galleryWidth={galleryWidth - 32}
+                  />
+                </View>
+              );
+            }
+            const reelData = parsedDealToReelData(parsed);
             return (
               <View
                 key={deal.id}

@@ -1,16 +1,13 @@
 /**
- * Investor-first home feed — renders the CANONICAL block sequence from
- * GET /api/ivx/video-platform/home-feed (same source of truth as the landing
- * page and iOS app):
+ * Investor-first home feed — mixed layout per approved P0 design:
+ *   3 regular investment cards (compact, horizontal gallery, metrics)
+ *   followed by 1 featured project video reel.
  *
- *   Featured Deal 1–3 → 1 Featured Project Video → Deal 4–6 → 1 video → repeat.
- *
- * All blocks render the shared CanonicalInvestmentReelCard — the approved
- * full-screen immersive reel design — in feed mode. No old Instagram-style
- * cards are used.
+ * Regular cards use TrustDealCard. Reels use CanonicalInvestmentReelCard.
+ * This is the Main/Home module, not the Reels module.
  */
 import React, { Component, useCallback, useMemo, type ReactNode } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { Share } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -18,15 +15,16 @@ import { Landmark, Sparkles, TrendingUp } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import CanonicalInvestmentReelCard, {
   feedVideoToReelData,
-  homeFeedDealToReelData,
-  parsedDealToReelData,
   type CanonicalReelData,
 } from '@/components/CanonicalInvestmentReelCard';
-import { fetchHomeFeed, type HomeFeedBlock } from '@/lib/video-feed';
+import TrustDealCard from '@/components/TrustDealCard';
+import { fetchHomeFeed, type HomeFeedBlock, type HomeFeedDeal, type FeedVideo } from '@/lib/video-feed';
+import { parseDeal } from '@/lib/parse-deal';
 import type { ParsedJVDeal } from '@/lib/parse-deal';
 import type { JVAgreement } from '@/types/jv';
 import { toggleProjectLike, trackProjectShare } from '@/lib/project-engagement';
 import { toggleVideoSave, getViewerId, buildVideoShareUrl } from '@/lib/video-platform';
+import { CANONICAL_MIN_INVESTMENT } from '@/lib/published-deal-card-model';
 
 /** Per-card error boundary so one bad reel never crashes the home feed */
 class VideoCardBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
@@ -72,13 +70,34 @@ export default function InvestorFirstFeed({ jvDeals, jvDealsLoading, isXs, cardW
     return map;
   }, [jvDeals]);
 
+  /** Maps a HomeFeedDeal to a ParsedJVDeal for TrustDealCard rendering. */
+  const homeFeedDealToParsed = useCallback((deal: HomeFeedDeal): ParsedJVDeal | null => {
+    const local = localById.get(deal.id);
+    if (local) return local as unknown as ParsedJVDeal;
+    return parseDeal({
+      id: deal.id,
+      title: deal.name || undefined,
+      projectName: deal.name || undefined,
+      propertyAddress: deal.city || undefined,
+      status: deal.status || undefined,
+      type: deal.deal_type || undefined,
+      totalInvestment: deal.investment_amount || undefined,
+      expectedROI: deal.expected_roi ? Number(deal.expected_roi) : undefined,
+      minInvestment: deal.min_investment ?? CANONICAL_MIN_INVESTMENT,
+      publishedAt: deal.created_at || undefined,
+      created_at: deal.created_at || undefined,
+      photos: deal.photo_url ? [deal.photo_url] : undefined,
+    } as Record<string, unknown>);
+  }, [localById]);
+
   /** Canonical blocks from the backend; local-only fallback keeps the page alive offline. */
   const blocks = useMemo<HomeFeedBlock[]>(() => {
     const remote = homeFeedQuery.data?.blocks ?? [];
     if (remote.length > 0) return remote;
-    return jvDeals.map((d, i) => ({
+    return jvDeals.map((d, i): HomeFeedBlock => ({
       position: i,
       type: 'deal' as const,
+      display_type: 'investment_card' as const,
       deal: {
         id: String(d.id),
         name: d.projectName || d.title || null,
@@ -99,6 +118,23 @@ export default function InvestorFirstFeed({ jvDeals, jvDealsLoading, isXs, cardW
       },
     }));
   }, [homeFeedQuery.data?.blocks, jvDeals]);
+
+  /** Mixed-feed layout: first 3 deal blocks become regular cards, next video block is a reel. */
+  const visibleBlocks = useMemo(() => {
+    const regular: HomeFeedBlock[] = [];
+    const reels: HomeFeedBlock[] = [];
+    for (const b of blocks) {
+      if (b.type === 'deal') {
+        if (regular.length < 3) regular.push(b);
+        else reels.push(b);
+      } else if (b.type === 'video') {
+        reels.push(b);
+      }
+    }
+    const regularDeals = regular.filter((b): b is { position: number; type: 'deal'; display_type: 'investment_card'; deal: HomeFeedDeal } => b.type === 'deal');
+    const videoReels = reels.filter((b): b is { position: number; type: 'video'; display_type: 'reel'; video: FeedVideo } => b.type === 'video');
+    return { regular: regularDeals, reels: videoReels };
+  }, [blocks]);
 
   const goToDeal = useCallback((dealId: string) => {
     router.push({ pathname: '/jv-invest', params: { jvId: dealId } } as any);
@@ -154,63 +190,50 @@ export default function InvestorFirstFeed({ jvDeals, jvDealsLoading, isXs, cardW
         </View>
       ) : (
         <View style={{ paddingHorizontal: padH, gap: 14 }}>
-          {blocks.map((block) => {
-            if (block.type === 'video') {
-              const reelData = feedVideoToReelData(block.video);
-              return (
-                <VideoCardBoundary key={`video-${block.video.id}`}>
-                  <CanonicalInvestmentReelCard
-                    data={reelData}
-                    mode="feed"
-                    isActive={false}
-                    shouldMountVideo={false}
-                    isMuted={muted}
-                    feedHeight={feedHeight}
-                    onToggleMute={() => setMuted(m => !m)}
-                    onLike={handleReelLike}
-                    onComment={handleReelComment}
-                    onSave={handleReelSave}
-                    onShare={handleReelShare}
-                    onOpenDeal={(d) => goToDeal(d.dealId ?? d.reelId)}
-                    onInvest={(d) => goToDeal(d.dealId ?? d.reelId)}
-                    testIDPrefix="home-reel"
-                  />
-                </VideoCardBoundary>
-              );
-            }
-            const local = localById.get(block.deal.id);
-            let reelData: CanonicalReelData;
-            if (local) {
-              reelData = parsedDealToReelData(local as unknown as ParsedJVDeal);
-            } else {
-              reelData = homeFeedDealToReelData(block.deal);
-            }
+          {visibleBlocks.regular.map((block) => {
+            const parsed = homeFeedDealToParsed(block.deal);
+            if (!parsed) return null;
             return (
-              <CanonicalInvestmentReelCard
-                key={`deal-${block.deal.id}`}
-                data={reelData}
-                mode="feed"
-                isActive={false}
-                shouldMountVideo={false}
-                isMuted={muted}
-                feedHeight={feedHeight}
-                onToggleMute={() => setMuted(m => !m)}
-                onLike={handleReelLike}
-                onComment={handleReelComment}
-                onSave={handleReelSave}
-                onShare={handleReelShare}
-                onOpenDeal={(d) => goToDeal(d.dealId ?? d.reelId)}
-                onInvest={(d) => {
-                  if (local) {
-                    openQuickBuy(local);
-                  } else {
-                    goToDeal(d.dealId ?? d.reelId);
-                  }
-                }}
-                testIDPrefix="home-reel"
+              <TrustDealCard
+                key={`regular-deal-${block.deal.id}`}
+                deal={parsed}
+                onInvestNow={() => openQuickBuy(parsed as unknown as JVAgreement)}
+                onViewDetails={() => goToDeal(block.deal.id)}
+                galleryWidth={cardWidth - 32}
               />
             );
           })}
+          {visibleBlocks.reels.slice(0, 1).map((block) => {
+            if (block.type !== 'video') return null;
+            const reelData = feedVideoToReelData(block.video);
+            return (
+              <VideoCardBoundary key={`video-${block.video.id}`}>
+                <CanonicalInvestmentReelCard
+                  data={reelData}
+                  mode="feed"
+                  isActive={false}
+                  shouldMountVideo={false}
+                  isMuted={muted}
+                  feedHeight={feedHeight}
+                  onToggleMute={() => setMuted(m => !m)}
+                  onLike={handleReelLike}
+                  onComment={handleReelComment}
+                  onSave={handleReelSave}
+                  onShare={handleReelShare}
+                  onOpenDeal={(d) => goToDeal(d.dealId ?? d.reelId)}
+                  onInvest={(d) => goToDeal(d.dealId ?? d.reelId)}
+                  testIDPrefix="home-reel"
+                />
+              </VideoCardBoundary>
+            );
+          })}
+          {visibleBlocks.reels.length > 1 && (
+            <View style={styles.moreReelsHint}>
+              <TouchableOpacity onPress={() => router.push('/videos')}>
+                <Text style={styles.moreReelsHintText}>More reels in IVX Reels</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       )}
     </View>
@@ -275,5 +298,14 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     fontSize: 12,
     marginTop: 4,
+  },
+  moreReelsHint: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  moreReelsHintText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '700' as const,
   },
 });
