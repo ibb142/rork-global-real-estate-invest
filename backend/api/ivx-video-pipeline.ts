@@ -21,6 +21,20 @@ import {
   videoPipelineConfig,
 } from '../services/ivx-video-pipeline';
 
+async function getApprovedVideoCount(): Promise<number> {
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    const url = process.env.IVX_SUPABASE_URL || process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) return 0;
+    const sb = createClient(url, key);
+    const { count } = await sb.from('project_videos').select('id', { count: 'exact', head: true }).eq('is_approved', true);
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': 'https://ivxholding.com',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey, Range',
@@ -125,7 +139,8 @@ export async function handleVideoPipelineUpload(req: Request): Promise<Response>
 export async function handleVideoPipelineList(): Promise<Response> {
   try {
     const index = await listVideoRecords();
-    return json({ ok: true, count: Object.keys(index).length, videos: index, marker: VIDEO_PIPELINE_MARKER });
+    const approvedCount = await getApprovedVideoCount();
+    return json({ ok: true, count: Object.keys(index).length, approved_count: approvedCount, videos: index, marker: VIDEO_PIPELINE_MARKER });
   } catch (error) {
     return json({ ok: false, error: error instanceof Error ? error.message : 'list failed', marker: VIDEO_PIPELINE_MARKER }, 500);
   }

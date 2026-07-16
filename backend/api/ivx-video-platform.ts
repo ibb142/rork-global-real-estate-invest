@@ -308,7 +308,7 @@ export async function handlePlatformFeed(req: Request): Promise<Response> {
   return withFeedCache(cacheKey, async () => {
   try {
     const url = new URL(req.url);
-    const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || '6'), 1), 20);
+    const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || '50'), 1), 200);
     const offset = decodeCursor(url.searchParams.get('cursor'));
     const channel = str(url.searchParams.get('channel')).toLowerCase() || null;
     const projectId = str(url.searchParams.get('project_id')) || null;
@@ -742,6 +742,7 @@ export async function handlePlatformHomeFeed(req: Request): Promise<Response> {
       count: blocks.length,
       deal_count: orderedDeals.length,
       video_count: featuredVideos.length,
+      total_approved_videos: videos.length,
       personalized: false,
       marker: VIDEO_PLATFORM_MARKER,
     });
