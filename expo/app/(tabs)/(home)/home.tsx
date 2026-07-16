@@ -59,7 +59,6 @@ function getPrimaryDealPhoto(deal: JVAgreement): string | undefined {
   });
 
   if (primaryPhoto) {
-    console.log('[Home] Shared primary photo resolved for deal:', deal.id, '|', primaryPhoto.substring(0, 120));
   }
 
   return primaryPhoto;
@@ -470,7 +469,7 @@ const trustStyles = StyleSheet.create({
 class JVErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
   state = { hasError: false };
   static getDerivedStateFromError() { return { hasError: true }; }
-  componentDidCatch(error: any) { console.log('[JV Section] Error caught:', error); }
+  componentDidCatch(error: any) { console.error('[JV Section] Error caught:', error); }
   render() {
     if (this.state.hasError) {
       return (
@@ -528,8 +527,6 @@ export default function HomeScreen() {
     try {
       const rawDeals = publishedJV.deals;
       const backendDeals = (Array.isArray(rawDeals) ? rawDeals : []) as unknown as JVAgreement[];
-      console.log('[Home JV] Shared hook deals:', backendDeals.length);
-
       const validBackendDeals = backendDeals.filter(d => {
         if (!d || !d.id) return false;
         if (!d.title && !d.projectName) return false;
@@ -550,11 +547,8 @@ export default function HomeScreen() {
       }) as JVAgreement[];
 
       if (mapped.length > 0) {
-        console.log('[Home JV] Using shared deals, Count:', mapped.length);
         return mapped;
       }
-
-      console.log('[Home JV] No deals found from shared hook');
       return [];
     } catch (err) {
       console.error('[Home JV] Error processing deals:', err);
@@ -585,15 +579,12 @@ export default function HomeScreen() {
     setRefreshing(true);
     try {
       triggerManualJVRefresh();
-      console.log('[Home] Manual refresh triggered — Supabase cache reset for fresh data');
       await Promise.all([
         unreadQuery.refetch(),
         publishedJV.refetch(),
         queryClient.invalidateQueries({ queryKey: ['ivx-home-feed'] }),
       ]);
-      console.log('[Home] Pull-to-refresh complete — data is fresh from Supabase');
     } catch (err) {
-      console.log('[Home] Refresh error:', (err as Error)?.message);
     } finally {
       setRefreshing(false);
     }
@@ -638,16 +629,13 @@ export default function HomeScreen() {
   }, []);
 
   const handleOpenOwnerLogin = useCallback((): void => {
-    console.log('[Home] Open Owner Login pressed -> /login?ownerMode=1');
     try {
       router.push('/login?ownerMode=1' as any);
     } catch (pushError) {
-      console.log('[Home] router.push failed:', pushError);
     }
   }, [router]);
 
   useEffect(() => {
-    console.log('[Home] boot', { authLoading, isAuthenticated, userRole });
   }, [authLoading, isAuthenticated, userRole]);
 
   void handleOpenOwnerLogin;

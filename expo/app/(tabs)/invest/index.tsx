@@ -96,7 +96,6 @@ export default function InvestScreen() {
     let photos = sanitizeDealPhotosForDeal(deal, filterValidPhotos(deal.photos));
     if (photos.length === 0) {
       photos = getFallbackPhotosForDeal(deal);
-      console.log('[Invest] QuickBuy fallback photos applied:', photos.length);
     }
     const marketVal = typeof deal.property_market_value === 'number' ? deal.property_market_value
       : typeof deal.propertyMarketValue === 'number' ? deal.propertyMarketValue

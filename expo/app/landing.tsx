@@ -398,24 +398,10 @@ function LandingDealsShowcase({ scrollToForm }: { scrollToForm: () => void }) {
         const resolvedDeals = await Promise.all(cards.map(async (card) => {
           const photoDiagnostic = await diagnoseDealPhotos(card);
           const resolvedPhotos = photoDiagnostic.resolvedPhotos;
-
-          console.log(
-            '[Landing Showcase] Deal resolved:',
-            card.title,
-            '| canonical:',
-            Array.isArray(card.photos) ? card.photos.length : 0,
-            '| final:',
-            resolvedPhotos.length,
-            '| source:',
-            photoDiagnostic.source,
-          );
           return { ...card, resolvedPhotos, photoDiagnostic };
         }));
-
-        console.log('[Landing Showcase] Loaded', resolvedDeals.length, 'shared landing deals');
         return resolvedDeals;
       } catch (err) {
-        console.log('[Landing Showcase] Fetch error:', (err as Error)?.message);
         return [];
       }
     },
@@ -916,9 +902,7 @@ export default function LandingScreen() {
     try {
       void landingTracker.init();
       landingTracker.trackPageView();
-      console.log('[Landing] Analytics tracker initialized');
     } catch (e) {
-      console.log('[Landing] Tracker init failed (non-blocking):', (e as Error)?.message);
     }
 
     return () => {
@@ -926,7 +910,6 @@ export default function LandingScreen() {
         landingTracker.trackSessionEnd();
         landingTracker.destroy();
       } catch (e) {
-        console.log('[Landing] Tracker cleanup failed (non-blocking):', (e as Error)?.message);
       }
     };
   }, []);
@@ -986,16 +969,13 @@ export default function LandingScreen() {
   const handleFormLayout = useCallback((event: LayoutChangeEvent) => {
     const nextY = event.nativeEvent.layout.y;
     setFormSectionY(nextY);
-    console.log('[Landing] Waitlist form y-position:', nextY);
   }, []);
 
   const refreshOwnerAccessAudit = useCallback(async () => {
     try {
       const audit = await auditOwnerDirectAccess();
       setOwnerAccessAudit(audit);
-      console.log('[Landing] Trusted owner entry audit:', JSON.stringify(audit));
     } catch (e) {
-      console.log('[Landing] Owner access audit failed (non-blocking):', (e as Error)?.message);
       setOwnerAccessAudit(null);
     }
   }, [auditOwnerDirectAccess]);
@@ -1010,24 +990,17 @@ export default function LandingScreen() {
   const handleOwnerEntry = useCallback(async () => {
     try {
       if (openAccessMode) {
-        console.log('[Landing] Open access mode active — opening admin directly from landing');
         router.replace('/admin' as any);
         return;
       }
-
-      console.log('[Landing] Owner entry requested from landing');
       const result = await ownerDirectAccess();
       if (result.success) {
-        console.log('[Landing] Owner entry succeeded:', result.message);
         router.replace('/(tabs)/(home)/home' as any);
         return;
       }
-
-      console.log('[Landing] Owner entry blocked:', result.message);
       await refreshOwnerAccessAudit();
       Alert.alert('Owner Access Unavailable', result.message);
     } catch (e) {
-      console.log('[Landing] Owner entry error (non-blocking):', (e as Error)?.message);
       Alert.alert('Error', 'Could not complete owner access. Please try again.');
     }
   }, [openAccessMode, ownerDirectAccess, refreshOwnerAccessAudit, router]);
@@ -1050,7 +1023,6 @@ export default function LandingScreen() {
     try {
       await Linking.openURL(url);
     } catch (e) {
-      console.log('[Landing] Failed to open external link:', url, (e as Error)?.message);
       Alert.alert('Link unavailable', 'Please try again in a moment.');
     }
   }, []);
@@ -1066,8 +1038,6 @@ export default function LandingScreen() {
           message: draft.message,
           priority: draft.priority,
         });
-
-        console.log('[Landing] Live support request created:', data.id);
         return {
           ok: true,
           message: `Your request has been submitted (Ticket #${data.id.slice(-6)}). Investor support will follow up shortly by email with the right team for this issue.`,

@@ -288,8 +288,6 @@ export default function ChatScreen() {
           category,
           message,
         });
-
-        console.log('[ChatScreen] Ticket created:', data.id, 'category:', category);
         await ticketsQuery.refetch();
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         Alert.alert('Ticket Created', `Your ${subject} ticket has been submitted. We'll respond within 24 hours.`);
@@ -323,8 +321,6 @@ export default function ChatScreen() {
           message: draft.message,
           priority: draft.priority,
         });
-
-        console.log('[ChatScreen] Live support ticket created:', data.id);
         await ticketsQuery.refetch();
         const waitTime = openTickets.length === 0 ? '5-10' : `${10 + openTickets.length * 5}-${15 + openTickets.length * 5}`;
         setViewMode('tickets');
@@ -395,14 +391,6 @@ export default function ChatScreen() {
               <Text style={styles.moduleBadgeText}>OWNER</Text>
             </View>
             <View style={styles.moduleActions}>
-              <TouchableOpacity
-                style={styles.moduleGhostButton}
-                onPress={() => router.push('/admin/sync-diagnostics' as any)}
-                testID="chat-open-room-proof"
-              >
-                <Text style={styles.moduleGhostButtonText}>Proof</Text>
-                <ScanLine size={14} color={Colors.text} />
-              </TouchableOpacity>
               <TouchableOpacity
                 style={styles.moduleButton}
                 onPress={() => router.push('/ivx/chat' as any)}

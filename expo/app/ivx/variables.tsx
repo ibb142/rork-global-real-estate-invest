@@ -692,7 +692,7 @@ export default function IVXVariablesToolRoute() {
               <Rocket size={18} color={Colors.primary} />
               <View style={styles.cardHeaderCopy}>
                 <Text style={styles.cardTitle}>Deploy backend now</Text>
-                <Text style={styles.cardSubtitle}>Triggers Render deploy of ivx-holdings-platform using the backend\u2019s RENDER_API_KEY + RENDER_SERVICE_ID. Pinned to https://ivx-holdings-platform.onrender.com to bypass the broken api.ivxholding.com routing. The public landing site is never touched.</Text>
+                <Text style={styles.cardSubtitle}>Triggers Render deploy of the IVX backend using\u2019s RENDER_API_KEY + RENDER_SERVICE_ID. Pinned to https://api.ivxholding.com The public landing site is never touched.</Text>
               </View>
             </View>
             <View style={styles.deployButtonRow}>

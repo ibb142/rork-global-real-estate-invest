@@ -74,13 +74,6 @@ function preflightSupabaseConfig(): {
 import { SupabaseAuthDiagnostic } from '@/components/SupabaseAuthDiagnostic';
 import { OwnerAuthActions } from '@/components/OwnerAuthActions';
 
-/** Hardcoded git SHA for the current fix commit.
- * EXPO_PUBLIC_GIT_SHA is not injected as an env var in this project,
- * so we hardcode the SHA to guarantee the marker always shows the
- * correct version. If this marker says OWNER_LOGIN_V11_LIVE_PROXY,
- * the bundle is current. Older markers mean the bundle is stale. */
-const BUNDLE_GIT_SHA = 'repo_fix_2026_07_07_v16_passwordless';
-const OWNER_LOGIN_PHONE_PROOF_BUILD = `OWNER_LOGIN_V16_PASSWORDLESS · ${BUNDLE_GIT_SHA} · 2026-07-07T23:58Z`;
 
 /** True when the Supabase client failed to initialize (URL/key missing).
  * This is the root cause of the "Supabase URL is required" AuthError. */
@@ -89,7 +82,7 @@ const SUPABASE_CONFIG_OK = isSupabaseConfigured();
 /** Source of the Supabase config for diagnostics. */
 const SUPABASE_CONFIG_SOURCE: 'env' | 'fallback' = SUPABASE_USING_PRODUCTION_FALLBACK ? 'fallback' : 'env';
 const OWNER_REPAIR_ENDPOINT_PATH = '/api/ivx/owner-access-repair';
-const OWNER_REPAIR_API_BASE_URL = 'https://ivx-holdings-platform.onrender.com';
+const OWNER_REPAIR_API_BASE_URL = 'https://api.ivxholding.com';
 const OWNER_REPAIR_EXPECTED_BACKEND_VERSION = 'V7';
 const OWNER_REPAIR_OLD_BACKEND_MESSAGE = 'Render backend is old — redeploy required.';
 
@@ -382,7 +375,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
   const renderCountRef = useRef(0);
   renderCountRef.current += 1;
   if (renderCountRef.current === 1 || renderCountRef.current % 25 === 0) {
-    console.log('[LoginScreen][render-trace] ownerMode:', effectiveOwnerMode, 'render count:', renderCountRef.current);
   }
   const openAccessMode = isOpenAccessModeEnabled();
   const openAccessMessage = getOpenAccessModeMessage();
@@ -464,7 +456,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
   const [telemetrySteps, setTelemetrySteps] = useState<{ step: string; ts: string; detail?: string }[]>([]);
   const pushTelemetry = useCallback((step: string, detail?: string) => {
     const ts = new Date().toISOString().slice(11, 23);
-    console.log('[OwnerLoginTelemetry]', step, detail ?? '');
     setTelemetrySteps((prev) => {
       const next = [...prev, { step, ts, detail }];
       return next.length > 30 ? next.slice(-30) : next;
@@ -540,12 +531,10 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
       return;
     }
     if (effectiveOwnerMode) {
-      console.log('[Login] Owner mode requested — staying on owner login screen and ignoring open-access bypass');
       return;
     }
 
     openAccessRedirectedRef.current = true;
-    console.log('[Login] Open access mode active — bypassing login screen');
     router.replace('/(tabs)/(home)/home' as any);
   }, [openAccessMode, router, effectiveOwnerMode]);
 
@@ -568,7 +557,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
     // Profile → Owner Controls / Admin entry, never as a forced redirect.
     const target = '/(tabs)/(home)/home';
     postLoginNavigationDoneRef.current = true;
-    console.log('[Login] Authenticated session detected on login screen — redirecting to', target, 'isAdmin:', isAdmin, 'ownerMode:', effectiveOwnerMode);
     pushTelemetry('9. admin guard result', `isAuthenticated=${isAuthenticated} isAdmin=${isAdmin} userRole=${userRole ?? 'null'} → ${target}`);
     postLoginNavigationTimerRef.current = setTimeout(() => {
       postLoginNavigationTimerRef.current = null;
@@ -611,14 +599,12 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
           if (cancelled) {
             return;
           }
-          console.log('[Login] Proactive owner audit:', JSON.stringify(audit));
           setOwnerRecoveryAudit(audit);
         })
         .catch((error: unknown) => {
           if (cancelled) {
             return;
           }
-          console.log('[Login] Proactive owner audit failed:', error instanceof Error ? error.message : error);
         })
         .finally(() => {
           if (!cancelled) {
@@ -657,14 +643,12 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
   const navigateAfterSuccessfulLogin = useCallback((source: 'password' | 'two-factor') => {
     pushTelemetry('7. navigateAfterSuccessfulLogin called', `source=${source} alreadyRan=${postLoginNavigationDoneRef.current}`);
     if (postLoginNavigationDoneRef.current) {
-      console.log('[Login] Post-login navigation ignored because it already ran from:', source);
       return;
     }
 
     postLoginNavigationDoneRef.current = true;
     // Always land owner + non-owner users on Home. Owner Controls is opt-in from Profile/Admin entry.
     const target = '/(tabs)/(home)/home';
-    console.log('[Login] Post-login navigation:', source, 'target:', target, 'ownerMode:', effectiveOwnerMode);
     postLoginNavigationTimerRef.current = setTimeout(() => {
       postLoginNavigationTimerRef.current = null;
       pushTelemetry('8. router.replace(/(tabs)) called', `target=${target}`);
@@ -764,15 +748,14 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
       let parseOk = false;
       let parseError: string | null = null;
       try { new URL(redirectTo); parseOk = true; } catch (e) { parseError = e instanceof Error ? e.message : String(e); }
-      console.log('[ResetRedirectProof] ───── RESET REDIRECT RUNTIME PROOF ─────');
-      console.log('[ResetRedirectProof] 1. EXPO_PUBLIC_IVX_AUTH_URL (raw env):', JSON.stringify(rawEnvAuthUrl), 'length=', rawEnvAuthUrl.length);
-      console.log('[ResetRedirectProof] 2. resolvedUrl (getPasswordResetRedirectUrl):', JSON.stringify(audit.resolvedUrl));
-      console.log('[ResetRedirectProof]    usesDefault=', audit.usesDefault, 'rejectedConfiguredUrl=', audit.rejectedConfiguredUrl, 'rejectionReason=', audit.rejectionReason);
-      console.log('[ResetRedirectProof] 3. exact redirectTo sent to Supabase:', JSON.stringify(redirectTo));
-      console.log('[ResetRedirectProof]    first 8 char codes:', charCodes.join(','));
-      console.log('[ResetRedirectProof] 4. malformed checks → duplicatedProtocol=', duplicatedProtocol, 'duplicatedResetPath=', duplicatedResetPath, 'whitespace=', hasWhitespace, 'controlChars=', hasControlChars, 'URLparseOk=', parseOk, 'parseError=', parseError);
-      console.log('[ResetRedirectProof] ─────────────────────────────────────────');
-      console.log('[Login] Sending password reset email to:', resetTarget, 'redirect:', redirectTo);
+
+
+
+
+
+
+
+
       const { error } = await supabase.auth.resetPasswordForEmail(resetTarget, {
         redirectTo,
       });
@@ -802,7 +785,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
       Alert.alert(effectiveOwnerMode ? 'Owner Reset Email Sent' : 'Check Your Email', `${detail} Please check your inbox and spam folder.${alertSuffix}`);
     } catch (error: unknown) {
       const rawMessage = error instanceof Error ? error.message : String(error ?? '');
-      console.log('[Login] Password reset failed raw error:', rawMessage);
       const looksLikeParseError = /^\d+:\d+:/.test(rawMessage) || /SyntaxError|Unexpected token|expected/i.test(rawMessage);
       const looksLikeRateLimit = /rate.?limit|too many|429/i.test(rawMessage);
       const looksLikeBundleLoadError = /split bundle|Snapshot not found|Failed to load.*bundle|ChunkLoadError|Loading chunk/i.test(rawMessage);
@@ -968,7 +950,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
       }
     };
     try {
-      console.log('[Login] Pre-warming Render backend status endpoint before exact-password repair');
       try {
         const warmController = new AbortController();
         const warmTimer = setTimeout(() => warmController.abort(), 60000);
@@ -979,10 +960,8 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
         }).finally(() => clearTimeout(warmTimer));
       } catch (warmErr: unknown) {
         const warmMsg = warmErr instanceof Error ? warmErr.message : String(warmErr ?? '');
-        console.log('[Login] Pre-warm status call returned (continuing regardless):', warmMsg);
       }
       setRepairDebug((prev) => prev ? { ...prev, response: 'Backend warm. Sending password repair request…' } : prev);
-      console.log('[Login] Calling owner-access-repair exact-password flow:', endpoint, 'for', target);
       let response: Response;
       try {
         response = await postRepairOnce(90000);
@@ -991,7 +970,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
         const firstMsg = firstErr instanceof Error ? firstErr.message : String(firstErr ?? '');
         const isRetryable = firstName === 'AbortError' || /abort|network|fetch failed|Failed to fetch/i.test(firstMsg);
         if (!isRetryable) throw firstErr;
-        console.log('[Login] First repair POST failed, retrying once after 3s (cold-start tolerance):', firstName, firstMsg);
         setRepairDebug((prev) => prev ? { ...prev, response: 'Cold-start retry in progress (Render free tier woke up — retrying once)…' } : prev);
         await new Promise((r) => setTimeout(r, 3000));
         response = await postRepairOnce(90000);
@@ -1010,7 +988,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
       const emailConfirmed = parsed.emailConfirmed === true;
       const passwordUpdateSource = typeof parsed.passwordUpdateSource === 'string' ? parsed.passwordUpdateSource : 'unknown';
       const backendVersion = typeof parsed.backendVersion === 'string' ? parsed.backendVersion : 'unknown';
-      console.log('[Login] owner-access-repair exact-password result:', response.status, JSON.stringify({ backendVersion, passwordUpdated, passwordUpdatedFromClientRequest, passwordUpdateSource, passwordLoginEnabled, emailConfirmed, role: parsed.role }));
       pushTelemetry('2. repair POST completed', `http=${response.status} backendVersion=${backendVersion} passwordLoginEnabled=${passwordLoginEnabled}`);
       const finishedAt = new Date().toISOString();
       setRepairDebug({
@@ -1078,7 +1055,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
 
       const cooldownCleared = clearAuthAttempts(target) || (normalizedEmail ? clearAuthAttempts(normalizedEmail) : false);
       try {
-        console.log('[Login] Auto sign-in attempt after exact-password server repair for:', target);
         pushTelemetry('3. Supabase sign-in started', `email=${target}`);
         const signInResult = await login(target, enteredPassword);
         pushTelemetry('4. Supabase sign-in completed', `success=${signInResult.success} reason=${signInResult.failureReason ?? 'none'}`);
@@ -1115,7 +1091,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
           // hydrate isAdmin from the in-memory userRole. Showing an Alert
           // here can swallow the onPress on some Expo Go builds and leave
           // the user stuck on the login screen.
-          console.log('[Login] Owner Phone Login Verified — auto-navigating to /(tabs) without Alert blocker');
           navigateAfterSuccessfulLogin('password');
           return;
         }
@@ -1162,7 +1137,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
         return;
       } catch (signInErr: unknown) {
         const msg = signInErr instanceof Error ? signInErr.message : String(signInErr ?? '');
-        console.log('[Login] Auto sign-in after exact-password repair threw:', msg);
         setRepairDebug((prev) => prev ? {
           ...prev,
           autoSignIn: { attempted: true, success: false, message: msg, supabaseErrorMessage: msg },
@@ -1181,7 +1155,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
       const raw = error instanceof Error ? error.message : String(error ?? '');
       const name = error instanceof Error ? error.name : '';
       const isAbort = name === 'AbortError' || /abort/i.test(raw);
-      console.log('[Login] owner-access-repair exact-password error:', name, raw);
       setRepairDebug({
         endpoint,
         status: null,
@@ -1210,7 +1183,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
 
   const handleLogin = async () => {
     if (loginSubmitInFlightRef.current || isLoading) {
-      console.log('[Login] Duplicate submit ignored while sign-in is already running');
       return;
     }
 
@@ -1271,7 +1243,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
 
     loginSubmitInFlightRef.current = true;
     try {
-      console.log('[Login] Starting rebuilt direct sign-in flow for:', identifier);
       setAttemptState({
       status: 'submitting',
       title: 'Checking live credentials',
@@ -1288,7 +1259,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
     // surface a clear error instead of sending credentials to a bad endpoint.
     const preflight = preflightSupabaseConfig();
     if (!preflight.ok) {
-      console.warn('[Login] Pre-sign-in guard FAILED — forcing production client:', preflight);
       forceProductionSupabaseClient();
       const recheck = preflightSupabaseConfig();
       if (!recheck.ok) {
@@ -1307,13 +1277,11 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
         setLastFailureReason('service_unavailable');
         Alert.alert(
           'App Config Issue — Not a Password Problem',
-          `${recheck.reason}\n\nYour password was NOT sent to Supabase.\n\nFix: Close Expo Go fully, reopen it, and reload the app. The latest bundle (OWNER_LOGIN_V15_GUARD) has a pre-sign-in guard that uses the correct production Supabase project.\n\nBundle marker shown above: ${OWNER_LOGIN_PHONE_PROOF_BUILD}`
+          `${recheck.reason}\n\nYour password was NOT sent to Supabase.\n\nFix: Close the app fully, reopen it, and reload. The latest bundle has a pre-sign-in guard that uses the correct production Supabase project.`
         );
         return;
       }
-      console.log('[Login] Pre-sign-in guard passed after forcing production client:', recheck);
     } else {
-      console.log('[Login] Pre-sign-in guard passed:', preflight);
     }
 
     // Pre-flight: catch missing Supabase config BEFORE submitting to avoid
@@ -1346,7 +1314,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
         return;
       }
       // If runtime re-init succeeded, keep going with the real client.
-      console.log('[Login] Supabase config recovered at runtime:', audit);
     }
 
     const result = await login(identifier, passwordForSignIn);
@@ -1357,7 +1324,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
     }
 
     if (result.success) {
-      console.log('[Login] Direct sign-in succeeded for:', identifier);
       setLastFailureReason(null);
       setAttemptState({
         status: 'success',
@@ -1395,7 +1361,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
         audit = await auditOwnerDirectAccess(identifier);
         setOwnerRecoveryAudit(audit);
       } catch (error: unknown) {
-        console.log('[Login] Owner recovery audit failed:', error instanceof Error ? error.message : error);
       }
     }
 
@@ -1752,21 +1717,7 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
             }]}>
               <Text style={styles.title}>{loginTitle}</Text>
               <Text style={styles.subtitle}>{loginSubtitle}</Text>
-              <View style={styles.authVersionBadge} testID="login-auth-version-badge">
-                <Text style={styles.authVersionBadgeText}>{OWNER_LOGIN_PHONE_PROOF_BUILD}</Text>
-              </View>
 
-              {/* Runtime Supabase config status — catches stale bundles before login */}
-              <View
-                style={[styles.configStatusBanner, SUPABASE_CONFIG_OK ? styles.configStatusOk : styles.configStatusError]}
-                testID="login-supabase-config-status"
-              >
-                <Text style={styles.configStatusText}>
-                  {SUPABASE_CONFIG_OK
-                    ? `Supabase OK · ${SUPABASE_CONFIG_SOURCE} · ${SUPABASE_HOST_HINT}`
-                    : 'Supabase NOT configured — clear Expo Go cache & reload'}
-                </Text>
-              </View>
 
               {adminAccessLocked ? (
                 <View style={styles.adminLockCard} testID="login-admin-lock-card">
@@ -1976,57 +1927,6 @@ export function LoginScreenContent({ ownerMode = false }: LoginScreenContentProp
 
               {effectiveOwnerMode ? (
                 <>
-                  {telemetrySteps.length > 0 ? (
-                    <View style={styles.repairDebugCard} testID="owner-login-telemetry-panel">
-                      <Text style={styles.repairDebugTitle}>Owner login telemetry (on-device)</Text>
-                      {telemetrySteps.map((entry, idx) => (
-                        <Text key={`${entry.ts}-${idx}`} style={styles.repairDebugLine} selectable>
-                          <Text style={styles.repairDebugLabel}>{entry.ts} </Text>
-                          {entry.step}{entry.detail ? ` — ${entry.detail}` : ''}
-                        </Text>
-                      ))}
-                    </View>
-                  ) : null}
-                  {repairDebug ? (
-                    <View style={styles.repairDebugCard} testID="owner-repair-debug-panel">
-                      <Text style={styles.repairDebugTitle}>Owner repair debug (on-device)</Text>
-                      <Text style={styles.repairDebugLine}><Text style={styles.repairDebugLabel}>Endpoint: </Text>{repairDebug.endpoint}</Text>
-                      <Text style={styles.repairDebugLine}><Text style={styles.repairDebugLabel}>HTTP status: </Text>{repairDebug.status === null ? 'pending…' : String(repairDebug.status)}</Text>
-                      <Text style={styles.repairDebugLine}><Text style={styles.repairDebugLabel}>Timestamp: </Text>{repairDebug.timestamp}</Text>
-                      <Text style={styles.repairDebugLine}><Text style={styles.repairDebugLabel}>Request JSON: </Text></Text>
-                      <Text style={styles.repairDebugJson} selectable testID="owner-repair-debug-request">{repairDebug.requestJson}</Text>
-                      <Text style={styles.repairDebugLine}><Text style={styles.repairDebugLabel}>Response JSON: </Text></Text>
-                      <Text style={styles.repairDebugJson} selectable testID="owner-repair-debug-response">{repairDebug.response}</Text>
-                      {repairDebug.autoSignIn ? (
-                        <>
-                          <Text style={styles.repairDebugLine}>
-                            <Text style={styles.repairDebugLabel}>Auto sign-in: </Text>
-                            {repairDebug.autoSignIn.attempted
-                              ? (repairDebug.autoSignIn.success ? 'success' : 'failed')
-                              : 'skipped'}
-                          </Text>
-                          {repairDebug.autoSignIn.message ? (
-                            <Text style={styles.repairDebugJson} selectable testID="owner-repair-debug-signin-error">{repairDebug.autoSignIn.message}</Text>
-                          ) : null}
-                          {repairDebug.autoSignIn.failureReason ? (
-                            <Text style={styles.repairDebugLine}><Text style={styles.repairDebugLabel}>Supabase reason: </Text>{repairDebug.autoSignIn.failureReason}</Text>
-                          ) : null}
-                          {repairDebug.autoSignIn.supabaseErrorMessage ? (
-                            <Text style={styles.repairDebugLine} selectable><Text style={styles.repairDebugLabel}>Supabase exact message: </Text>{repairDebug.autoSignIn.supabaseErrorMessage}</Text>
-                          ) : null}
-                          {repairDebug.autoSignIn.supabaseErrorCode ? (
-                            <Text style={styles.repairDebugLine} selectable><Text style={styles.repairDebugLabel}>Supabase code: </Text>{repairDebug.autoSignIn.supabaseErrorCode}</Text>
-                          ) : null}
-                          {repairDebug.autoSignIn.supabaseErrorStatus ? (
-                            <Text style={styles.repairDebugLine} selectable><Text style={styles.repairDebugLabel}>Supabase HTTP status: </Text>{repairDebug.autoSignIn.supabaseErrorStatus}</Text>
-                          ) : null}
-                          {repairDebug.autoSignIn.supabaseErrorName ? (
-                            <Text style={styles.repairDebugLine} selectable><Text style={styles.repairDebugLabel}>Supabase type: </Text>{repairDebug.autoSignIn.supabaseErrorName}</Text>
-                          ) : null}
-                        </>
-                      ) : null}
-                    </View>
-                  ) : null}
                   <TouchableOpacity
                     style={[styles.ownerPasswordResetCard, passwordResetLoading && styles.ownerPasswordResetCardDisabled, { opacity: 0.85 }]}
                     activeOpacity={0.84}
@@ -2373,22 +2273,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 12,
     lineHeight: 20,
-  },
-  authVersionBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: Colors.success + '55',
-    backgroundColor: Colors.success + '18',
-    marginBottom: 16,
-  },
-  authVersionBadgeText: {
-    color: Colors.success,
-    fontSize: 10,
-    fontWeight: '800' as const,
-    letterSpacing: 1,
   },
   configStatusBanner: {
     alignSelf: 'stretch' as const,
@@ -2773,40 +2657,6 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: 12,
     lineHeight: 17,
-  },
-  repairDebugCard: {
-    marginTop: 10,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.primary + '40',
-    backgroundColor: '#040A12',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  repairDebugTitle: {
-    color: Colors.text,
-    fontSize: 12,
-    fontWeight: '800' as const,
-    marginBottom: 6,
-  },
-  repairDebugLine: {
-    color: Colors.textSecondary,
-    fontSize: 11,
-    lineHeight: 16,
-  },
-  repairDebugLabel: {
-    color: Colors.text,
-    fontWeight: '700' as const,
-  },
-  repairDebugJson: {
-    marginTop: 4,
-    color: Colors.text,
-    fontSize: 11,
-    lineHeight: 15,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    backgroundColor: '#000814',
-    padding: 8,
-    borderRadius: 8,
   },
   ownerAccessNoticeContent: {
     flex: 1,

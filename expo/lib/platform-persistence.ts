@@ -22,7 +22,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { PLATFORM_PERSISTENCE_PHASE1_SQL } from '@/lib/platform-persistence-migration-sql';
 
-const IVX_DEPLOY_BACKEND_ORIGIN = 'https://ivx-holdings-platform.onrender.com';
+const IVX_DEPLOY_BACKEND_ORIGIN = 'https://api.ivxholding.com';
 const IVX_SUPABASE_SQL_CONFIRM_TEXT = 'CONFIRM_IVX_SUPABASE_MIGRATION';
 
 /**

@@ -270,25 +270,17 @@ export default function JVInvestScreen() {
     queryKey: ['jv-invest-deal', jvId],
     queryFn: async (): Promise<DealData> => {
       if (!jvId) throw new Error('No deal ID provided');
-      console.log('[JVInvest] Fetching deal via jv-storage (Supabase + local cache):', jvId);
-
       try {
         const row = await fetchJVDealById(jvId);
         if (row) {
           const mapped = mapRowToDeal(row as Record<string, unknown>);
           if (mapped.title || mapped.projectName || mapped.totalInvestment) {
-            console.log('[JVInvest] Deal loaded:', mapped.title, '| source: jv-storage');
             return mapped;
           }
-          console.log('[JVInvest] Row returned but incomplete — trying fallback');
         } else {
-          console.log('[JVInvest] fetchJVDealById returned null for:', jvId);
         }
       } catch (e) {
-        console.log('[JVInvest] fetchJVDealById exception:', (e as Error)?.message);
       }
-
-      console.log('[JVInvest] Deal not found in Supabase or local cache:', jvId);
       throw new Error('Deal not found. It may need to be published from the admin panel.');
     },
     enabled: !!jvId,
@@ -365,7 +357,6 @@ export default function JVInvestScreen() {
   const investMutation = useMutation({
     mutationFn: async () => {
       if (!deal) throw new Error('No deal data');
-      console.log('[JVInvest] Submitting JV purchase...');
       return purchaseJVInvestment({
         jvDealId: deal.id,
         jvTitle: deal.title,
@@ -379,7 +370,6 @@ export default function JVInvestScreen() {
     },
     onSuccess: (result) => {
       if (result.success) {
-        console.log('[JVInvest] Purchase success:', result.confirmationNumber);
         setConfirmationNum(result.confirmationNumber);
         setStep('success');
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

@@ -44,7 +44,6 @@ export default function TabsLayout() {
       return;
     }
     const timer = setTimeout(() => {
-      console.warn('[TabsLayout] Loading exceeded', TABS_LOADING_TIMEOUT_MS, 'ms — forcing login redirect');
       setLoadingTimedOut(true);
       setAuthInitError('IVX startup took too long. Tap below to open Owner Login.');
     }, TABS_LOADING_TIMEOUT_MS);
@@ -52,6 +51,10 @@ export default function TabsLayout() {
   }, [isLoading]);
 
   const effectiveLoading = isLoading && !loadingTimedOut;
+  const isOwner = useMemo(() => {
+    const role = ((profileData as { role?: string } | null)?.role ?? '').toLowerCase();
+    return role === 'owner' || role === 'admin';
+  }, [profileData]);
 
   // Auth guard: redirect to /login when unauthenticated on cold launch.
   // This is the single router-level gate that ensures the owner login screen
@@ -64,12 +67,10 @@ export default function TabsLayout() {
     }
     if (!isAuthenticated && !redirectAttemptedRef.current) {
       redirectAttemptedRef.current = true;
-      console.log('[TabsLayout] Unauthenticated on cold launch — redirecting to /login');
       try {
         router.replace('/login');
       } catch (err) {
         logStartupError('ROUTER_READY', err);
-        console.warn('[TabsLayout] Redirect to /login failed:', err);
       }
     } else if (isAuthenticated && redirectAttemptedRef.current) {
       redirectAttemptedRef.current = false;
@@ -116,10 +117,6 @@ export default function TabsLayout() {
 
   logStartup('INITIAL_ROUTE_RENDERED', 'tabs');
   logStartup('APP_INTERACTIVE');
-  const isOwner = useMemo(() => {
-    const role = ((profileData as { role?: string } | null)?.role ?? '').toLowerCase();
-    return role === 'owner' || role === 'admin';
-  }, [profileData]);
   const androidBottomInset = Platform.OS === 'android' ? Math.max(insets.bottom, 10) : insets.bottom;
   const tabBarHeight = Platform.select({
     ios: 82,
