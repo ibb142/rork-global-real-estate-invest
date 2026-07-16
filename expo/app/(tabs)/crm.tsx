@@ -7,8 +7,12 @@
  * badge counts. Hidden from public/investor/buyer roles at the tab layer; the
  * screen itself also guards content so a non-owner who deep-links here sees an
  * access-restricted state instead of CRM data.
+ *
+ * Build 35 fix: each top stat tile loads independently with its own cached-first
+ * value, skeleton, and error state. A single slow or failing endpoint no longer
+ * blocks all five tiles from rendering.
  */
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -20,7 +24,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Users,
   Building2,
@@ -36,6 +41,7 @@ import {
   ChevronRight,
   ShieldAlert,
   Lock,
+  AlertCircle,
   type LucideIcon,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
@@ -72,6 +78,15 @@ type CrmSection = {
   links: CrmLink[];
 };
 
+type BadgeKey = 'investors' | 'buyers' | 'activeDeals' | 'pendingOutreach' | 'matchesToday';
+
+type BadgeConfig = {
+  key: BadgeKey;
+  label: string;
+  cacheKey: string;
+  queryKey: string[];
+};
+
 const CRM_SECTIONS: CrmSection[] = [
   {
     title: 'Capital',
@@ -104,54 +119,109 @@ const CRM_SECTIONS: CrmSection[] = [
   },
 ];
 
-type BadgeData = {
-  investors: number;
-  buyers: number;
-  activeDeals: number;
-  pendingOutreach: number;
-  matchesToday: number;
-};
+const BADGE_CONFIG: BadgeConfig[] = [
+  { key: 'investors', label: 'Investors', cacheKey: 'ivx-crm-badge-investors', queryKey: ['crm-badge', 'investors'] },
+  { key: 'buyers', label: 'Buyers', cacheKey: 'ivx-crm-badge-buyers', queryKey: ['crm-badge', 'buyers'] },
+  { key: 'activeDeals', label: 'Active Deals', cacheKey: 'ivx-crm-badge-active-deals', queryKey: ['crm-badge', 'active-deals'] },
+  { key: 'pendingOutreach', label: 'Pending Outreach', cacheKey: 'ivx-crm-badge-pending-outreach', queryKey: ['crm-badge', 'pending-outreach'] },
+  { key: 'matchesToday', label: 'Matches Today', cacheKey: 'ivx-crm-badge-matches-today', queryKey: ['crm-badge', 'matches-today'] },
+];
 
-async function loadCrmBadges(): Promise<BadgeData> {
-  const [investors, pipeline, outreach, deals, matching] = await Promise.allSettled([
-    listInvestors(),
-    listPipelineEntries(),
-    listOutreachMessages(),
-    listDeals(),
-    getDealMatching(),
-  ]);
+const CACHE_VERSION = 'v1';
 
-  const investorsCount = investors.status === 'fulfilled' ? investors.value.summary?.total ?? investors.value.investors.length : 0;
-  const buyersCount = pipeline.status === 'fulfilled' ? pipeline.value.summary?.activeBuyers ?? 0 : 0;
-  const activeDeals =
-    deals.status === 'fulfilled'
-      ? (deals.value.metrics?.byStatus.open ?? 0) + (deals.value.metrics?.byStatus.in_progress ?? 0)
-      : 0;
-  const pendingOutreach = outreach.status === 'fulfilled' ? outreach.value.summary?.pendingApproval ?? 0 : 0;
-  const matchesToday = matching.status === 'fulfilled' ? matching.value?.summary.strongMatches ?? 0 : 0;
+type CachedBadges = Partial<Record<BadgeKey, number>>;
 
-  return {
-    investors: investorsCount,
-    buyers: buyersCount,
-    activeDeals,
-    pendingOutreach,
-    matchesToday,
-  };
+async function loadCachedBadges(): Promise<CachedBadges> {
+  const result: CachedBadges = {};
+  try {
+    const entries = await AsyncStorage.multiGet(
+      BADGE_CONFIG.map((c) => `${c.cacheKey}:${CACHE_VERSION}`),
+    );
+    for (let i = 0; i < entries.length; i += 1) {
+      const [, raw] = entries[i];
+      if (!raw) continue;
+      const parsed = Number(raw);
+      if (Number.isFinite(parsed)) {
+        result[BADGE_CONFIG[i].key] = parsed;
+      }
+    }
+  } catch {
+    // cache read is best-effort
+  }
+  return result;
 }
 
-type StatTile = { key: keyof BadgeData; label: string };
+async function saveCachedBadge(cacheKey: string, value: number): Promise<void> {
+  try {
+    await AsyncStorage.setItem(`${cacheKey}:${CACHE_VERSION}`, String(value));
+  } catch {
+    // cache write is best-effort
+  }
+}
 
-const STAT_TILES: StatTile[] = [
-  { key: 'investors', label: 'Investors' },
-  { key: 'buyers', label: 'Buyers' },
-  { key: 'activeDeals', label: 'Active Deals' },
-  { key: 'pendingOutreach', label: 'Pending Outreach' },
-  { key: 'matchesToday', label: 'Matches Today' },
-];
+async function fetchInvestorsBadge(): Promise<number> {
+  const result = await listInvestors();
+  const value = result.summary?.total ?? result.investors.length;
+  await saveCachedBadge(BADGE_CONFIG[0].cacheKey, value);
+  return value;
+}
+
+async function fetchBuyersBadge(): Promise<number> {
+  const result = await listPipelineEntries();
+  const value = result.summary?.activeBuyers ?? 0;
+  await saveCachedBadge(BADGE_CONFIG[1].cacheKey, value);
+  return value;
+}
+
+async function fetchActiveDealsBadge(): Promise<number> {
+  const result = await listDeals();
+  const open = result.metrics?.byStatus?.open ?? 0;
+  const inProgress = result.metrics?.byStatus?.in_progress ?? 0;
+  const value = open + inProgress;
+  await saveCachedBadge(BADGE_CONFIG[2].cacheKey, value);
+  return value;
+}
+
+async function fetchPendingOutreachBadge(): Promise<number> {
+  const result = await listOutreachMessages();
+  const value = result.summary?.pendingApproval ?? 0;
+  await saveCachedBadge(BADGE_CONFIG[3].cacheKey, value);
+  return value;
+}
+
+async function fetchMatchesTodayBadge(): Promise<number> {
+  const result = await getDealMatching();
+  const value = result?.summary?.strongMatches ?? 0;
+  await saveCachedBadge(BADGE_CONFIG[4].cacheKey, value);
+  return value;
+}
+
+const BADGE_FETCHERS: Record<BadgeKey, () => Promise<number>> = {
+  investors: fetchInvestorsBadge,
+  buyers: fetchBuyersBadge,
+  activeDeals: fetchActiveDealsBadge,
+  pendingOutreach: fetchPendingOutreachBadge,
+  matchesToday: fetchMatchesTodayBadge,
+};
 
 export default function CrmScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { profileData } = useAuth();
+  const [cachedBadges, setCachedBadges] = useState<CachedBadges>({});
+  const [isCacheLoaded, setIsCacheLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadCachedBadges().then((badges) => {
+      if (cancelled) return;
+      setCachedBadges(badges);
+      setIsCacheLoaded(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const isOwner = useMemo(() => {
     // Mirror useAdminGuard: open-access builds (dev/preview) bypass the owner
@@ -162,20 +232,21 @@ export default function CrmScreen() {
     return role === 'owner' || role === 'admin';
   }, [profileData]);
 
-  const badgesQuery = useQuery({
-    queryKey: ['crm-dashboard-badges'],
-    queryFn: loadCrmBadges,
-    enabled: isOwner,
-    staleTime: 1000 * 30,
-    refetchOnWindowFocus: true,
-  });
-
   const openRoute = useCallback(
     (route: CrmRoute) => {
       router.push(route as never);
     },
     [router],
   );
+
+  const handleRefresh = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['crm-badge'] });
+  }, [queryClient]);
+
+  const isRefetching = useMemo(() => {
+    const states = BADGE_CONFIG.map((c) => queryClient.getQueryState(c.queryKey));
+    return states.some((s) => s?.fetchStatus === 'fetching');
+  }, [queryClient]);
 
   if (!isOwner) {
     return (
@@ -193,8 +264,6 @@ export default function CrmScreen() {
     );
   }
 
-  const badges = badgesQuery.data;
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView
@@ -202,8 +271,8 @@ export default function CrmScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
-            refreshing={badgesQuery.isRefetching}
-            onRefresh={() => badgesQuery.refetch()}
+            refreshing={isRefetching}
+            onRefresh={handleRefresh}
             tintColor={Colors.gold}
           />
         }
@@ -218,23 +287,15 @@ export default function CrmScreen() {
         </View>
 
         <View style={styles.statsRow}>
-          {STAT_TILES.map((tile) => (
-            <View key={tile.key} style={styles.statTile} testID={`crm-stat-${tile.key}`}>
-              {badgesQuery.isLoading ? (
-                <ActivityIndicator color={Colors.gold} size="small" />
-              ) : (
-                <Text style={styles.statValue}>{badges ? badges[tile.key] : 0}</Text>
-              )}
-              <Text style={styles.statLabel}>{tile.label}</Text>
-            </View>
+          {BADGE_CONFIG.map((config) => (
+            <StatTile
+              key={config.key}
+              config={config}
+              cachedValue={cachedBadges[config.key]}
+              isCacheLoaded={isCacheLoaded}
+            />
           ))}
         </View>
-
-        {badgesQuery.isError && (
-          <Text style={styles.errorNote}>
-            Live counts unavailable. Pull to refresh, or open a section directly below.
-          </Text>
-        )}
 
         {CRM_SECTIONS.map((section) => (
           <View key={section.title} style={styles.section}>
@@ -273,6 +334,50 @@ export default function CrmScreen() {
         <View style={styles.footerSpace} />
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function StatTile({
+  config,
+  cachedValue,
+  isCacheLoaded,
+}: {
+  config: BadgeConfig;
+  cachedValue: number | undefined;
+  isCacheLoaded: boolean;
+}) {
+  const query = useQuery({
+    queryKey: config.queryKey,
+    queryFn: BADGE_FETCHERS[config.key],
+    enabled: true,
+    staleTime: 1000 * 30,
+    refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
+  });
+
+  const isLoading = query.isLoading && query.data === undefined;
+  const hasError = query.isError && query.data === undefined && cachedValue === undefined;
+  const value = query.data ?? cachedValue ?? 0;
+  const showSkeleton = isLoading && cachedValue === undefined;
+  const showRefetchIndicator = query.isRefetching && !showSkeleton;
+
+  return (
+    <View style={styles.statTile} testID={`crm-stat-${config.key}`}>
+      {showSkeleton ? (
+        <View style={styles.skeletonValue} />
+      ) : hasError ? (
+        <AlertCircle color={Colors.warning} size={22} />
+      ) : (
+        <Text style={styles.statValue}>{value}</Text>
+      )}
+      <Text style={styles.statLabel}>{config.label}</Text>
+      {showRefetchIndicator && (
+        <View style={styles.refetchDot} />
+      )}
+      {!isCacheLoaded && !showSkeleton && (
+        <ActivityIndicator color={Colors.gold} size="small" style={styles.miniLoader} />
+      )}
+    </View>
   );
 }
 
@@ -336,6 +441,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 76,
   },
+  skeletonValue: {
+    width: 36,
+    height: 28,
+    borderRadius: 6,
+    backgroundColor: Colors.surfaceBorder,
+    marginBottom: 2,
+  },
   statValue: {
     color: Colors.gold,
     fontSize: 24,
@@ -348,11 +460,19 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: 'center',
   },
-  errorNote: {
-    color: Colors.warning,
-    fontSize: 12,
-    marginTop: -12,
-    marginBottom: 18,
+  refetchDot: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.gold,
+  },
+  miniLoader: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
   },
   section: {
     marginBottom: 22,

@@ -101,6 +101,8 @@ All owner-login persistence / auto-restore / sign-in changes are **paused** unti
 - [x] Bump the Android `versionCode` to `31` and rebuild after adding the TypeScript `node` types directive to `app.config.ts`, ensuring `runChecks` passes with zero errors.
 - [x] Final contradiction audit: verify GitHub API, GitHub remote HEAD, Render deployed SHA, /health SHA, APK embedded SHA, and local HEAD are identical.
 - [x] Bump the Android `versionCode` to `32` — Rork removal, Vercel AI Gateway removal, /diagnostics SHA fix, release keystore APK signing, all 6 SHAs aligned.
+- [x] Bump the Android `versionCode` to `34` — Instagram-style module delivery: Members cached-first display + skeleton + realtime subscriptions, Reels renderItem stability, all 5 SHAs aligned.
+- [x] Bump the Android `versionCode` to `35` — Fix CRM dashboard top tiles stuck in loading: split one blocking `loadCrmBadges` query into five independent queries with cached-first values and per-tile error states. Found during real-device testing of build 34. APK uploaded to GitHub Releases as v1.4.3-build35.
 
 ## Final acceptance
 
@@ -111,7 +113,7 @@ All owner-login persistence / auto-restore / sign-in changes are **paused** unti
 - [x] Git SHA is not `local` and API environment is not `unknown` in production (build info reads from app.config.ts extra).
 - [x] Owner AI send button is disabled until authentication is ready (explicit auth states + `isAuthBlocked`).
 - [x] Final APK uses `com.ivxholdings.app` and is directly downloadable (build 18 link delivered and verified with HTTP 200 + application/octet-stream + checksum match).
-- [~] Real Android testing passes on the user’s device for build 32: no black screen, Owner Login renders on cold launch, startup trace reaches APP_INTERACTIVE, no hardcoded password auto-login, no forbidden endpoints in bundle, APK signed with IVX release keystore.
+- [~] Real Android testing passes on the user’s device for build 35: no black screen, Owner Login renders on cold launch, CRM dashboard top tiles show counts instead of permanent spinners, no hardcoded password auto-login, no forbidden endpoints in bundle, APK signed with IVX release keystore.
 
 ## Blockers
 
