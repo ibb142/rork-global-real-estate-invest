@@ -1007,7 +1007,7 @@ import {
   getPublicChatHealthSnapshot,
   mapRoomMessagesToPublicChatHistory,
 } from './public-chat-ai';
-import { validateIVXAIStartup, requestIVXAIText } from './ivx-ai-runtime';
+import { validateIVXAIStartup, requestIVXAIText, getProviderHealth } from './ivx-ai-runtime';
 import { routeDeploymentCommand, isDeploymentCommand } from './services/ivx-deployment-chat-brain';
 import {
   handleChatPost,
@@ -2667,6 +2667,28 @@ app.get('/health', async (context) => {
       commitSha: LIVE_COMMIT_SHA,
       checkedAt: nowIso(),
     },
+    ivxSeniorDeveloperProviderVerification: {
+      providerReady: aiStartup.ok,
+      provider: aiStartup.provider,
+      providerType: aiStartup.providerType,
+      model: aiStartup.model,
+      adapterVersion: aiStartup.adapterVersion,
+      credentialLoaded: aiStartup.keyLoaded,
+      credentialValid: aiStartup.ok,
+      keyPrefix: aiStartup.keyPrefix,
+      baseUrl: aiStartup.baseUrl,
+      lastValidationTime: getProviderHealth().lastValidationTime,
+      lastHttpStatus: getProviderHealth().lastHttpStatus,
+      fallbackEnabled: getProviderHealth().fallbackEnabled,
+      fallbackUsed: getProviderHealth().fallbackUsed,
+      providerState: getProviderHealth().state,
+      traceId: getProviderHealth().traceId,
+      toolRegistryReady: (seniorDeveloperRuntime.blockers as string[]).length === 0,
+      variablesValidated: seniorDeveloperRuntime.variablesValidated === true,
+      rorkDependency: false,
+      commitSha: LIVE_COMMIT_SHA,
+      checkedAt: nowIso(),
+    },
     service: 'ivx-owner-ai-backend',
     deploymentMarker: DEPLOYMENT_MARKER,
     sourceProof: OWNER_SIGNUP_AUDIT_SOURCE_PROOF,
@@ -3546,6 +3568,55 @@ app.options('/api/ivx/senior-developer/credential-audit', () => seniorDeveloperO
 app.get('/api/ivx/senior-developer/credential-audit', async (context) => handleIVXSeniorDeveloperCredentialAuditRequest(context.req.raw));
 app.options('/api/ivx/senior-developer/run', () => seniorDeveloperOptions());
 app.post('/api/ivx/senior-developer/run', async (context) => handleIVXSeniorDeveloperRunRequest(context.req.raw));
+
+// === Phase 5: Owner-only AI Provider Diagnostics ===
+// Shows provider state, model, adapter version, credential loaded/valid,
+// last validation time, last HTTP status, fallback enabled/used, trace ID.
+// Never reveals secret values.
+app.options('/api/ivx/senior-developer/provider-diagnostics', () => seniorDeveloperOptions());
+app.get('/api/ivx/senior-developer/provider-diagnostics', async (context) => {
+  try {
+    const { assertIVXRegisteredOwnerBearer, ownerOnlyJson } = await import('./api/owner-only');
+    const { approval } = await assertIVXRegisteredOwnerBearer(context.req.raw, 'senior_developer_provider_diagnostics');
+    const health = getProviderHealth();
+    const startup = validateIVXAIStartup();
+    return ownerOnlyJson({
+      ok: true,
+      ownerOnly: true,
+      ownerApproval: approval,
+      provider: {
+        state: health.state,
+        provider: health.provider,
+        model: health.model,
+        adapterVersion: health.adapterVersion,
+        credentialLoaded: health.credentialLoaded,
+        credentialValid: health.credentialValid,
+        lastValidationTime: health.lastValidationTime,
+        lastHttpStatus: health.lastHttpStatus,
+        fallbackEnabled: health.fallbackEnabled,
+        fallbackUsed: health.fallbackUsed,
+        traceId: health.traceId,
+        error: health.error,
+      },
+      startup: {
+        ok: startup.ok,
+        providerType: startup.providerType,
+        keyPrefix: startup.keyPrefix,
+        baseUrl: startup.baseUrl,
+        endpoint: startup.endpoint,
+        errors: startup.errors,
+      },
+      rorkDependency: false,
+      secretValuesReturned: false,
+      timestamp: nowIso(),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'provider-diagnostics failed';
+    const status = message.includes('missing bearer') || message.includes('invalid or expired') ? 401
+      : message.includes('owner') || message.includes('privileged') ? 403 : 500;
+    return context.json({ ok: false, error: message, ownerOnly: true }, status);
+  }
+});
 // IVX self-hosted Senior Developer Worker — receives owner-approved tasks and
 // executes the real end-to-end pipeline (read → edit → test → build → commit →
 // push → deploy → verify) WITHOUT Rork as the executor.

@@ -3,6 +3,19 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { acquireAIQueueSlot, classifyRequestLane, type IVXAIQueueLane } from './services/ivx-ai-queue';
 import { estimatePromptTokens, recordProviderTelemetry } from './services/ivx-provider-telemetry';
 import { attemptProviderFallback, classifyProviderFailure, isFailureRetryable } from './services/ivx-ai-provider-fallback';
+import {
+  initProviderStateMachine,
+  markProviderFailed,
+  markProviderReady,
+  markFallbackReady,
+  markAIUnavailable,
+  shouldTryPrimary,
+  shouldTryFallback,
+  getProviderHealth,
+  type IVXProviderHealth,
+} from './services/ivx-provider-state-machine';
+
+export { getProviderHealth, type IVXProviderHealth };
 import { randomUUID } from 'crypto';
 
 export type IVXAIModule = 'owner-room' | 'p0-ai-assistant' | 'p1-plan-creator' | 'public-chat' | string;
@@ -341,6 +354,14 @@ function stripOpenaiPrefix(model: string): string {
   return model.replace(/^openai\//, '');
 }
 
+// Initialize provider state machine at module load — after all helper functions are defined
+initProviderStateMachine(
+  getIVXAIProviderType() === 'vercel_gateway' ? 'vercel_ai_gateway' : 'openai',
+  normalizeModelForProvider(DEFAULT_IVX_AI_MODEL),
+  getIVXAIGatewayApiKey().length > 0,
+  false,
+);
+
 /**
  * Returns the API base URL (e.g. https://api.openai.com/v1). The model name is
  * NOT embedded in the endpoint path — the @ai-sdk/openai provider handles
@@ -513,30 +534,22 @@ export async function requestIVXAIText(input: {
   let successfulBaseUrl = baseUrlCandidates[0];
   let retryCount = 0;
 
-  for (const baseURL of baseUrlCandidates) {
+  // === PROVIDER STATE MACHINE ===
+  // Replace the old broken retry loop that tried the same expired key
+  // against multiple endpoints. Now we attempt the primary provider ONCE.
+  // If it fails with auth (401/403), we mark it FAILED and try ONE fallback
+  // with a DIFFERENT key. No endless loops.
+  if (shouldTryPrimary()) {
+    const baseURL = baseUrlCandidates[0];
     ensureIVXAIGatewayEnvironment();
     try {
-      // Use the correct adapter for the key type:
-      //   vck_ key → createGateway (Vercel AI Gateway, sends auth header correctly)
-      //   sk-  key → createOpenAI (OpenAI direct API)
-      // Sending a vck_ key via createOpenAI produces 401 invalid_api_key even
-      // when the baseURL is ai-gateway.vercel.sh — the auth header format differs.
       const apiKey = getIVXAIGatewayApiKey();
       const isVercelKey = isVercelGatewayKey(apiKey);
-      // For vck_ keys, use createGateway (the Vercel AI Gateway adapter).
-      // Pass apiKey explicitly — it takes precedence over AI_GATEWAY_API_KEY.
-      // Do NOT override baseURL — createGateway uses its own default
-      // (https://ai-gateway.vercel.sh/v1/ai) which is the AI SDK provider
-      // endpoint, NOT the Chat Completions endpoint (/v1).
-      // For sk_ keys, use createOpenAI with the direct OpenAI base URL.
       const gatewayProvider = isVercelKey
         ? createGateway({ apiKey })
         : createOpenAI({ apiKey, baseURL });
       const callTimeoutMs = adaptiveTimeoutMs;
       if (images.length > 0 || files.length > 0) {
-        // Multimodal request: build a single user message with text + image/file
-        // parts so multimodal models (gpt-4o family for images/PDF OCR, video-
-        // capable models for video) can actually see the attachments.
         const baseMessages = messages.length > 0
           ? messages.slice(0, -1)
           : [];
@@ -578,28 +591,41 @@ export async function requestIVXAIText(input: {
             }), callTimeoutMs);
       }
       successfulBaseUrl = baseURL;
-      break;
+      markProviderReady(
+        isVercelKey ? 'vercel_ai_gateway' : 'openai_direct',
+        model,
+      );
     } catch (error) {
       retryCount += 1;
       const failure = extractGatewayFailureContext(error);
       lastError = error;
       lastFailure = failure;
-      console.error('[IVXAI] Gateway request failed:', {
+      const traceId = generateTraceId();
+      const failureClass = classifyProviderFailure(error);
+
+      // Mark provider as FAILED for auth errors — do not retry the same key
+      if (failureClass === 'auth' || failure.status === 401 || failure.status === 403) {
+        markProviderFailed(failure.status ?? 0, error instanceof Error ? error.message : 'auth failure', traceId);
+      }
+
+      console.error('[IVXAI] Primary provider failed:', {
         module: input.module,
         requestId: input.requestId ?? null,
         model,
-            endpoint: baseURL,
+        endpoint: successfulBaseUrl,
         status: failure.status,
+        failureClass,
         error: error instanceof Error ? error.message : 'Gateway request failed',
-        responseBodyType: typeof failure.responseBody,
-        responseBodyPreview: typeof failure.responseBody === 'string'
-          ? failure.responseBody.slice(0, 400)
-          : failure.responseBody && typeof failure.responseBody === 'object'
-            ? JSON.stringify(failure.responseBody).slice(0, 400)
-            : null,
         errorName: error instanceof Error ? error.name : null,
+        traceId,
       });
     }
+  } else {
+    // Primary already marked as FAILED — skip directly to fallback
+    console.log('[IVXAI] Primary provider already FAILED, skipping to fallback', {
+      module: input.module,
+      requestId: input.requestId ?? null,
+    });
   }
 
   if (!result) {
@@ -607,13 +633,11 @@ export async function requestIVXAIText(input: {
     const failureMessage = lastError instanceof Error ? lastError.message : 'Gateway request failed';
     const isTimeout = lastError instanceof Error && lastError.name === 'IVXAIGatewayTimeoutError';
 
-    // Multi-provider fallback chain. Only invoked when:
-    //   - all primary gateway base URLs failed
-    //   - failure is in a retryable class (timeout / rate_limit / quota / 5xx / network)
-    //   - at least one fallback provider has its env key configured
-    // Fallbacks NEVER log API keys or prompt content.
-    const failureClass = classifyProviderFailure(lastError);
-    if (isFailureRetryable(failureClass)) {
+    // === CONTROLLED FALLBACK — maximum ONE attempt with a DIFFERENT key ===
+    // The state machine ensures we only try fallback if the primary is FAILED.
+    // The fallback module skips any provider using the same key as the primary.
+    const failureClass = lastError ? classifyProviderFailure(lastError) : 'auth';
+    if (shouldTryFallback() && isFailureRetryable(failureClass)) {
       const fallbackResult = await attemptProviderFallback({
         module: String(input.module),
         requestId: input.requestId ?? null,
@@ -624,6 +648,7 @@ export async function requestIVXAIText(input: {
         timeoutMs: adaptiveTimeoutMs,
       });
       if (fallbackResult) {
+        markFallbackReady(fallbackResult.provider, fallbackResult.model);
         const fallbackMetadata: IVXAIProviderMetadata = {
           provider: 'chatgpt',
           source: 'remote_api',
@@ -692,6 +717,7 @@ export async function requestIVXAIText(input: {
       queueWaitMs: queueSlot.waitMs,
     });
     const traceId = generateTraceId();
+    markAIUnavailable(traceId, failureMessage);
     throw normalizeGatewayFailure(lastError, {
       module: input.module,
       requestId: input.requestId ?? null,
