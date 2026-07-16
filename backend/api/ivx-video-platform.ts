@@ -730,7 +730,7 @@ export async function handlePlatformHomeFeed(req: Request): Promise<Response> {
       });
     }
 
-    /* ---- compose: 3 deals → 1 featured project video → repeat ---- */
+    /* ---- compose: 3 deals → 1 featured project video → repeat (display_type: investment_card | reel) ---- */
     const blocks = composeInvestorFirstHome(orderedDeals, featuredVideos)
       .slice(0, limit)
       .map((b, i) => ({
