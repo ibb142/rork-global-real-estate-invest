@@ -107,7 +107,7 @@ describe('Live Work Persistence', () => {
     expect(events.length).toBeGreaterThanOrEqual(1);
     // Events should be returned newest-first (descending by created_at)
     for (let i = 1; i < events.length; i++) {
-      expect(events[i - 1].createdAt >= events[i].createdAt).toBe(true);
+      expect(events[i - 1].at >= events[i].at).toBe(true);
     }
   });
 
