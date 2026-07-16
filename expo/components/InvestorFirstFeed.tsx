@@ -76,7 +76,7 @@ function homeFeedDealToInvestmentCard(
     location: deal.city ?? null,
     photos,
     roi: deal.expected_roi ? parseFloat(deal.expected_roi) : (local?.expectedROI ?? null),
-    minimumInvestment: deal.min_investment ?? (local?.trustMarket?.minInvestment ?? null),
+    minimumInvestment: deal.min_investment ?? (local?.poolTiers?.[0]?.minInvestment ?? null),
     status: deal.status ?? 'published',
     category: deal.deal_type ?? (local?.type ?? null),
     dealUrl: deal.url ?? null,
@@ -123,6 +123,7 @@ export default function InvestorFirstFeed({ jvDeals, jvDealsLoading, isXs, cardW
     return jvDeals.map((d, i) => ({
       position: i,
       type: 'deal' as const,
+      display_type: 'investment_card' as const,
       deal: {
         id: String(d.id),
         name: d.projectName || d.title || null,
@@ -132,7 +133,7 @@ export default function InvestorFirstFeed({ jvDeals, jvDealsLoading, isXs, cardW
         deal_type: d.type ?? null,
         investment_amount: d.totalInvestment ?? null,
         expected_roi: d.expectedROI != null ? String(d.expectedROI) : null,
-        min_investment: null,
+        min_investment: d.poolTiers?.[0]?.minInvestment ?? null,
         progress_percent: null,
         photo_url: null,
         url: `https://ivxholding.com/?deal=${d.id}#deals`,
