@@ -10,7 +10,11 @@ function findSyncRoot(startDir) {
   let currentDir = startDir;
 
   while (true) {
-    if (existsSync(join(currentDir, '.git')) || existsSync(join(currentDir, 'ivx.json'))) {
+    if (
+      existsSync(join(currentDir, '.git')) ||
+      existsSync(join(currentDir, 'ivx.json')) ||
+      (existsSync(join(currentDir, 'server.ts')) && existsSync(join(currentDir, 'backend')))
+    ) {
       return currentDir;
     }
 
