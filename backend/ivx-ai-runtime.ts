@@ -524,11 +524,13 @@ export async function requestIVXAIText(input: {
       const apiKey = getIVXAIGatewayApiKey();
       const isVercelKey = isVercelGatewayKey(apiKey);
       // For vck_ keys, use createGateway (the Vercel AI Gateway adapter).
-      // It reads AI_GATEWAY_API_KEY from env — ensureIVXAIGatewayEnvironment()
-      // bridges OPENAI_API_KEY → AI_GATEWAY_API_KEY so the key is found.
-      // For sk- keys, use createOpenAI with the direct OpenAI base URL.
+      // Pass apiKey explicitly — it takes precedence over AI_GATEWAY_API_KEY.
+      // Do NOT override baseURL — createGateway uses its own default
+      // (https://ai-gateway.vercel.sh/v1/ai) which is the AI SDK provider
+      // endpoint, NOT the Chat Completions endpoint (/v1).
+      // For sk_ keys, use createOpenAI with the direct OpenAI base URL.
       const gatewayProvider = isVercelKey
-        ? createGateway()
+        ? createGateway({ apiKey })
         : createOpenAI({ apiKey, baseURL });
       const callTimeoutMs = adaptiveTimeoutMs;
       if (images.length > 0 || files.length > 0) {
@@ -825,7 +827,7 @@ export async function* streamIVXAIText(input: {
     const apiKey = getIVXAIGatewayApiKey();
     const isVercelKey = isVercelGatewayKey(apiKey);
     const gatewayProvider = isVercelKey
-      ? createGateway()
+      ? createGateway({ apiKey })
       : createOpenAI({ apiKey, baseURL });
     const streamResult = streamText({
       model: gatewayProvider(model),
