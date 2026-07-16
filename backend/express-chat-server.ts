@@ -12,6 +12,8 @@ import {
   type PublicChatHistoryItem,
 } from './public-chat-ai';
 import { routeDeploymentCommand, isDeploymentCommand } from './services/ivx-deployment-chat-brain';
+import { attachRedisAdapter } from './services/ivx-realtime-redis';
+import { verifySocketAuth, checkSocketRateLimit, cleanupSocketRateLimit } from './middleware/ivx-socket-auth';
 
 type JoinRoomPayload = {
   roomId?: unknown;
@@ -169,7 +171,25 @@ const io = new Server(httpServer, {
   serveClient: false,     // Don't serve socket.io client JS
   // Allow more concurrent connections
   transports: ['websocket', 'polling'],
-  allowEIO3: true,
+});
+
+// ── Enterprise: Attach Redis adapter for multi-instance sync ──
+let redisAdapterAttached = false;
+attachRedisAdapter(io).then((attached) => {
+  redisAdapterAttached = attached;
+  console.log('[ChatAPI] Redis adapter status', { attached, marker: 'ivx-enterprise-realtime-2026-07-16' });
+}).catch((err) => {
+  console.error('[ChatAPI] Redis adapter init error', { error: err instanceof Error ? err.message : String(err) });
+});
+
+// ── Enterprise: WebSocket authentication middleware ──
+io.use((socket, next) => {
+  const authed = verifySocketAuth(socket.handshake as any);
+  if (!authed) {
+    console.log('[ChatAPI] WS auth rejected', { socketId: socket.id, ip: socket.handshake.address });
+    return next(new Error('unauthorized: invalid or missing token'));
+  }
+  next();
 });
 
 app.set('trust proxy', true);
@@ -603,6 +623,8 @@ io.on('connection', (socket) => {
   }
 
   const typedSocket = socket as unknown as SocketLike;
+
+  const typedSocket = socket as unknown as SocketLike;
   // Enterprise: reduce log verbosity at scale (log every 100th connection)
   if (totalConnections % 100 === 0 || totalConnections <= 10) {
     console.log('[ChatAPI] Connection milestone', {
@@ -652,6 +674,13 @@ io.on('connection', (socket) => {
 
   typedSocket.on('chat:send', async (payload: SendMessagePayload, acknowledgement?: (data: unknown) => void) => {
     try {
+      // Enterprise: per-socket rate limiting
+      if (!checkSocketRateLimit(typedSocket.id)) {
+        typedSocket.emit('chat:error', { error: 'Rate limit exceeded. Please slow down.' });
+        acknowledgement?.({ ok: false, error: 'rate_limited' });
+        return;
+      }
+
       if (!typedSocket.data.roomId) {
         joinSocketToRoom(typedSocket, payload);
       }
@@ -677,6 +706,7 @@ io.on('connection', (socket) => {
   typedSocket.on('disconnect', (reason: string) => {
     totalConnections = Math.max(0, totalConnections - 1);
     removeSocketFromRoom(typedSocket);
+    cleanupSocketRateLimit(typedSocket.id);
   });
 });
 

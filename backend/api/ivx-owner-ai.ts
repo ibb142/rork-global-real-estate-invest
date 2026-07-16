@@ -3780,7 +3780,7 @@ async function findExistingOwnerConversation(
   for (const lookup of lookupAttempts) {
     const result = await scopedClient
       .from(tables.conversations)
-      .select('*')
+      .select('id,slug,title,user_id,created_at,updated_at')
       .eq(lookup.field, lookup.value)
       .limit(5);
 
@@ -3900,7 +3900,7 @@ export async function ensureOwnerConversation(
   const payloads = buildConversationInsertPayloads(tables);
 
   for (const payload of payloads) {
-    const insertResult = await scopedClient.from(tables.conversations).insert(payload).select('*').limit(1);
+    const insertResult = await scopedClient.from(tables.conversations).insert(payload).select('id,slug,title,user_id,created_at,updated_at').limit(1);
     if (!insertResult.error) {
       const insertedRow = ((insertResult.data as Record<string, unknown>[] | null) ?? [])[0];
       if (insertedRow) {
@@ -3955,7 +3955,7 @@ export async function loadRecentMessages(
   });
   const result = await scopedClient
     .from(tables.messages)
-    .select('*')
+    .select('id,sender_role,sender_label,body,created_at')
     .in(tables.messageConversationField, searchConversationIds)
     .order('created_at', { ascending: false })
     .limit(12);
@@ -4009,7 +4009,7 @@ export async function searchMessages(
 
   const result = await scopedClient
     .from(tables.messages)
-    .select('*')
+    .select('id,sender_role,sender_label,body,created_at')
     .in(tables.messageConversationField, searchConversationIds)
     .ilike(bodyColumn, `%${escaped}%`)
     .order('created_at', { ascending: false })
@@ -4137,7 +4137,7 @@ export async function insertMessage(
 
   let lastError: string | null = null;
   for (const payload of payloads) {
-    const insertResult = await scopedClient.from(tables.messages).insert(payload).select('*').limit(1);
+    const insertResult = await scopedClient.from(tables.messages).insert(payload).select('id,sender_role,sender_label,body,created_at').limit(1);
     if (!insertResult.error) {
       const insertedRow = ((insertResult.data as Record<string, unknown>[] | null) ?? [])[0];
       const normalizedRow = insertedRow

@@ -322,7 +322,7 @@ export async function handlePlatformFeed(req: Request): Promise<Response> {
     const sb = await getSB();
     let query = sb
       .from('project_videos')
-      .select('*')
+      .select('id,project_id,media_id,title,video_url,thumbnail_url,cover_url,duration_sec,width,height,orientation,is_pinned,is_approved,view_count,created_at')
       .eq('is_approved', true)
       .order('is_pinned', { ascending: false })
       .order('created_at', { ascending: false })
@@ -595,7 +595,7 @@ export async function handlePlatformHomeFeed(req: Request): Promise<Response> {
 
     /* ---- deals: published jv_deals + admin deal meta controls ---- */
     const [{ data: dealRows, error: dealsError }, dealMetaDoc] = await Promise.all([
-      sb.from('jv_deals').select('*').eq('published', true).order('created_at', { ascending: false }).limit(100),
+      sb.from('jv_deals').select('id,title,project_name,type,description,total_investment,expected_roi,min_investment,status,published,property_address,city,state,zip_code,country,property_type,photos,created_at').eq('published', true).order('created_at', { ascending: false }).limit(100),
       getDealMetaDoc(),
     ]);
     if (dealsError) return json({ error: dealsError.message, marker: VIDEO_PLATFORM_MARKER }, 500);
@@ -617,7 +617,7 @@ export async function handlePlatformHomeFeed(req: Request): Promise<Response> {
     /* ---- featured project videos: approved + visible + attached to a real deal ---- */
     const { data: vids, error: vidsError } = await sb
       .from('project_videos')
-      .select('*')
+      .select('id,project_id,media_id,title,video_url,thumbnail_url,cover_url,duration_sec,width,height,orientation,is_pinned,is_approved,view_count,created_at')
       .eq('is_approved', true)
       .order('is_pinned', { ascending: false })
       .order('created_at', { ascending: false })
@@ -915,7 +915,7 @@ export async function handlePlatformStoriesList(): Promise<Response> {
       .map(([id]) => id);
     if (activeIds.length === 0) return json({ stories: [], count: 0, marker: VIDEO_PLATFORM_MARKER });
 
-    const { data: vids } = await sb.from('project_videos').select('*').in('id', activeIds);
+    const { data: vids } = await sb.from('project_videos').select('id,project_id,media_id,title,video_url,thumbnail_url,cover_url,duration_sec,orientation,is_pinned,created_at').in('id', activeIds);
     const stories = (vids ?? []).map((v: any) => {
       const id = String(v.id);
       const pb = playback[id];

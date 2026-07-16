@@ -39,17 +39,17 @@ export async function handleFeaturedProperties(req: Request): Promise<Response> 
   try {
     const sb = await getSB();
     // Query jv_deals with published=true as featured, fall back to properties
-    const { data, error } = await sb.from('jv_deals').select('*').eq('published', true).eq('status', 'active').order('created_at', { ascending: false }).limit(20);
+    const { data, error } = await sb.from('jv_deals').select('id,title,project_name,type,description,total_investment,expected_roi,min_investment,status,published,property_address,city,state,zip_code,country,property_type,photos,created_at').eq('published', true).eq('status', 'active').order('created_at', { ascending: false }).limit(20);
     if (error) {
       // Fallback: try property_controls for featured IDs
       const { data: featuredIds } = await sb.from('property_controls').select('property_id').eq('is_featured', true);
       if (featuredIds && featuredIds.length > 0) {
         const ids = featuredIds.map((r: any) => r.property_id);
-        const { data: props } = await sb.from('properties').select('*').in('id', ids).order('created_at', { ascending: false }).limit(20);
+        const { data: props } = await sb.from('properties').select('id,name,location,city,country,price_per_share,total_shares,available_shares,min_investment,target_raise,current_raise,yield,property_type,status,description,created_at').in('id', ids).order('created_at', { ascending: false }).limit(20);
         return json({ properties: props || [], count: props?.length || 0, deploymentMarker: DEPLOYMENT_MARKER });
       }
       // Last fallback: all properties
-      const { data: allProps } = await sb.from('properties').select('*').order('created_at', { ascending: false }).limit(20);
+      const { data: allProps } = await sb.from('properties').select('id,name,location,city,country,price_per_share,total_shares,available_shares,min_investment,target_raise,current_raise,yield,property_type,status,description,created_at').order('created_at', { ascending: false }).limit(20);
       return json({ properties: allProps || [], count: allProps?.length || 0, deploymentMarker: DEPLOYMENT_MARKER });
     }
     return json({ properties: data || [], count: data?.length || 0, deploymentMarker: DEPLOYMENT_MARKER });
@@ -62,13 +62,13 @@ export async function handlePropertyDetails(req: Request, propertyId: string): P
     const sb = await getSB();
     // The landing page featured properties come from jv_deals (not properties table).
     // Try jv_deals first by string ID, then fall back to properties by numeric/string ID.
-    const { data: dealData, error: dealError } = await sb.from('jv_deals').select('*').eq('id', propertyId).maybeSingle();
+    const { data: dealData, error: dealError } = await sb.from('jv_deals').select('id,title,project_name,type,description,total_investment,expected_roi,min_investment,status,published,property_address,city,state,zip_code,country,property_type,photos,created_at').eq('id', propertyId).maybeSingle();
     if (dealData) return json({ property: dealData, deploymentMarker: DEPLOYMENT_MARKER, source: 'jv_deals' });
 
     // Fallback: try properties table
     const numericId = Number(propertyId);
     const isNumeric = !isNaN(numericId) && String(numericId) === propertyId;
-    const query = sb.from('properties').select('*');
+    const query = sb.from('properties').select('id,name,location,city,country,price_per_share,total_shares,available_shares,min_investment,target_raise,current_raise,yield,property_type,status,description,created_at');
     const { data, error } = isNumeric
       ? await query.eq('id', numericId).maybeSingle()
       : await query.eq('id', propertyId).maybeSingle();
@@ -179,7 +179,7 @@ export async function handleMediaUpload(req: Request): Promise<Response> {
 export async function handleInstagramCards(req: Request): Promise<Response> {
   try {
     const sb = await getSB();
-    const { data, error } = await sb.from('project_media').select('*').eq('media_type', 'instagram_card').eq('is_approved', true).order('created_at', { ascending: false }).limit(50);
+    const { data, error } = await sb.from('project_media').select('id,project_id,media_type,url,media_url,thumbnail_url,title,description,position,is_approved,created_at').eq('media_type', 'instagram_card').eq('is_approved', true).order('created_at', { ascending: false }).limit(50);
     if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 500);
     return json({ cards: data || [], count: data?.length || 0, deploymentMarker: DEPLOYMENT_MARKER });
   } catch (err: any) { return json({ error: err.message, deploymentMarker: DEPLOYMENT_MARKER }, 500); }
@@ -190,7 +190,7 @@ export async function handleEngagementLikes(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const projectId = url.searchParams.get('projectId') || url.searchParams.get('project_id') || null;
   const sb = await getSB();
-  let query = sb.from('project_likes').select('*');
+  let query = sb.from('project_likes').select('id,project_id,user_id,created_at');
   if (projectId) query = query.eq('project_id', projectId);
   const { data, error } = await query.order('created_at', { ascending: false }).limit(100);
   if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 500);
@@ -201,7 +201,7 @@ export async function handleEngagementComments(req: Request): Promise<Response> 
   const url = new URL(req.url);
   const projectId = url.searchParams.get('projectId') || url.searchParams.get('project_id') || null;
   const sb = await getSB();
-  let query = sb.from('project_comments').select('*');
+  let query = sb.from('project_comments').select('id,project_id,user_id,text,created_at');
   if (projectId) query = query.eq('project_id', projectId);
   const { data, error } = await query.order('created_at', { ascending: false }).limit(100);
   if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 500);
@@ -212,7 +212,7 @@ export async function handleEngagementShares(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const projectId = url.searchParams.get('projectId') || url.searchParams.get('project_id') || null;
   const sb = await getSB();
-  let query = sb.from('project_shares').select('*');
+  let query = sb.from('project_shares').select('id,project_id,user_id,platform,created_at');
   if (projectId) query = query.eq('project_id', projectId);
   const { data, error } = await query.order('created_at', { ascending: false }).limit(100);
   if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 500);
@@ -223,7 +223,7 @@ export async function handleEngagementSaves(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const projectId = url.searchParams.get('projectId') || url.searchParams.get('project_id') || null;
   const sb = await getSB();
-  let query = sb.from('project_saves').select('*');
+  let query = sb.from('project_saves').select('id,project_id,user_id,created_at');
   if (projectId) query = query.eq('project_id', projectId);
   const { data, error } = await query.order('created_at', { ascending: false }).limit(100);
   if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 500);
@@ -236,7 +236,7 @@ export async function handleAnalytics(req: Request): Promise<Response> {
   const days = parseInt(url.searchParams.get('days') || '30', 10);
   const sb = await getSB();
   const since = new Date(Date.now() - days * 86400000).toISOString();
-  let query = sb.from('project_analytics').select('*', { count: 'exact', head: false }).gte('date', since.split('T')[0]);
+  let query = sb.from('project_analytics').select('id,project_id,event_type,date,count', { count: 'exact', head: false }).gte('date', since.split('T')[0]);
   if (projectId) query = query.eq('project_id', projectId);
   const { data, error, count } = await query.order('date', { ascending: false }).limit(100);
   if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 500);

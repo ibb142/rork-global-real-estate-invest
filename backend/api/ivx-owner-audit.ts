@@ -247,7 +247,7 @@ export async function handleIVXOwnerAuditRecentConversationsRequest(request: Req
     const scoped = scopeClient(client, tables);
     const conversationResult = await scoped
       .from(tables.conversations)
-      .select('*')
+      .select('id,slug,title,updated_at,created_at')
       .order('updated_at', { ascending: false })
       .limit(limit);
 

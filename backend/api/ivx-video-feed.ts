@@ -94,7 +94,7 @@ export async function handleVideoFeed(req: Request): Promise<Response> {
     let videos: any[] = [];
     const { data: vids, error } = await sb
       .from('project_videos')
-      .select('*')
+      .select('id,project_id,media_id,title,video_url,thumbnail_url,cover_url,duration_sec,width,height,orientation,is_pinned,is_approved,view_count,created_at')
       .eq('is_approved', true)
       .order('is_pinned', { ascending: false })
       .order('created_at', { ascending: false })
@@ -105,7 +105,7 @@ export async function handleVideoFeed(req: Request): Promise<Response> {
     if (videos.length === 0) {
       const { data: media } = await sb
         .from('project_media')
-        .select('*')
+        .select('id,project_id,media_type,url,media_url,thumbnail_url,cover_image_url,title,description,duration_sec,width,height,position,is_approved,created_at')
         .eq('media_type', 'video')
         .eq('is_approved', true)
         .order('created_at', { ascending: false })

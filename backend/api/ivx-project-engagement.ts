@@ -80,8 +80,8 @@ export async function handleProjectMediaGet(c: Context): Promise<Response> {
   try {
     const sb = await getSupabaseAdmin();
     const [mediaRes, videoRes] = await Promise.all([
-      sb.from('project_media').select('*').eq('project_id', projectId).eq('is_approved', true).order('position'),
-      sb.from('project_videos').select('*').eq('project_id', projectId).eq('is_approved', true).order('is_pinned', { ascending: false }).order('created_at', { ascending: true }),
+      sb.from('project_media').select('id,project_id,media_type,url,media_url,thumbnail_url,cover_image_url,title,description,duration_sec,width,height,position,is_approved,created_at').eq('project_id', projectId).eq('is_approved', true).order('position').limit(50),
+      sb.from('project_videos').select('id,project_id,media_id,title,video_url,thumbnail_url,cover_url,duration_sec,width,height,orientation,is_pinned,is_approved,view_count,created_at').eq('project_id', projectId).eq('is_approved', true).order('is_pinned', { ascending: false }).order('created_at', { ascending: true }).limit(20),
     ]);
 
     const images = (mediaRes.data || []).filter((m: any) => m.media_type === 'image').slice(0, MAX_POST_IMAGES);
@@ -362,7 +362,7 @@ export async function handleProjectBulkEngagementGet(c: Context): Promise<Respon
 
   try {
     const sb = await getSupabaseAdmin();
-    const { data } = await sb.from('project_engagement').select('*').in('project_id', projectIds);
+    const { data } = await sb.from('project_engagement').select('project_id,views,likes,comments,shares,saves').in('project_id', projectIds).limit(200);
     const result: Record<string, any> = {};
     for (const row of (data || [])) {
       result[row.project_id] = {
@@ -390,7 +390,7 @@ export async function handleProjectAnalyticsGet(c: Context): Promise<Response> {
     since.setDate(since.getDate() - days);
 
     const { data } = await sb.from('project_analytics')
-      .select('*')
+      .select('id,project_id,date,event_type,count')
       .eq('project_id', projectId)
       .gte('date', since.toISOString().split('T')[0])
       .order('date', { ascending: false });

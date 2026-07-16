@@ -201,7 +201,7 @@ async function verifyUser(client: SupabaseClient, request: Request): Promise<Use
 async function loadUserContext(client: SupabaseClient, user: User): Promise<UserContext> {
   const { data, error } = await client
     .from('profiles')
-    .select('*')
+    .select('id,email,full_name,role,avatar_url,created_at')
     .eq('id', user.id)
     .maybeSingle();
 

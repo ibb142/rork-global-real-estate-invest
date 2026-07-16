@@ -359,7 +359,7 @@ async function verifyUser(client: SupabaseClient, request: Request): Promise<Use
 async function loadUserContext(client: SupabaseClient, user: User): Promise<UserContext> {
   const { data, error } = await client
     .from('profiles')
-    .select('*')
+    .select('id,email,full_name,role,avatar_url,created_at')
     .eq('id', user.id)
     .maybeSingle();
 
@@ -511,7 +511,7 @@ async function loadProjectContext(client: SupabaseClient, requestedProjectId: st
   if (requestedProjectId && requestedProjectId !== workspaceProjectId) {
     const { data, error } = await client
       .from('jv_deals')
-      .select('*')
+      .select('id,title,project_name,type,description,total_investment,expected_roi,min_investment,status,published,property_address,city,state,zip_code,country,property_type,photos,created_at')
       .eq('id', requestedProjectId)
       .maybeSingle();
 
@@ -523,7 +523,7 @@ async function loadProjectContext(client: SupabaseClient, requestedProjectId: st
 
   const { data: featuredData, error: featuredError } = await client
     .from('jv_deals')
-    .select('*')
+    .select('id,title,slug,price,min_investment,expected_roi,deal_type,status,published,description,location,created_at')
     .limit(3);
 
   if (featuredError && !isSchemaMissingError(featuredError) && !isColumnMissingError(featuredError)) {

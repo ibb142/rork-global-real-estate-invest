@@ -4,6 +4,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import {
+  IVX_ENTERPRISE_MIDDLEWARE_MARKER,
+  observabilityMiddleware,
+  requestTimeoutMiddleware,
+  bodyLimitMiddleware,
+  aiRateLimitMiddleware,
+  securityHeadersMiddleware,
+  getEnterpriseMetrics,
+} from './middleware/ivx-enterprise-middleware';
 import { GET, OPTIONS as ownerAIOptions, handleIVXOwnerAIProxyStatus, handleIVXOwnerAIRequest, handleIVXOwnerAIToolRequest } from './api/ivx-owner-ai';
 import {
   handleIVXIaMemoryDeleteRequest,
@@ -2531,21 +2540,27 @@ app.use('*', cors({
   maxAge: 86400,
 }));
 
+// ── Enterprise middleware stack ──
+app.use('*', securityHeadersMiddleware);
+app.use('*', bodyLimitMiddleware);
+app.use('*', requestTimeoutMiddleware);
+app.use('*', aiRateLimitMiddleware);
+app.use('*', observabilityMiddleware);
+
 app.use('*', async (context, next) => {
   const startedAt = Date.now();
-  console.log('[IVXOwnerAI-Hono] Incoming request:', {
-    method: context.req.method,
-    path: context.req.path,
-    marker: DEPLOYMENT_MARKER,
-  });
   await next();
-  console.log('[IVXOwnerAI-Hono] Request complete:', {
-    method: context.req.method,
-    path: context.req.path,
-    status: context.res.status,
-    durationMs: Date.now() - startedAt,
-    marker: DEPLOYMENT_MARKER,
-  });
+  const durationMs = Date.now() - startedAt;
+  // Only log slow requests (>500ms) or errors to reduce log noise at scale
+  if (durationMs > 500 || context.res.status >= 400) {
+    console.log('[IVXOwnerAI-Hono] Slow/error request:', {
+      method: context.req.method,
+      path: context.req.path,
+      status: context.res.status,
+      durationMs,
+      marker: DEPLOYMENT_MARKER,
+    });
+  }
 });
 
 app.get('/', async (context) => {
@@ -5304,5 +5319,16 @@ app.get('/api/ivx/enterprise/capacity', async (context) => {
 // Public enterprise health (no auth required)
 app.get('/api/ivx/enterprise/health', () => handleEnterpriseHealthRequest());
 app.options('/api/ivx/enterprise/health', () => new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' } }));
+
+// Enterprise metrics endpoint — observability dashboard data
+app.get('/api/ivx/enterprise/metrics', (context) => {
+  const metrics = getEnterpriseMetrics();
+  return context.json({
+    ok: true,
+    marker: IVX_ENTERPRISE_MIDDLEWARE_MARKER,
+    timestamp: new Date().toISOString(),
+    metrics,
+  });
+});
 
 export default app;
