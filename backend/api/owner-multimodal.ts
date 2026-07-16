@@ -23,6 +23,7 @@ import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { IVX_CHAT_UPLOAD_BUCKET, IVX_OWNER_AI_BUCKET } from '../../expo/shared/ivx';
 import { assertIVXOwnerOnly, ownerOnlyJson, ownerOnlyOptions, type IVXOwnerRequestContext } from './owner-only';
+import { autoDetectGatewayBaseUrl, normalizeModelForGateway } from '../services/ivx-provider-autodetect';
 
 const DEPLOYMENT_MARKER = 'ivx-owner-multimodal-2026-05-06t1300z';
 
@@ -200,18 +201,15 @@ function getGatewayApiKey(): string {
 }
 
 function getGatewayBaseUrl(): string {
-  const root = readTrimmed(process.env.IVX_AI_BASE_URL)
-    || readTrimmed(process.env.IVX_AI_GATEWAY_URL)
-    || 'https://api.openai.com/v1';
-  return root.replace(/\/+$/, '');
+  return autoDetectGatewayBaseUrl();
 }
 
 function getVisionModel(): string {
-  return (readTrimmed(process.env.IVX_OWNER_AI_VISION_MODEL) || 'gpt-4o').replace(/^openai\//, '');
+  return normalizeModelForGateway(readTrimmed(process.env.IVX_OWNER_AI_VISION_MODEL) || 'gpt-4o');
 }
 
 function getTextModel(): string {
-  return (readTrimmed(process.env.IVX_OWNER_AI_MODEL) || 'gpt-4o').replace(/^openai\//, '');
+  return normalizeModelForGateway(readTrimmed(process.env.IVX_OWNER_AI_MODEL) || 'gpt-4o');
 }
 
 function ensureGatewayConfigured(): void {

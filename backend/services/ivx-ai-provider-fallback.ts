@@ -141,8 +141,11 @@ type FallbackInput = {
 };
 
 async function callOpenAIDirect(input: FallbackInput): Promise<IVXProviderInvocationResult> {
-  const apiKey = readTrimmed(process.env.OPENAI_API_KEY);
+  const apiKey = readTrimmed(process.env.OPENAI_API_KEY) || readTrimmed(process.env.AI_GATEWAY_API_KEY);
   if (!apiKey) throw new Error('openai_direct fallback not configured');
+  // Skip if the key is a Vercel AI Gateway key (vck_) — it won't work against
+  // the OpenAI direct API. The vercel_gateway fallback handles that key.
+  if (apiKey.startsWith('vck_')) throw new Error('openai_direct fallback skipped: key is a Vercel AI Gateway key (vck_), not an OpenAI key');
   // Model routing policy:
   //   Primary  = gpt-4o (direct OpenAI API, the configured default everywhere).
   //   Fallback = gpt-4o-mini, used ONLY when the primary gpt-4o path fails with a
@@ -181,6 +184,56 @@ async function callOpenAIDirect(input: FallbackInput): Promise<IVXProviderInvoca
     const text = readTrimmed(json.choices?.[0]?.message?.content ?? '');
     if (!text) throw new Error('openai_direct empty response');
     return { text, provider: 'openai_direct', model, latencyMs: Date.now() - startedAt };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Vercel AI Gateway direct fallback.
+ * Uses the vck_ key against https://ai-gateway.vercel.sh/v1/chat/completions
+ * with the openai/ model prefix (e.g. openai/gpt-4o-mini).
+ * This is the correct endpoint for Vercel AI Gateway keys.
+ */
+async function callVercelGatewayDirect(input: FallbackInput): Promise<IVXProviderInvocationResult> {
+  const apiKey = readTrimmed(process.env.OPENAI_API_KEY) || readTrimmed(process.env.AI_GATEWAY_API_KEY);
+  if (!apiKey) throw new Error('ivx_ai_gateway fallback not configured');
+  // Skip if the key is NOT a Vercel key — it won't work against the gateway.
+  if (!apiKey.startsWith('vck_')) throw new Error('ivx_ai_gateway fallback skipped: key is not a Vercel AI Gateway key (vck_)');
+  const bareModel = readTrimmed(process.env.IVX_OPENAI_FALLBACK_MODEL) || 'gpt-4o-mini';
+  const model = bareModel.startsWith('openai/') ? bareModel : `openai/${bareModel}`;
+  const url = 'https://ai-gateway.vercel.sh/v1/chat/completions';
+  const chatMessages: { role: string; content: string }[] = [];
+  if (input.system) chatMessages.push({ role: 'system', content: input.system });
+  if (input.messages.length > 0) {
+    for (const m of input.messages) chatMessages.push({ role: m.role, content: m.content });
+  } else if (input.prompt) {
+    chatMessages.push({ role: 'user', content: input.prompt });
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), input.timeoutMs);
+  const startedAt = Date.now();
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: chatMessages,
+        max_tokens: input.maxOutputTokens ?? undefined,
+      }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`ivx_ai_gateway status=${response.status}`);
+    }
+    const json = await response.json() as { choices?: { message?: { content?: string } }[] };
+    const text = readTrimmed(json.choices?.[0]?.message?.content ?? '');
+    if (!text) throw new Error('ivx_ai_gateway empty response');
+    return { text, provider: 'ivx_ai_gateway', model, latencyMs: Date.now() - startedAt };
   } finally {
     clearTimeout(timer);
   }
@@ -243,6 +296,9 @@ async function callAnthropicDirect(input: FallbackInput): Promise<IVXProviderInv
  */
 export async function attemptProviderFallback(input: FallbackInput): Promise<IVXProviderInvocationResult | null> {
   const chain: { name: IVXProviderName; run: (i: FallbackInput) => Promise<IVXProviderInvocationResult> }[] = [];
+  // Vercel AI Gateway fallback — used when the primary path fails and the key
+  // is a Vercel key (vck_). Routes to ai-gateway.vercel.sh/v1 with openai/ prefix.
+  if (hasEnv('OPENAI_API_KEY') || hasEnv('AI_GATEWAY_API_KEY')) chain.push({ name: 'ivx_ai_gateway', run: callVercelGatewayDirect });
   if (hasEnv('OPENAI_API_KEY')) chain.push({ name: 'openai_direct', run: callOpenAIDirect });
   if (hasEnv('ANTHROPIC_API_KEY')) chain.push({ name: 'anthropic_direct', run: callAnthropicDirect });
   // Rork toolkit cutover (2026-07-07): rork_toolkit fallback link removed.

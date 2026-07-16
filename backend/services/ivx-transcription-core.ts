@@ -7,6 +7,8 @@
  * caller can surface an exact runtime dependency.
  */
 
+import { autoDetectGatewayBaseUrl } from './ivx-provider-autodetect';
+
 export type TranscriptionProvider = 'elevenlabs_scribe' | 'openai_whisper';
 
 export type TranscriptionCoreResult = {
@@ -31,7 +33,8 @@ export function getOpenAITranscriptionApiKey(): string {
 
 function getOpenAITranscriptionBaseUrl(): string {
   const configured = readTrimmed(process.env.OPENAI_AUDIO_BASE_URL) || readTrimmed(process.env.IVX_OPENAI_AUDIO_BASE_URL);
-  return configured.replace(/\/+$/, '') || 'https://api.openai.com/v1';
+  if (configured) return configured.replace(/\/+$/, '');
+  return autoDetectGatewayBaseUrl();
 }
 
 export function isTranscriptionConfigured(): boolean {

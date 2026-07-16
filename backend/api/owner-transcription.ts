@@ -1,4 +1,5 @@
 import { assertIVXOwnerOnly, ownerOnlyJson, ownerOnlyOptions } from './owner-only';
+import { autoDetectGatewayBaseUrl } from '../services/ivx-provider-autodetect';
 
 const DEPLOYMENT_MARKER = 'ivx-owner-transcription-2026-05-15t-feature3';
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
@@ -27,7 +28,8 @@ function getOpenAITranscriptionApiKey(): string {
 
 function getOpenAITranscriptionBaseUrl(): string {
   const configured = readTrimmed(process.env.OPENAI_AUDIO_BASE_URL) || readTrimmed(process.env.IVX_OPENAI_AUDIO_BASE_URL);
-  return configured.replace(/\/+$/, '') || 'https://api.openai.com/v1';
+  if (configured) return configured.replace(/\/+$/, '');
+  return autoDetectGatewayBaseUrl();
 }
 
 function getMultipartFileName(file: File): string {

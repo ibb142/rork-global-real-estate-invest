@@ -4,16 +4,14 @@
  * is not configured, so the loop and memory still run in lower environments.
  */
 import { MEMORY_EMBEDDING_DIM, MEMORY_EMBEDDING_MODEL } from './memory-types';
+import { autoDetectGatewayBaseUrl } from '../ivx-provider-autodetect';
 
 function readTrimmed(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
 function getGatewayBaseUrl(): string {
-  const root = readTrimmed(process.env.IVX_AI_BASE_URL)
-    || readTrimmed(process.env.IVX_AI_GATEWAY_URL)
-    || 'https://api.openai.com/v1';
-  return root.replace(/\/+$/, '');
+  return autoDetectGatewayBaseUrl();
 }
 
 function getApiKey(): string {

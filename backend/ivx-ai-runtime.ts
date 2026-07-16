@@ -136,22 +136,61 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-// Backend talks directly to the OpenAI API. OPENAI_API_KEY is the primary
-// key; AI_GATEWAY_API_KEY is kept as a backward-compat fallback.
-function getIVXAIGatewayRootUrl(): string {
-  const configured = readTrimmed(process.env.IVX_AI_GATEWAY_URL);
-  // Rork independence guard (2026-07-07): never honor a gateway URL that
-  // points at a Rork-hosted domain, even if a stale env var is still set on
-  // the host. This makes the runtime self-healing: production cannot route
-  // through toolkit.rork.com regardless of env var state.
-  if (configured && !isRorkDomain(configured)) {
-    return configured;
-  }
-  return 'https://api.openai.com/v1';
+// Provider auto-detection: the key prefix determines the correct endpoint.
+//   vck_  → Vercel AI Gateway (https://ai-gateway.vercel.sh/v1)
+//   sk-   → OpenAI direct API (https://api.openai.com/v1)
+// This makes the runtime self-healing: whichever key is loaded on the host,
+// it is routed to the matching provider. A vck_ key sent to api.openai.com
+// fails with 401 invalid_api_key; an sk- key sent to ai-gateway.vercel.sh
+// fails with 401. Auto-detection eliminates both failure modes.
+const VERCEL_AI_GATEWAY_BASE = 'https://ai-gateway.vercel.sh/v1';
+const OPENAI_DIRECT_BASE = 'https://api.openai.com/v1';
+
+function isVercelGatewayKey(key: string): boolean {
+  return key.startsWith('vck_');
+}
+
+function isOpenAIDirectKey(key: string): boolean {
+  return key.startsWith('sk-');
 }
 
 function getIVXAIGatewayApiKey(): string {
   return readTrimmed(process.env.OPENAI_API_KEY) || readTrimmed(process.env.AI_GATEWAY_API_KEY);
+}
+
+/**
+ * Returns the AI provider type based on the loaded API key prefix.
+ * 'vercel_gateway'  → vck_ key, routes to ai-gateway.vercel.sh/v1
+ * 'openai_direct'   → sk- key, routes to api.openai.com/v1
+ * 'unknown'         → key not loaded or unrecognized prefix
+ */
+export function getIVXAIProviderType(): 'vercel_gateway' | 'openai_direct' | 'unknown' {
+  const key = getIVXAIGatewayApiKey();
+  if (!key) return 'unknown';
+  if (isVercelGatewayKey(key)) return 'vercel_gateway';
+  if (isOpenAIDirectKey(key)) return 'openai_direct';
+  return 'unknown';
+}
+
+/**
+ * Returns the base URL for the AI provider, auto-detected from the key prefix.
+ * If IVX_AI_GATEWAY_URL is explicitly set (and not a Rork domain), it takes
+ * priority — this lets the operator override the auto-detection if needed.
+ * Otherwise, the key prefix determines the endpoint.
+ */
+function getIVXAIGatewayRootUrl(): string {
+  const configured = readTrimmed(process.env.IVX_AI_GATEWAY_URL);
+  // Rork independence guard: never honor a gateway URL that points at a
+  // Rork-hosted domain, even if a stale env var is still set on the host.
+  if (configured && !isRorkDomain(configured)) {
+    return configured;
+  }
+  // Auto-detect from key prefix
+  const key = getIVXAIGatewayApiKey();
+  if (key && isVercelGatewayKey(key)) {
+    return VERCEL_AI_GATEWAY_BASE;
+  }
+  return OPENAI_DIRECT_BASE;
 }
 
 function buildGatewayBaseUrl(rootUrl: string): string | null {
@@ -173,24 +212,17 @@ function isRorkDomain(url: string): boolean {
 
 function getGatewayBaseUrlCandidates(): string[] {
   const configured = getGatewayBaseUrl();
-  const canonical = buildGatewayBaseUrl('https://api.openai.com/v1');
-  // Always include the canonical Vercel gateway as a fallback candidate so a
-  // misconfigured IVX_AI_GATEWAY_URL cannot strand the backend on a proxy that
-  // strips auth headers (which causes free-tier 429s on a paid account).
-  //
-  // Rork toolkit cutover (2026-07-07): the Rork toolkit URL is no longer a
-  // candidate. The IVX AI runtime now relies exclusively on IVX-owned
-  // providers: the Vercel AI Gateway (AI_GATEWAY_API_KEY) as primary, and
-  // OpenAI direct / Anthropic direct as fallbacks (see
-  // ivx-ai-provider-fallback.ts). If none of these keys are configured the
-  // runtime throws a clear configuration error instead of silently falling
-  // back to a Rork-hosted endpoint.
-  //
-  // Rork independence guard (2026-07-07): any candidate that resolves to a
-  // Rork domain is filtered out, so a stale IVX_AI_GATEWAY_URL env var on the
-  // host cannot silently re-route production through toolkit.rork.com.
-  const candidates = [configured, canonical].filter((c): c is string => c !== null && !isRorkDomain(c));
-
+  // Auto-detect fallback candidate based on key prefix.
+  // If the primary is a Vercel key (vck_), the fallback candidate is OpenAI direct.
+  // If the primary is an OpenAI key (sk-), the fallback candidate is the Vercel gateway.
+  // This ensures both endpoints are tried if the key/URL auto-detection mismatches.
+  const key = getIVXAIGatewayApiKey();
+  const fallbackCandidate = key && isVercelGatewayKey(key)
+    ? buildGatewayBaseUrl(OPENAI_DIRECT_BASE)
+    : buildGatewayBaseUrl(VERCEL_AI_GATEWAY_BASE);
+  // Rork independence guard: any candidate that resolves to a Rork domain is
+  // filtered out, so a stale env var cannot re-route through toolkit.rork.com.
+  const candidates = [configured, fallbackCandidate].filter((c): c is string => c !== null && !isRorkDomain(c));
   return [...new Set(candidates)];
 }
 
@@ -270,17 +302,31 @@ function normalizeMessages(messages: IVXAITextMessage[] | undefined): IVXAITextM
 export function resolveIVXAIModel(explicitModel?: string | null, envCandidates: string[] = []): string {
   const explicit = readTrimmed(explicitModel);
   if (explicit) {
-    return stripOpenaiPrefix(explicit);
+    return normalizeModelForProvider(stripOpenaiPrefix(explicit));
   }
 
   for (const envName of envCandidates) {
     const candidate = readTrimmed(process.env[envName]);
     if (candidate) {
-      return stripOpenaiPrefix(candidate);
+      return normalizeModelForProvider(stripOpenaiPrefix(candidate));
     }
   }
 
-  return DEFAULT_IVX_AI_MODEL;
+  return normalizeModelForProvider(DEFAULT_IVX_AI_MODEL);
+}
+
+/**
+ * Normalize the model name for the active provider.
+ * Vercel AI Gateway requires the `openai/` prefix (e.g. `openai/gpt-4o`).
+ * OpenAI direct API uses bare model names (e.g. `gpt-4o`).
+ */
+function normalizeModelForProvider(model: string): string {
+  const providerType = getIVXAIProviderType();
+  const bare = model.replace(/^openai\//, '');
+  if (providerType === 'vercel_gateway') {
+    return bare.startsWith('openai/') ? bare : `openai/${bare}`;
+  }
+  return bare;
 }
 
 /** Strip the openai/ prefix used by the old Vercel AI Gateway routing. */
@@ -307,9 +353,11 @@ export function getIVXAIEndpoint(model: string = DEFAULT_IVX_AI_MODEL): string |
 export type IVXAIStartupValidation = {
   ok: boolean;
   provider: string;
+  providerType: 'vercel_gateway' | 'openai_direct' | 'unknown';
   model: string;
   adapterVersion: string;
   keyLoaded: boolean;
+  keyPrefix: string;
   baseUrl: string | null;
   endpoint: string | null;
   errors: string[];
@@ -325,15 +373,17 @@ function getAdapterVersion(): string {
   } catch {
     cachedAdapterVersion = 'unknown';
   }
-  return cachedAdapterVersion;
+  return cachedAdapterVersion!;
 }
 
 export function validateIVXAIStartup(): IVXAIStartupValidation {
   const errors: string[] = [];
-  const model = DEFAULT_IVX_AI_MODEL;
+  const model = normalizeModelForProvider(DEFAULT_IVX_AI_MODEL);
   const rootUrl = getIVXAIGatewayRootUrl();
   const apiKey = getIVXAIGatewayApiKey();
   const keyLoaded = apiKey.length > 0;
+  const keyPrefix = keyLoaded ? `${apiKey.slice(0, 4)}***` : 'none';
+  const providerType = getIVXAIProviderType();
   const baseUrl = getGatewayBaseUrl();
   const adapterVersion = getAdapterVersion();
 
@@ -351,13 +401,19 @@ export function validateIVXAIStartup(): IVXAIStartupValidation {
   if (majorVersion > 3) {
     errors.push(`@ai-sdk/openai@${adapterVersion} uses spec v4, incompatible with ai@6 — downgrade to @ai-sdk/openai@3.x`);
   }
+  // Warn if key prefix doesn't match any known provider
+  if (keyLoaded && providerType === 'unknown') {
+    errors.push(`API key prefix ${keyPrefix} is not recognized (expected sk- for OpenAI or vck_ for Vercel AI Gateway)`);
+  }
 
   return {
     ok: errors.length === 0,
-    provider: 'openai',
+    provider: providerType === 'vercel_gateway' ? 'vercel_ai_gateway' : 'openai',
+    providerType,
     model,
     adapterVersion,
     keyLoaded,
+    keyPrefix,
     baseUrl,
     endpoint: getIVXAIEndpoint(model),
     errors,

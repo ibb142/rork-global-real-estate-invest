@@ -14,6 +14,7 @@
 
 import { resolveMediaProvenance, type MediaProvenance } from './ivx-media-labels';
 import { selectMediaProvider, estimateMediaCostUsd, type MediaProviderSelection } from './ivx-media-providers';
+import { autoDetectGatewayBaseUrl } from './ivx-provider-autodetect';
 
 export type GeneratedImage = {
   /** base64-encoded image bytes (no data: prefix). */
@@ -59,10 +60,7 @@ function getGatewayApiKey(): string {
 }
 
 function getGatewayBaseUrl(): string {
-  const root = readTrimmed(process.env.IVX_AI_BASE_URL)
-    || readTrimmed(process.env.IVX_AI_GATEWAY_URL)
-    || 'https://api.openai.com/v1';
-  return root.replace(/\/+$/, '');
+  return autoDetectGatewayBaseUrl();
 }
 
 /**
