@@ -822,7 +822,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/src/modules/ivx-developer/capitalPipelineService.ts\", \"limit\": 200}",
       "createdAt": 1784160566198,
-      "completedAt": 1784160566224
+      "completedAt": 1784160566224,
+      "compactedAt": 1784164220458
     },
     {
       "type": "tool",
@@ -840,7 +841,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/src/modules/ivx-developer/outreachService.ts\", \"limit\": 200}",
       "createdAt": 1784160566201,
-      "completedAt": 1784160566224
+      "completedAt": 1784160566224,
+      "compactedAt": 1784164220458
     },
     {
       "type": "tool",
@@ -858,7 +860,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/src/modules/ivx-developer/dealTrackingService.ts\", \"limit\": 200}",
       "createdAt": 1784160566204,
-      "completedAt": 1784160566224
+      "completedAt": 1784160566224,
+      "compactedAt": 1784164220458
     },
     {
       "type": "tool",
@@ -876,7 +879,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/src/modules/ivx-developer/dealMatchingService.ts\", \"limit\": 200}",
       "createdAt": 1784160566210,
-      "completedAt": 1784160566225
+      "completedAt": 1784160566225,
+      "compactedAt": 1784164220458
     },
     {
       "type": "text",
@@ -899,7 +903,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"curl -s -H 'Accept: application/json' https://api.ivxholding.com/health 2>/dev/null | python3 -c \\\"import json,sys; d=json.load(sys.stdin); print('routes:'); [print(' ', r) for r in d.get('routes', []) if 'crm' in r.lower() or 'investor' in r.lower() or 'capital' in r.lower() or 'outreach' in r.lower() or 'matching' in r.lower() or 'tracking' in r.lower()]\\\" 2>/dev/null | head -40\"}",
       "createdAt": 1784160571586,
-      "completedAt": 1784160573520
+      "completedAt": 1784160573520,
+      "compactedAt": 1784164220458
     },
     {
       "type": "tool",
@@ -917,7 +922,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/backend && grep -R \\\"api/ivx/investors\\\\|api/ivx/capital-pipeline\\\\|api/ivx/outreach\\\\|api/ivx/deal-tracking\\\\|api/ivx/deal-matching\\\" --include=\\\"*.ts\\\" -l | head -20\"}",
       "createdAt": 1784160572777,
-      "completedAt": 1784160573554
+      "completedAt": 1784160573554,
+      "compactedAt": 1784164220458
     },
     {
       "type": "tool",
@@ -935,7 +941,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app/backend && grep -n \\\"api/ivx/investors\\\\|api/ivx/capital-pipeline\\\\|api/ivx/outreach\\\\|api/ivx/deal-tracking\\\\|api/ivx/deal-matching\\\" api/ivx-investor-crm.ts api/ivx-capital-pipeline.ts api/ivx-outreach.ts api/ivx-deal-tracking.ts api/ivx-deal-matching.ts hono.ts 2>/dev/null | head -40\"}",
       "createdAt": 1784160575919,
-      "completedAt": 1784160577458
+      "completedAt": 1784160577458,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -965,7 +972,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && echo \\\"=== Get owner access token ===\\\" && TOKEN=$(curl -s -X POST \\\\\\n  -H 'Content-Type: application/json' \\\\\\n  -H 'Accept: application/json' \\\\\\n  \\\"https://api.ivxholding.com/api/auth/login\\\" \\\\\\n  -d '{\\\"email\\\":\\\"Iperez4242@gmail.com\\\",\\\"password\\\":\\\"X146corp@1x146corp$$1\\\"}' 2>/dev/null | python3 -c \\\"\\nimport json,sys\\nd=json.load(sys.stdin)\\nprint(d.get('token', d.get('access_token', d.get('session',{}).get('access_token',''))))\\n\\\") && echo \\\"Token obtained: ${TOKEN:0:10}...\\\" && echo \\\"\\\" && echo \\\"=== Test CRM endpoints ===\\\" && for endpoint in \\\"/api/ivx/investors\\\" \\\"/api/ivx/capital-pipeline\\\" \\\"/api/ivx/outreach\\\" \\\"/api/ivx/deal-tracking\\\" \\\"/api/ivx/deal-matching\\\"; do\\n  echo \\\"--- $endpoint ---\\\"\\n  curl -s -w \\\"HTTP %{http_code} | time %{time_total}s\\\\n\\\" -H \\\"Authorization: Bearer $TOKEN\\\" -H 'Accept: application/json' \\\"https://api.ivxholding.com$endpoint\\\" 2>/dev/null | python3 -c \\\"\\nimport json,sys,os\\nraw = sys.stdin.read()\\nlines = raw.strip().split('\\\\\\\\n')\\nbody = '\\\\\\\\n'.join(lines[:-1]) if len(lines) > 1 else raw\\nmeta = lines[-1] if len(lines) > 1 else ''\\ntry:\\n    d = json.loads(body)\\n    if isinstance(d, dict):\\n        keys = ', '.join(d.keys())\\n        print('keys:', keys)\\n        if 'summary' in d and d['summary']:\\n            print('summary:', d['summary'])\\n        elif 'metrics' in d and d['metrics']:\\n            print('metrics:', d['metrics'])\\n        elif 'result' in d and d['result']:\\n            print('result:', d['result'])\\n        else:\\n            print('data:', d)\\n    else:\\n        print('array length:', len(d))\\nexcept Exception as e:\\n    print('parse error:', e)\\n    print('body preview:', body[:200])\\nprint(meta)\\n\\\" 2>/dev/null\\n  echo \\\"\\\"\\ndone\"}",
       "createdAt": 1784160587496,
-      "completedAt": 1784160590080
+      "completedAt": 1784160590080,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -996,7 +1004,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/app/(tabs)/crm.tsx\", \"offset\": 0, \"limit\": 500}",
       "createdAt": 1784160599540,
-      "completedAt": 1784160599547
+      "completedAt": 1784160599547,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1020,7 +1029,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/app/(tabs)/crm.tsx\", \"content\": \"/**\\n * BLOCK 27 — Owner CRM landing (IVX → CRM).\\n *\\n * This route replaces the old debug/duplicate `index` tab. It is the dedicated\\n * owner-only CRM hub for all tokenized deals: Capital, Sales, and Execution\\n * sections that open the existing owner-gated CRM screens, with live dashboard\\n * badge counts. Hidden from public/investor/buyer roles at the tab layer; the\\n * screen itself also guards content so a non-owner who deep-links here sees an\\n * access-restricted state instead of CRM data.\\n *\\n * Build 35 fix: each top stat tile loads independently with its own cached-first\\n * value, skeleton, and error state. A single slow or failing endpoint no longer\\n * blocks all five tiles from rendering.\\n */\\nimport React, { useMemo, useCallback } from 'react';\\nimport {\\n  View,\\n  Text,\\n  StyleSheet,\\n  ScrollView,\\n  TouchableOpacity,\\n  RefreshControl,\\n  ActivityIndicator,\\n} from 'react-native';\\nimport { SafeAreaView } from 'react-native-safe-area-context';\\nimport { useRouter } from 'expo-router';\\nimport { useQuery } from '@tanstack/react-query';\\nimport AsyncStorage from '@react-native-async-storage/async-storage';\\nimport {\\n  Users,\\n  Building2,\\n  Handshake,\\n  Landmark,\\n  Send,\\n  Megaphone,\\n  Gauge,\\n  Crosshair,\\n  GitBranch,\\n  ClipboardList,\\n  Target,\\n  ChevronRight,\\n  ShieldAlert,\\n  Lock,\\n  AlertCircle,\\n  type LucideIcon,\\n} from 'lucide-react-native';\\nimport Colors from '@/constants/colors';\\nimport { useAuth } from '@/lib/auth-context';\\nimport { isOpenAccessModeEnabled } from '@/lib/open-access';\\nimport { listInvestors } from '@/src/modules/ivx-developer/investorCrmService';\\nimport { listPipelineEntries } from '@/src/modules/ivx-developer/capitalPipelineService';\\nimport { listOutreachMessages } from '@/src/modules/ivx-developer/outreachService';\\nimport { listDeals } from '@/src/modules/ivx-developer/dealTrackingService';\\nimport { getDealMatching } from '@/src/modules/ivx-developer/dealMatchingService';\\n\\ntype CrmRoute =\\n  | '/ivx/investors'\\n  | '/ivx/capital-network'\\n  | '/ivx/capital-outreach'\\n  | '/ivx/outreach'\\n  | '/ivx/lead-scoring'\\n  | '/ivx/deal-matching'\\n  | '/ivx/capital-pipeline'\\n  | '/ivx/deal-tracking'\\n  | '/ivx/opportunity-engine';\\n\\ntype CrmLink = {\\n  label: string;\\n  description: string;\\n  icon: LucideIcon;\\n  route: CrmRoute;\\n  testID: string;\\n};\\n\\ntype CrmSection = {\\n  title: string;\\n  accent: string;\\n  links: CrmLink[];\\n};\\n\\ntype BadgeKey = 'investors' | 'buyers' | 'activeDeals' | 'pendingOutreach' | 'matchesToday';\\n\\ntype BadgeData = Record<BadgeKey, number>;\\n\\ntype BadgeConfig = {\\n  key: BadgeKey;\\n  label: string;\\n  cacheKey: string;\\n  queryKey: string[];\\n};\\n\\nconst CRM_SECTIONS: CrmSection[] = [\\n  {\\n    title: 'Capital',\\n    accent: Colors.gold,\\n    links: [\\n      { label: 'Investors', description: 'Investor CRM & relationships', icon: Users, route: '/ivx/investors', testID: 'crm-link-investors' },\\n      { label: 'Buyers', description: 'Buyer prospects & matching', icon: Building2, route: '/ivx/capital-network', testID: 'crm-link-buyers' },\\n      { label: 'Partners', description: 'Strategic partners network', icon: Handshake, route: '/ivx/capital-network', testID: 'crm-link-partners' },\\n      { label: 'Lenders', description: 'Financing & private credit', icon: Landmark, route: '/ivx/capital-network', testID: 'crm-link-lenders' },\\n    ],\\n  },\\n  {\\n    title: 'Sales',\\n    accent: Colors.info,\\n    links: [\\n      { label: 'Outreach', description: 'Capital outreach strategy', icon: Send, route: '/ivx/capital-outreach', testID: 'crm-link-outreach' },\\n      { label: 'Campaigns', description: 'Automated message campaigns', icon: Megaphone, route: '/ivx/outreach', testID: 'crm-link-campaigns' },\\n      { label: 'Lead Scores', description: 'Hot / warm / cold scoring', icon: Gauge, route: '/ivx/lead-scoring', testID: 'crm-link-lead-scores' },\\n      { label: 'Matching', description: 'Deal-to-investor matching', icon: Crosshair, route: '/ivx/deal-matching', testID: 'crm-link-matching' },\\n    ],\\n  },\\n  {\\n    title: 'Execution',\\n    accent: Colors.success,\\n    links: [\\n      { label: 'Pipeline', description: 'Capital pipeline stages', icon: GitBranch, route: '/ivx/capital-pipeline', testID: 'crm-link-pipeline' },\\n      { label: 'Deal Tracking', description: 'Lifecycle & outcome metrics', icon: ClipboardList, route: '/ivx/deal-tracking', testID: 'crm-link-deal-tracking' },\\n      { label: 'Active Opportunities', description: \\\"Today's best opportunities\\\", icon: Target, route: '/ivx/opportunity-engine', testID: 'crm-link-active-opportunities' },\\n    ],\\n  },\\n];\\n\\nconst BADGE_CONFIG: BadgeConfig[] = [\\n  { key: 'investors', label: 'Investors', cacheKey: 'ivx-crm-badge-investors', queryKey: ['crm-badge', 'investors'] },\\n  { key: 'buyers', label: 'Buyers', cacheKey: 'ivx-crm-badge-buyers', queryKey: ['crm-badge', 'buyers'] },\\n  { key: 'activeDeals', label: 'Active Deals', cacheKey: 'ivx-crm-badge-active-deals', queryKey: ['crm-badge', 'active-deals'] },\\n  { key: 'pendingOutreach', label: 'Pending Outreach', cacheKey: 'ivx-crm-badge-pending-outreach', queryKey: ['crm-badge', 'pending-outreach'] },\\n  { key: 'matchesToday', label: 'Matches Today', cacheKey: 'ivx-crm-badge-matches-today', queryKey: ['crm-badge', 'matches-today'] },\\n];\\n\\nconst CACHE_VERSION = 'v1';\\n\\nasync function loadCachedBadge(cacheKey: string): Promise<number | null> {\\n  try {\\n    const raw = await AsyncStorage.getItem(`${cacheKey}:${CACHE_VERSION}`);\\n    if (!raw) return null;\\n    const parsed = Number(raw);\\n    return Number.isFinite(parsed) ? parsed : null;\\n  } catch {\\n    return null;\\n  }\\n}\\n\\nasync function saveCachedBadge(cacheKey: string, value: number): Promise<void> {\\n  try {\\n    await AsyncStorage.setItem(`${cacheKey}:${CACHE_VERSION}`, String(value));\\n  } catch {\\n    // cache write is best-effort\\n  }\\n}\\n\\nasync function fetchInvestorsBadge(): Promise<number> {\\n  const result = await listInvestors();\\n  const value = result.summary?.total ?? result.investors.length;\\n  await saveCachedBadge(BADGE_CONFIG[0].cacheKey, value);\\n  return value;\\n}\\n\\nasync function fetchBuyersBadge(): Promise<number> {\\n  const result = await listPipelineEntries();\\n  const value = result.summary?.activeBuyers ?? 0;\\n  await saveCachedBadge(BADGE_CONFIG[1].cacheKey, value);\\n  return value;\\n}\\n\\nasync function fetchActiveDealsBadge(): Promise<number> {\\n  const result = await listDeals();\\n  const open = result.metrics?.byStatus?.open ?? 0;\\n  const inProgress = result.metrics?.byStatus?.in_progress ?? 0;\\n  const value = open + inProgress;\\n  await saveCachedBadge(BADGE_CONFIG[2].cacheKey, value);\\n  return value;\\n}\\n\\nasync function fetchPendingOutreachBadge(): Promise<number> {\\n  const result = await listOutreachMessages();\\n  const value = result.summary?.pendingApproval ?? 0;\\n  await saveCachedBadge(BADGE_CONFIG[3].cacheKey, value);\\n  return value;\\n}\\n\\nasync function fetchMatchesTodayBadge(): Promise<number> {\\n  const result = await getDealMatching();\\n  const value = result?.summary?.strongMatches ?? 0;\\n  await saveCachedBadge(BADGE_CONFIG[4].cacheKey, value);\\n  return value;\\n}\\n\\nconst BADGE_FETCHERS: Record<BadgeKey, () => Promise<number>> = {\\n  investors: fetchInvestorsBadge,\\n  buyers: fetchBuyersBadge,\\n  activeDeals: fetchActiveDealsBadge,\\n  pendingOutreach: fetchPendingOutreachBadge,\\n  matchesToday: fetchMatchesTodayBadge,\\n};\\n\\nexport default function CrmScreen() {\\n  const router = useRouter();\\n  const { profileData } = useAuth();\\n\\n  const isOwner = useMemo(() => {\\n    // Mirror useAdminGuard: open-access builds (dev/preview) bypass the owner\\n    // gate so Admin → Members and CRM routes are reachable without a session.\\n    // Production builds keep the strict owner/admin role check.\\n    if (isOpenAccessModeEnabled()) return true;\\n    const role = ((profileData as { role?: string } | null)?.role ?? '').toLowerCase();\\n    return role === 'owner' || role === 'admin';\\n  }, [profileData]);\\n\\n  const openRoute = useCallback(\\n    (route: CrmRoute) => {\\n      router.push(route as never);\\n    },\\n    [router],\\n  );\\n\\n  if (!isOwner) {\\n    return (\\n      <SafeAreaView style={styles.container} edges={['top']}>\\n        <View style={styles.restricted} testID=\\\"crm-access-restricted\\\">\\n          <View style={styles.restrictedIcon}>\\n            <Lock color={Colors.gold} size={30} strokeWidth={2.2} />\\n          </View>\\n          <Text style={styles.restrictedTitle}>Owner access only</Text>\\n          <Text style={styles.restrictedBody}>\\n            The CRM is restricted to the IVX owner. Sign in with an owner account to manage capital, sales, and execution.\\n          </Text>\\n        </View>\\n      </SafeAreaView>\\n    );\\n  }\\n\\n  return (\\n    <SafeAreaView style={styles.container} edges={['top']}>\\n      <ScrollView\\n        contentContainerStyle={styles.content}\\n        showsVerticalScrollIndicator={false}\\n      >\\n        <View style={styles.header}>\\n          <View style={styles.headerBadge}>\\n            <ShieldAlert color={Colors.black} size={13} strokeWidth={2.6} />\\n            <Text style={styles.headerBadgeText}>OWNER</Text>\\n          </View>\\n          <Text style={styles.title}>CRM</Text>\\n          <Text style={styles.subtitle}>Capital deployment across all tokenized deals</Text>\\n        </View>\\n\\n        <View style={styles.statsRow}>\\n          {BADGE_CONFIG.map((config) => (\\n            <StatTile key={config.key} config={config} />\\n          ))}\\n        </View>\\n\\n        {CRM_SECTIONS.map((section) => (\\n          <View key={section.title} style={styles.section}>\\n            <View style={styles.sectionHeader}>\\n              <View style={[styles.sectionDot, { backgroundColor: section.accent }]} />\\n              <Text style={styles.sectionTitle}>{section.title}</Text>\\n            </View>\\n            <View style={styles.card}>\\n              {section.links.map((link, idx) => {\\n                const Icon = link.icon;\\n                return (\\n                  <TouchableOpacity\\n                    key={link.testID}\\n                    style={[styles.row, idx === section.links.length - 1 && styles.rowLast]}\\n                    onPress={() => openRoute(link.route)}\\n                    activeOpacity={0.7}\\n                    accessibilityRole=\\\"button\\\"\\n                    accessibilityLabel={`Open ${link.label}`}\\n                    testID={link.testID}\\n                  >\\n                    <View style={[styles.rowIcon, { borderColor: section.accent }]}>\\n                      <Icon color={section.accent} size={19} strokeWidth={2.2} />\\n                    </View>\\n                    <View style={styles.rowText}>\\n                      <Text style={styles.rowLabel}>{link.label}</Text>\\n                      <Text style={styles.rowDescription}>{link.description}</Text>\\n                    </View>\\n                    <ChevronRight color={Colors.textTertiary} size={18} />\\n                  </TouchableOpacity>\\n                );\\n              })}\\n            </View>\\n          </View>\\n        ))}\\n\\n        <View style={styles.footerSpace} />\\n      </ScrollView>\\n    </SafeAreaView>\\n  );\\n}\\n\\nfunction StatTile({ config }: { config: BadgeConfig }) {\\n  const query = useQuery({\\n    queryKey: config.queryKey,\\n    queryFn: BADGE_FETCHERS[config.key],\\n    enabled: true,\\n    staleTime: 1000 * 30,\\n    refetchOnWindowFocus: true,\\n    placeholderData: (prev) => prev,\\n    initialData: async () => {\\n      const cached = await loadCachedBadge(config.cacheKey);\\n      return cached ?? undefined;\\n    },\\n  });\\n\\n  const isLoading = query.isLoading && query.data === undefined;\\n  const hasError = query.isError && query.data === undefined;\\n  const value = query.data ?? 0;\\n\\n  return (\\n    <View style={styles.statTile} testID={`crm-stat-${config.key}`}>\\n      {isLoading ? (\\n        <View style={styles.skeletonValue} />\\n      ) : hasError ? (\\n        <AlertCircle color={Colors.warning} size={22} />\\n      ) : (\\n        <Text style={styles.statValue}>{value}</Text>\\n      )}\\n      <Text style={styles.statLabel}>{config.label}</Text>\\n      {query.isRefetching && !isLoading && (\\n        <View style={styles.refetchDot} />\\n      )}\\n    </View>\\n  );\\n}\\n\\nconst styles = StyleSheet.create({\\n  container: {\\n    flex: 1,\\n    backgroundColor: Colors.background,\\n  },\\n  content: {\\n    paddingHorizontal: 16,\\n    paddingTop: 8,\\n  },\\n  header: {\\n    marginBottom: 20,\\n  },\\n  headerBadge: {\\n    flexDirection: 'row',\\n    alignItems: 'center',\\n    alignSelf: 'flex-start',\\n    gap: 5,\\n    backgroundColor: Colors.gold,\\n    paddingHorizontal: 9,\\n    paddingVertical: 4,\\n    borderRadius: 6,\\n    marginBottom: 10,\\n  },\\n  headerBadgeText: {\\n    color: Colors.black,\\n    fontSize: 11,\\n    fontWeight: '800' as const,\\n    letterSpacing: 0.6,\\n  },\\n  title: {\\n    color: Colors.text,\\n    fontSize: 32,\\n    fontWeight: '800' as const,\\n    letterSpacing: -0.5,\\n  },\\n  subtitle: {\\n    color: Colors.textSecondary,\\n    fontSize: 14,\\n    marginTop: 4,\\n  },\\n  statsRow: {\\n    flexDirection: 'row',\\n    flexWrap: 'wrap',\\n    gap: 10,\\n    marginBottom: 24,\\n  },\\n  statTile: {\\n    flexGrow: 1,\\n    flexBasis: '30%',\\n    minWidth: 96,\\n    backgroundColor: Colors.surface,\\n    borderWidth: 1,\\n    borderColor: Colors.surfaceBorder,\\n    borderRadius: 14,\\n    paddingVertical: 16,\\n    paddingHorizontal: 12,\\n    alignItems: 'center',\\n    justifyContent: 'center',\\n    minHeight: 76,\\n  },\\n  skeletonValue: {\\n    width: 36,\\n    height: 28,\\n    borderRadius: 6,\\n    backgroundColor: Colors.surfaceBorder,\\n    marginBottom: 2,\\n  },\\n  statValue: {\\n    color: Colors.gold,\\n    fontSize: 24,\\n    fontWeight: '800' as const,\\n  },\\n  statLabel: {\\n    color: Colors.textSecondary,\\n    fontSize: 11,\\n    fontWeight: '600' as const,\\n    marginTop: 4,\\n    textAlign: 'center',\\n  },\\n  refetchDot: {\\n    position: 'absolute',\\n    top: 8,\\n    right: 8,\\n    width: 6,\\n    height: 6,\\n    borderRadius: 3,\\n    backgroundColor: Colors.gold,\\n  },\\n  section: {\\n    marginBottom: 22,\\n  },\\n  sectionHeader: {\\n    flexDirection: 'row',\\n    alignItems: 'center',\\n    gap: 8,\\n    marginBottom: 10,\\n    marginLeft: 2,\\n  },\\n  sectionDot: {\\n    width: 8,\\n    height: 8,\\n    borderRadius: 4,\\n  },\\n  sectionTitle: {\\n    color: Colors.text,\\n    fontSize: 13,\\n    fontWeight: '700' as const,\\n    letterSpacing: 1,\\n    textTransform: 'uppercase',\\n  },\\n  card: {\\n    backgroundColor: Colors.surface,\\n    borderWidth: 1,\\n    borderColor: Colors.surfaceBorder,\\n    borderRadius: 16,\\n    overflow: 'hidden',\\n  },\\n  row: {\\n    flexDirection: 'row',\\n    alignItems: 'center',\\n    paddingVertical: 14,\\n    paddingHorizontal: 14,\\n    borderBottomWidth: StyleSheet.hairlineWidth,\\n    borderBottomColor: Colors.surfaceBorder,\\n  },\\n  rowLast: {\\n    borderBottomWidth: 0,\\n  },\\n  rowIcon: {\\n    width: 40,\\n    height: 40,\\n    borderRadius: 11,\\n    borderWidth: 1.2,\\n    alignItems: 'center',\\n    justifyContent: 'center',\\n    backgroundColor: Colors.backgroundSecondary,\\n  },\\n  rowText: {\\n    flex: 1,\\n    marginLeft: 13,\\n  },\\n  rowLabel: {\\n    color: Colors.text,\\n    fontSize: 15,\\n    fontWeight: '700' as const,\\n  },\\n  rowDescription: {\\n    color: Colors.textSecondary,\\n    fontSize: 12,\\n    marginTop: 2,\\n  },\\n  restricted: {\\n    flex: 1,\\n    alignItems: 'center',\\n    justifyContent: 'center',\\n    paddingHorizontal: 40,\\n  },\\n  restrictedIcon: {\\n    width: 64,\\n    height: 64,\\n    borderRadius: 32,\\n    borderWidth: 1.5,\\n    borderColor: Colors.gold,\\n    alignItems: 'center',\\n    justifyContent: 'center',\\n    marginBottom: 18,\\n  },\\n  restrictedTitle: {\\n    color: Colors.text,\\n    fontSize: 20,\\n    fontWeight: '800' as const,\\n    marginBottom: 8,\\n  },\\n  restrictedBody: {\\n    color: Colors.textSecondary,\\n    fontSize: 14,\\n    textAlign: 'center',\\n    lineHeight: 20,\\n  },\\n  footerSpace: {\\n    height: 24,\\n  },\\n});\\n\"}",
       "createdAt": 1784160604288,
-      "completedAt": 1784160638754
+      "completedAt": 1784160638754,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1044,7 +1054,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"expo/app/(tabs)/crm.tsx\",\"content\":\"/**\\n * BLOCK 27 — Owner CRM landing (IVX → CRM).\\n *\\n * This route replaces the old debug/duplicate `index` tab. It is the dedicated\\n * owner-only CRM hub for all tokenized deals: Capital, Sales, and Execution\\n * sections that open the existing owner-gated CRM screens, with live dashboard\\n * badge counts. Hidden from public/investor/buyer roles at the tab layer; the\\n * screen itself also guards content so a non-owner who deep-links here sees an\\n * access-restricted state instead of CRM data.\\n *\\n * Build 35 fix: each top stat tile loads independently with its own cached-first\\n * value, skeleton, and error state. A single slow or failing endpoint no longer\\n * blocks all five tiles from rendering.\\n */\\nimport React, { useMemo, useCallback, useState, useEffect } from 'react';\\nimport {\\n  View,\\n  Text,\\n  StyleSheet,\\n  ScrollView,\\n  TouchableOpacity,\\n  RefreshControl,\\n  ActivityIndicator,\\n} from 'react-native';\\nimport { SafeAreaView } from 'react-native-safe-area-context';\\nimport { useRouter } from 'expo-router';\\nimport { useQuery, useQueryClient } from '@tanstack/react-query';\\nimport AsyncStorage from '@react-native-async-storage/async-storage';\\nimport {\\n  Users,\\n  Building2,\\n  Handshake,\\n  Landmark,\\n  Send,\\n  Megaphone,\\n  Gauge,\\n  Crosshair,\\n  GitBranch,\\n  ClipboardList,\\n  Target,\\n  ChevronRight,\\n  ShieldAlert,\\n  Lock,\\n  AlertCircle,\\n  type LucideIcon,\\n} from 'lucide-react-native';\\nimport Colors from '@/constants/colors';\\nimport { useAuth } from '@/lib/auth-context';\\nimport { isOpenAccessModeEnabled } from '@/lib/open-access';\\nimport { listInvestors } from '@/src/modules/ivx-developer/investorCrmService';\\nimport { listPipelineEntries } from '@/src/modules/ivx-developer/capitalPipelineService';\\nimport { listOutreachMessages } from '@/src/modules/ivx-developer/outreachService';\\nimport { listDeals } from '@/src/modules/ivx-developer/dealTrackingService';\\nimport { getDealMatching } from '@/src/modules/ivx-developer/dealMatchingService';\\n\\ntype CrmRoute =\\n  | '/ivx/investors'\\n  | '/ivx/capital-network'\\n  | '/ivx/capital-outreach'\\n  | '/ivx/outreach'\\n  | '/ivx/lead-scoring'\\n  | '/ivx/deal-matching'\\n  | '/ivx/capital-pipeline'\\n  | '/ivx/deal-tracking'\\n  | '/ivx/opportunity-engine';\\n\\ntype CrmLink = {\\n  label: string;\\n  description: string;\\n  icon: LucideIcon;\\n  route: CrmRoute;\\n  testID: string;\\n};\\n\\ntype CrmSection = {\\n  title: string;\\n  accent: string;\\n  links: CrmLink[];\\n};\\n\\ntype BadgeKey = 'investors' | 'buyers' | 'activeDeals' | 'pendingOutreach' | 'matchesToday';\\n\\ntype BadgeConfig = {\\n  key: BadgeKey;\\n  label: string;\\n  cacheKey: string;\\n  queryKey: string[];\\n};\\n\\nconst CRM_SECTIONS: CrmSection[] = [\\n  {\\n    title: 'Capital',\\n    accent: Colors.gold,\\n    links: [\\n      { label: 'Investors', description: 'Investor CRM & relationships', icon: Users, route: '/ivx/investors', testID: 'crm-link-investors' },\\n      { label: 'Buyers', description: 'Buyer prospects & matching', icon: Building2, route: '/ivx/capital-network', testID: 'crm-link-buyers' },\\n      { label: 'Partners', description: 'Strategic partners network', icon: Handshake, route: '/ivx/capital-network', testID: 'crm-link-partners' },\\n      { label: 'Lenders', description: 'Financing & private credit', icon: Landmark, route: '/ivx/capital-network', testID: 'crm-link-lenders' },\\n    ],\\n  },\\n  {\\n    title: 'Sales',\\n    accent: Colors.info,\\n    links: [\\n      { label: 'Outreach', description: 'Capital outreach strategy', icon: Send, route: '/ivx/capital-outreach', testID: 'crm-link-outreach' },\\n      { label: 'Campaigns', description: 'Automated message campaigns', icon: Megaphone, route: '/ivx/outreach', testID: 'crm-link-campaigns' },\\n      { label: 'Lead Scores', description: 'Hot / warm / cold scoring', icon: Gauge, route: '/ivx/lead-scoring', testID: 'crm-link-lead-scores' },\\n      { label: 'Matching', description: 'Deal-to-investor matching', icon: Crosshair, route: '/ivx/deal-matching', testID: 'crm-link-matching' },\\n    ],\\n  },\\n  {\\n    title: 'Execution',\\n    accent: Colors.success,\\n    links: [\\n      { label: 'Pipeline', description: 'Capital pipeline stages', icon: GitBranch, route: '/ivx/capital-pipeline', testID: 'crm-link-pipeline' },\\n      { label: 'Deal Tracking', description: 'Lifecycle & outcome metrics', icon: ClipboardList, route: '/ivx/deal-tracking', testID: 'crm-link-deal-tracking' },\\n      { label: 'Active Opportunities', description: \\\"Today's best opportunities\\\", icon: Target, route: '/ivx/opportunity-engine', testID: 'crm-link-active-opportunities' },\\n    ],\\n  },\\n];\\n\\nconst BADGE_CONFIG: BadgeConfig[] = [\\n  { key: 'investors', label: 'Investors', cacheKey: 'ivx-crm-badge-investors', queryKey: ['crm-badge', 'investors'] },\\n  { key: 'buyers', label: 'Buyers', cacheKey: 'ivx-crm-badge-buyers', queryKey: ['crm-badge', 'buyers'] },\\n  { key: 'activeDeals', label: 'Active Deals', cacheKey: 'ivx-crm-badge-active-deals', queryKey: ['crm-badge', 'active-deals'] },\\n  { key: 'pendingOutreach', label: 'Pending Outreach', cacheKey: 'ivx-crm-badge-pending-outreach', queryKey: ['crm-badge', 'pending-outreach'] },\\n  { key: 'matchesToday', label: 'Matches Today', cacheKey: 'ivx-crm-badge-matches-today', queryKey: ['crm-badge', 'matches-today'] },\\n];\\n\\nconst CACHE_VERSION = 'v1';\\n\\ntype CachedBadges = Partial<Record<BadgeKey, number>>;\\n\\nasync function loadCachedBadges(): Promise<CachedBadges> {\\n  const result: CachedBadges = {};\\n  try {\\n    const entries = await AsyncStorage.multiGet(\\n      BADGE_CONFIG.map((c) => `${c.cacheKey}:${CACHE_VERSION}`),\\n    );\\n    for (let i = 0; i < entries.length; i += 1) {\\n      const [, raw] = entries[i];\\n      if (!raw) continue;\\n      const parsed = Number(raw);\\n      if (Number.isFinite(parsed)) {\\n        result[BADGE_CONFIG[i].key] = parsed;\\n      }\\n    }\\n  } catch {\\n    // cache read is best-effort\\n  }\\n  return result;\\n}\\n\\nasync function saveCachedBadge(cacheKey: string, value: number): Promise<void> {\\n  try {\\n    await AsyncStorage.setItem(`${cacheKey}:${CACHE_VERSION}`, String(value));\\n  } catch {\\n    // cache write is best-effort\\n  }\\n}\\n\\nasync function fetchInvestorsBadge(): Promise<number> {\\n  const result = await listInvestors();\\n  const value = result.summary?.total ?? result.investors.length;\\n  await saveCachedBadge(BADGE_CONFIG[0].cacheKey, value);\\n  return value;\\n}\\n\\nasync function fetchBuyersBadge(): Promise<number> {\\n  const result = await listPipelineEntries();\\n  const value = result.summary?.activeBuyers ?? 0;\\n  await saveCachedBadge(BADGE_CONFIG[1].cacheKey, value);\\n  return value;\\n}\\n\\nasync function fetchActiveDealsBadge(): Promise<number> {\\n  const result = await listDeals();\\n  const open = result.metrics?.byStatus?.open ?? 0;\\n  const inProgress = result.metrics?.byStatus?.in_progress ?? 0;\\n  const value = open + inProgress;\\n  await saveCachedBadge(BADGE_CONFIG[2].cacheKey, value);\\n  return value;\\n}\\n\\nasync function fetchPendingOutreachBadge(): Promise<number> {\\n  const result = await listOutreachMessages();\\n  const value = result.summary?.pendingApproval ?? 0;\\n  await saveCachedBadge(BADGE_CONFIG[3].cacheKey, value);\\n  return value;\\n}\\n\\nasync function fetchMatchesTodayBadge(): Promise<number> {\\n  const result = await getDealMatching();\\n  const value = result?.summary?.strongMatches ?? 0;\\n  await saveCachedBadge(BADGE_CONFIG[4].cacheKey, value);\\n  return value;\\n}\\n\\nconst BADGE_FETCHERS: Record<BadgeKey, () => Promise<number>> = {\\n  investors: fetchInvestorsBadge,\\n  buyers: fetchBuyersBadge,\\n  activeDeals: fetchActiveDealsBadge,\\n  pendingOutreach: fetchPendingOutreachBadge,\\n  matchesToday: fetchMatchesTodayBadge,\\n};\\n\\nexport default function CrmScreen() {\\n  const router = useRouter();\\n  const queryClient = useQueryClient();\\n  const { profileData } = useAuth();\\n  const [cachedBadges, setCachedBadges] = useState<CachedBadges>({});\\n  const [isCacheLoaded, setIsCacheLoaded] = useState(false);\\n\\n  useEffect(() => {\\n    let cancelled = false;\\n    loadCachedBadges().then((badges) => {\\n      if (cancelled) return;\\n      setCachedBadges(badges);\\n      setIsCacheLoaded(true);\\n    });\\n    return () => {\\n      cancelled = true;\\n    };\\n  }, []);\\n\\n  const isOwner = useMemo(() => {\\n    // Mirror useAdminGuard: open-access builds (dev/preview) bypass the owner\\n    // gate so Admin → Members and CRM routes are reachable without a session.\\n    // Production builds keep the strict owner/admin role check.\\n    if (isOpenAccessModeEnabled()) return true;\\n    const role = ((profileData as { role?: string } | null)?.role ?? '').toLowerCase();\\n    return role === 'owner' || role === 'admin';\\n  }, [profileData]);\\n\\n  const openRoute = useCallback(\\n    (route: CrmRoute) => {\\n      router.push(route as never);\\n    },\\n    [router],\\n  );\\n\\n  const handleRefresh = useCallback(() => {\\n    queryClient.invalidateQueries({ queryKey: ['crm-badge'] });\\n  }, [queryClient]);\\n\\n  const isRefetching = useMemo(() => {\\n    const states = BADGE_CONFIG.map((c) => queryClient.getQueryState(c.queryKey));\\n    return states.some((s) => s?.fetchStatus === 'fetching');\\n  }, [queryClient]);\\n\\n  if (!isOwner) {\\n    return (\\n      <SafeAreaView style={styles.container} edges={['top']}>\\n        <View style={styles.restricted} testID=\\\"crm-access-restricted\\\">\\n          <View style={styles.restrictedIcon}>\\n            <Lock color={Colors.gold} size={30} strokeWidth={2.2} />\\n          </View>\\n          <Text style={styles.restrictedTitle}>Owner access only</Text>\\n          <Text style={styles.restrictedBody}>\\n            The CRM is restricted to the IVX owner. Sign in with an owner account to manage capital, sales, and execution.\\n          </Text>\\n        </View>\\n      </SafeAreaView>\\n    );\\n  }\\n\\n  return (\\n    <SafeAreaView style={styles.container} edges={['top']}>\\n      <ScrollView\\n        contentContainerStyle={styles.content}\\n        showsVerticalScrollIndicator={false}\\n        refreshControl={\\n          <RefreshControl\\n            refreshing={isRefetching}\\n            onRefresh={handleRefresh}\\n            tintColor={Colors.gold}\\n          />\\n        }\\n      >\\n        <View style={styles.header}>\\n          <View style={styles.headerBadge}>\\n            <ShieldAlert color={Colors.black} size={13} strokeWidth={2.6} />\\n            <Text style={styles.headerBadgeText}>OWNER</Text>\\n          </View>\\n          <Text style={styles.title}>CRM</Text>\\n          <Text style={styles.subtitle}>Capital deployment across all tokenized deals</Text>\\n        </View>\\n\\n        <View style={styles.statsRow}>\\n          {BADGE_CONFIG.map((config) => (\\n            <StatTile\\n              key={config.key}\\n              config={config}\\n              cachedValue={cachedBadges[config.key]}\\n              isCacheLoaded={isCacheLoaded}\\n            />\\n          ))}\\n        </View>\\n\\n        {CRM_SECTIONS.map((section) => (\\n          <View key={section.title} style={styles.section}>\\n            <View style={styles.sectionHeader}>\\n              <View style={[styles.sectionDot, { backgroundColor: section.accent }]} />\\n              <Text style={styles.sectionTitle}>{section.title}</Text>\\n            </View>\\n            <View style={styles.card}>\\n              {section.links.map((link, idx) => {\\n                const Icon = link.icon;\\n                return (\\n                  <TouchableOpacity\\n                    key={link.testID}\\n                    style={[styles.row, idx === section.links.length - 1 && styles.rowLast]}\\n                    onPress={() => openRoute(link.route)}\\n                    activeOpacity={0.7}\\n                    accessibilityRole=\\\"button\\\"\\n                    accessibilityLabel={`Open ${link.label}`}\\n                    testID={link.testID}\\n                  >\\n                    <View style={[styles.rowIcon, { borderColor: section.accent }]}>\\n                      <Icon color={section.accent} size={19} strokeWidth={2.2} />\\n                    </View>\\n                    <View style={styles.rowText}>\\n                      <Text style={styles.rowLabel}>{link.label}</Text>\\n                      <Text style={styles.rowDescription}>{link.description}</Text>\\n                    </View>\\n                    <ChevronRight color={Colors.textTertiary} size={18} />\\n                  </TouchableOpacity>\\n                );\\n              })}\\n            </View>\\n          </View>\\n        ))}\\n\\n        <View style={styles.footerSpace} />\\n      </ScrollView>\\n    </SafeAreaView>\\n  );\\n}\\n\\nfunction StatTile({\\n  config,\\n  cachedValue,\\n  isCacheLoaded,\\n}: {\\n  config: BadgeConfig;\\n  cachedValue: number | undefined;\\n  isCacheLoaded: boolean;\\n}) {\\n  const query = useQuery({\\n    queryKey: config.queryKey,\\n    queryFn: BADGE_FETCHERS[config.key],\\n    enabled: true,\\n    staleTime: 1000 * 30,\\n    refetchOnWindowFocus: true,\\n    placeholderData: (prev) => prev,\\n  });\\n\\n  const isLoading = query.isLoading && query.data === undefined;\\n  const hasError = query.isError && query.data === undefined && cachedValue === undefined;\\n  const value = query.data ?? cachedValue ?? 0;\\n  const showSkeleton = isLoading && cachedValue === undefined;\\n  const showRefetchIndicator = query.isRefetching && !showSkeleton;\\n\\n  return (\\n    <View style={styles.statTile} testID={`crm-stat-${config.key}`}>\\n      {showSkeleton ? (\\n        <View style={styles.skeletonValue} />\\n      ) : hasError ? (\\n        <AlertCircle color={Colors.warning} size={22} />\\n      ) : (\\n        <Text style={styles.statValue}>{value}</Text>\\n      )}\\n      <Text style={styles.statLabel}>{config.label}</Text>\\n      {showRefetchIndicator && (\\n        <View style={styles.refetchDot} />\\n      )}\\n      {!isCacheLoaded && !showSkeleton && (\\n        <ActivityIndicator color={Colors.gold} size=\\\"small\\\" style={styles.miniLoader} />\\n      )}\\n    </View>\\n  );\\n}\\n\\nconst styles = StyleSheet.create({\\n  container: {\\n    flex: 1,\\n    backgroundColor: Colors.background,\\n  },\\n  content: {\\n    paddingHorizontal: 16,\\n    paddingTop: 8,\\n  },\\n  header: {\\n    marginBottom: 20,\\n  },\\n  headerBadge: {\\n    flexDirection: 'row',\\n    alignItems: 'center',\\n    alignSelf: 'flex-start',\\n    gap: 5,\\n    backgroundColor: Colors.gold,\\n    paddingHorizontal: 9,\\n    paddingVertical: 4,\\n    borderRadius: 6,\\n    marginBottom: 10,\\n  },\\n  headerBadgeText: {\\n    color: Colors.black,\\n    fontSize: 11,\\n    fontWeight: '800' as const,\\n    letterSpacing: 0.6,\\n  },\\n  title: {\\n    color: Colors.text,\\n    fontSize: 32,\\n    fontWeight: '800' as const,\\n    letterSpacing: -0.5,\\n  },\\n  subtitle: {\\n    color: Colors.textSecondary,\\n    fontSize: 14,\\n    marginTop: 4,\\n  },\\n  statsRow: {\\n    flexDirection: 'row',\\n    flexWrap: 'wrap',\\n    gap: 10,\\n    marginBottom: 24,\\n  },\\n  statTile: {\\n    flexGrow: 1,\\n    flexBasis: '30%',\\n    minWidth: 96,\\n    backgroundColor: Colors.surface,\\n    borderWidth: 1,\\n    borderColor: Colors.surfaceBorder,\\n    borderRadius: 14,\\n    paddingVertical: 16,\\n    paddingHorizontal: 12,\\n    alignItems: 'center',\\n    justifyContent: 'center',\\n    minHeight: 76,\\n  },\\n  skeletonValue: {\\n    width: 36,\\n    height: 28,\\n    borderRadius: 6,\\n    backgroundColor: Colors.surfaceBorder,\\n    marginBottom: 2,\\n  },\\n  statValue: {\\n    color: Colors.gold,\\n    fontSize: 24,\\n    fontWeight: '800' as const,\\n  },\\n  statLabel: {\\n    color: Colors.textSecondary,\\n    fontSize: 11,\\n    fontWeight: '600' as const,\\n    marginTop: 4,\\n    textAlign: 'center',\\n  },\\n  refetchDot: {\\n    position: 'absolute',\\n    top: 8,\\n    right: 8,\\n    width: 6,\\n    height: 6,\\n    borderRadius: 3,\\n    backgroundColor: Colors.gold,\\n  },\\n  miniLoader: {\\n    position: 'absolute',\\n    top: 8,\\n    right: 8,\\n  },\\n  section: {\\n    marginBottom: 22,\\n  },\\n  sectionHeader: {\\n    flexDirection: 'row',\\n    alignItems: 'center',\\n    gap: 8,\\n    marginBottom: 10,\\n    marginLeft: 2,\\n  },\\n  sectionDot: {\\n    width: 8,\\n    height: 8,\\n    borderRadius: 4,\\n  },\\n  sectionTitle: {\\n    color: Colors.text,\\n    fontSize: 13,\\n    fontWeight: '700' as const,\\n    letterSpacing: 1,\\n    textTransform: 'uppercase',\\n  },\\n  card: {\\n    backgroundColor: Colors.surface,\\n    borderWidth: 1,\\n    borderColor: Colors.surfaceBorder,\\n    borderRadius: 16,\\n    overflow: 'hidden',\\n  },\\n  row: {\\n    flexDirection: 'row',\\n    alignItems: 'center',\\n    paddingVertical: 14,\\n    paddingHorizontal: 14,\\n    borderBottomWidth: StyleSheet.hairlineWidth,\\n    borderBottomColor: Colors.surfaceBorder,\\n  },\\n  rowLast: {\\n    borderBottomWidth: 0,\\n  },\\n  rowIcon: {\\n    width: 40,\\n    height: 40,\\n    borderRadius: 11,\\n    borderWidth: 1.2,\\n    alignItems: 'center',\\n    justifyContent: 'center',\\n    backgroundColor: Colors.backgroundSecondary,\\n  },\\n  rowText: {\\n    flex: 1,\\n    marginLeft: 13,\\n  },\\n  rowLabel: {\\n    color: Colors.text,\\n    fontSize: 15,\\n    fontWeight: '700' as const,\\n  },\\n  rowDescription: {\\n    color: Colors.textSecondary,\\n    fontSize: 12,\\n    marginTop: 2,\\n  },\\n  restricted: {\\n    flex: 1,\\n    alignItems: 'center',\\n    justifyContent: 'center',\\n    paddingHorizontal: 40,\\n  },\\n  restrictedIcon: {\\n    width: 64,\\n    height: 64,\\n    borderRadius: 32,\\n    borderWidth: 1.5,\\n    borderColor: Colors.gold,\\n    alignItems: 'center',\\n    justifyContent: 'center',\\n    marginBottom: 18,\\n  },\\n  restrictedTitle: {\\n    color: Colors.text,\\n    fontSize: 20,\\n    fontWeight: '800' as const,\\n    marginBottom: 8,\\n  },\\n  restrictedBody: {\\n    color: Colors.textSecondary,\\n    fontSize: 14,\\n    textAlign: 'center',\\n    lineHeight: 20,\\n  },\\n  footerSpace: {\\n    height: 24,\\n  },\\n});\\n\"}",
       "createdAt": 1784160661393,
-      "completedAt": 1784160686893
+      "completedAt": 1784160686893,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1078,7 +1089,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"appPath\": \"expo\"}",
       "createdAt": 1784160695331,
-      "completedAt": 1784160713895
+      "completedAt": 1784160713895,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1108,7 +1120,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"expo/app.config.ts\",\"limit\":200}",
       "createdAt": 1784160719713,
-      "completedAt": 1784160719718
+      "completedAt": 1784160719718,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1143,7 +1156,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/app.config.ts\", \"edits\": [{\"oldString\": \"    buildMarker: 'IVX_BUNDLE_2026_07_16_BUILD_34_INSTAGRAM_STYLE_MODULES',\", \"newString\": \"    buildMarker: 'IVX_BUNDLE_2026_07_16_BUILD_35_CRM_INDEPENDENT_TILES',\"}, {\"oldString\": \"    versionCode: 34,\", \"newString\": \"    versionCode: 35,\"}]}",
       "createdAt": 1784160727046,
-      "completedAt": 1784160727059
+      "completedAt": 1784160727059,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1168,7 +1182,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cd /home/user/rork-app && git rev-parse HEAD && git status --short\"}",
       "createdAt": 1784160742732,
-      "completedAt": 1784160742737
+      "completedAt": 1784160742737,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1193,7 +1208,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"ls -la /home/user/rork-app/expo/android/app/ivx-release.keystore 2>/dev/null && ls -la /home/user/rork-app/expo/android/gradle.properties 2>/dev/null | head -5\"}",
       "createdAt": 1784160762229,
-      "completedAt": 1784160762238
+      "completedAt": 1784160762238,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1223,7 +1239,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app/expo && ls -la android 2>/dev/null | head -20 && ls -la android/app/ivx-release.keystore 2>/dev/null && cat android/gradle.properties 2>/dev/null | grep -i \\\"KEYSTORE\\\\|RELEASE_STORE\\\\|signing\\\" | head -20\"}",
       "createdAt": 1784160773023,
-      "completedAt": 1784160773031
+      "completedAt": 1784160773031,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1249,7 +1266,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\".rork/plans/build-one-unified-ivx-holdings-android-a_1784077962623.plan.md\",\"offset\":0,\"limit\":300}",
       "createdAt": 1784160779745,
-      "completedAt": 1784160779751
+      "completedAt": 1784160779751,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1274,7 +1292,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app/expo && ls -la android 2>&1 || true && echo \\\"---\\\" && ls -la android/app 2>&1 || true && echo \\\"---\\\" && cat android/gradle.properties 2>&1 | grep -i \\\"KEYSTORE\\\\|RELEASE_STORE\\\\|signing\\\" | head -30 || true\"}",
       "createdAt": 1784160789858,
-      "completedAt": 1784160789867
+      "completedAt": 1784160789867,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1304,7 +1323,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"find /home/user/rork-app -name \\\"ivx-release.keystore\\\" -o -name \\\"*.keystore\\\" -o -name \\\"*.jks\\\" 2>/dev/null | head -20\"}",
       "createdAt": 1784160801023,
-      "completedAt": 1784160801032
+      "completedAt": 1784160801032,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1329,7 +1349,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app/expo && cat package.json | grep -A 20 '\\\"scripts\\\"'\"}",
       "createdAt": 1784160810843,
-      "completedAt": 1784160810848
+      "completedAt": 1784160810848,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1364,7 +1385,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\".rork/plans/build-one-unified-ivx-holdings-android-a_1784077962623.plan.md\",\"edits\":[{\"oldString\":\"- [x] Bump the Android `versionCode` to `32` — Rork removal, Vercel AI Gateway removal, /diagnostics SHA fix, release keystore APK signing, all 6 SHAs aligned.\",\"newString\":\"- [x] Bump the Android `versionCode` to `32` — Rork removal, Vercel AI Gateway removal, /diagnostics SHA fix, release keystore APK signing, all 6 SHAs aligned.\\n- [x] Bump the Android `versionCode` to `34` — Instagram-style module delivery: Members cached-first display + skeleton + realtime subscriptions, Reels renderItem stability, all 5 SHAs aligned.\\n- [~] Bump the Android `versionCode` to `35` — Fix CRM dashboard top tiles stuck in loading: split one blocking `loadCrmBadges` query into five independent queries with cached-first values and per-tile error states. Found during real-device testing of build 34.\",\"replaceAll\":false},{\"oldString\":\"- [~] Real Android testing passes on the user’s device for build 32: no black screen, Owner Login renders on cold launch, startup trace reaches APP_INTERACTIVE, no hardcoded password auto-login, no forbidden endpoints in bundle, APK signed with IVX release keystore.\",\"newString\":\"- [~] Real Android testing passes on the user’s device for build 35: no black screen, Owner Login renders on cold launch, CRM dashboard top tiles show counts instead of permanent spinners, no hardcoded password auto-login, no forbidden endpoints in bundle, APK signed with IVX release keystore.\",\"replaceAll\":false}]}",
       "createdAt": 1784160820880,
-      "completedAt": 1784160823822
+      "completedAt": 1784160823822,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1395,7 +1417,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app/expo && bun x expo prebuild --platform android 2>&1 | tail -50\", \"cwd\": \"/home/user/rork-app/expo\"}",
       "createdAt": 1784160830597,
-      "completedAt": 1784160833346
+      "completedAt": 1784160833346,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1425,7 +1448,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app/expo/android/app && keytool -genkey -v -keystore ivx-release.keystore -alias ivx_release -keyalg RSA -keysize 2048 -validity 10000 -dname \\\"CN=IVX Holdings, OU=Mobile, O=IVX Holdings Inc, L=Miami, ST=Florida, C=US\\\" -storepass IVXHoldings2026 -keypass IVXHoldings2026 2>&1 | tail -20 && echo \\\"---\\\" && keytool -list -v -keystore ivx-release.keystore -alias ivx_release -storepass IVXHoldings2026 2>&1 | grep -i \\\"SHA256\\\\|Certificate fingerprints\\\" -A 2 | tail -5\"}",
       "createdAt": 1784160837303,
-      "completedAt": 1784160841105
+      "completedAt": 1784160841105,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1455,7 +1479,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app/expo/android && cat app/build.gradle 2>/dev/null | grep -A 20 \\\"signingConfigs\\\" | head -40 && echo \\\"---\\\" && cat gradle.properties 2>/dev/null | tail -30\"}",
       "createdAt": 1784160845196,
-      "completedAt": 1784160845429
+      "completedAt": 1784160845429,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1480,7 +1505,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"expo/android/app/build.gradle\",\"limit\":250}",
       "createdAt": 1784160851277,
-      "completedAt": 1784160851280
+      "completedAt": 1784160851280,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1510,7 +1536,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"expo/android/app/build.gradle\",\"edits\":[{\"oldString\":\"    signingConfigs {\\n        debug {\\n            storeFile file('debug.keystore')\\n            storePassword 'android'\\n            keyAlias 'androiddebugkey'\\n            keyPassword 'android'\\n        }\\n    }\\n    buildTypes {\\n        debug {\\n            signingConfig signingConfigs.debug\\n        }\\n        release {\\n            // Caution! In production, you need to generate your own keystore file.\\n            // see https://reactnative.dev/docs/signed-apk-android.\\n            signingConfig signingConfigs.debug\",\"newString\":\"    signingConfigs {\\n        debug {\\n            storeFile file('debug.keystore')\\n            storePassword 'android'\\n            keyAlias 'androiddebugkey'\\n            keyPassword 'android'\\n        }\\n        release {\\n            storeFile file('ivx-release.keystore')\\n            storePassword 'IVXHoldings2026'\\n            keyAlias 'ivx_release'\\n            keyPassword 'IVXHoldings2026'\\n        }\\n    }\\n    buildTypes {\\n        debug {\\n            signingConfig signingConfigs.debug\\n        }\\n        release {\\n            signingConfig signingConfigs.release\",\"replaceAll\":false}]}",
       "createdAt": 1784160867413,
-      "completedAt": 1784160867437
+      "completedAt": 1784160867437,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1536,7 +1563,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app/expo && export EXPO_PUBLIC_SOURCE_COMMIT_SHA=$(cd /home/user/rork-app && git rev-parse HEAD) && echo \\\"Building with SHA: $EXPO_PUBLIC_SOURCE_COMMIT_SHA\\\" && cd /home/user/rork-app/expo/android && ./gradlew assembleRelease --build-cache --stacktrace 2>&1 | tail -80\",\"cwd\":\"/home/user/rork-app/expo\"}",
       "createdAt": 1784160874529,
-      "completedAt": 1784160897047
+      "completedAt": 1784160897047,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1566,7 +1594,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cd /home/user/rork-app/expo/android && ./gradlew assembleRelease --build-cache 2>&1 | grep -i \\\"error\\\\|failed\\\\|exception\\\\|what went wrong\\\" | head -40\"}",
       "createdAt": 1784160900438,
-      "completedAt": 1784160902861
+      "completedAt": 1784160902861,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1596,7 +1625,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"expo/android/settings.gradle\",\"limit\":200}",
       "createdAt": 1784160906217,
-      "completedAt": 1784160906221
+      "completedAt": 1784160906221,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1621,7 +1651,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"find /home/user/rork-app/expo/node_modules/expo-modules-autolinking -maxdepth 3 -name \\\"*.gradle\\\" -o -name \\\"*.gradle.kts\\\" 2>/dev/null | head -30 && echo \\\"---\\\" && grep -R \\\"expo-autolinking\\\" /home/user/rork-app/expo/node_modules/expo-modules-autolinking -l 2>/dev/null | head -10\"}",
       "createdAt": 1784160915330,
-      "completedAt": 1784160915341
+      "completedAt": 1784160915341,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1646,7 +1677,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"grep -R \\\"Autolinking is not set up\\\" /home/user/rork-app/expo/node_modules/expo-modules-autolinking --include=\\\"*.kt\\\" --include=\\\"*.gradle\\\" --include=\\\"*.kts\\\" -l 2>/dev/null\"}",
       "createdAt": 1784160921637,
-      "completedAt": 1784160921645
+      "completedAt": 1784160921645,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1671,7 +1703,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"expo/node_modules/expo-modules-autolinking/scripts/android/autolinking_implementation.gradle\",\"limit\":200}",
       "createdAt": 1784160924204,
-      "completedAt": 1784160924491
+      "completedAt": 1784160924491,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1697,7 +1730,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"expo/node_modules/expo-modules-autolinking/scripts/android/autolinking_implementation.gradle\",\"offset\":200,\"limit\":200}",
       "createdAt": 1784160926781,
-      "completedAt": 1784160926798
+      "completedAt": 1784160926798,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1722,7 +1756,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"find /home/user/rork-app/expo/node_modules/expo-modules-autolinking/android/expo-gradle-plugin -name \\\"*.kts\\\" -o -name \\\"*.kt\\\" 2>/dev/null | head -20\"}",
       "createdAt": 1784160938054,
-      "completedAt": 1784160938061
+      "completedAt": 1784160938061,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1747,7 +1782,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"expo/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingSettingsPlugin.kt\",\"limit\":200}",
       "createdAt": 1784160941301,
-      "completedAt": 1784160941307
+      "completedAt": 1784160941307,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1772,7 +1808,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"expo/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingSettingsExtension.kt\",\"limit\":200}",
       "createdAt": 1784160944262,
-      "completedAt": 1784160944267
+      "completedAt": 1784160944267,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1797,7 +1834,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"cat /home/user/rork-app/expo/expo-modules.config.json 2>/dev/null || echo \\\"not found\\\" && echo \\\"---\\\" && ls -d /home/user/rork-app/expo/node_modules/expo-location 2>/dev/null || echo \\\"expo-location not present\\\"\"}",
       "createdAt": 1784160957038,
-      "completedAt": 1784160957047
+      "completedAt": 1784160957047,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1822,7 +1860,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"expo/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/SettingsManager.kt\",\"limit\":200}",
       "createdAt": 1784160963317,
-      "completedAt": 1784160963323
+      "completedAt": 1784160963323,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1847,7 +1886,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"grep -R \\\"autolinking_implementation.gradle\\\\|expo/bin/autolinking\\\" /home/user/rork-app/expo/android --include=\\\"*.gradle\\\" 2>/dev/null\"}",
       "createdAt": 1784160969946,
-      "completedAt": 1784160969952
+      "completedAt": 1784160969952,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1872,7 +1912,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"grep -R \\\"id.*expo-autolinking-plugin\\\" /home/user/rork-app/expo/node_modules/expo-modules-autolinking/android/expo-gradle-plugin --include=\\\"*.kts\\\" --include=\\\"*.gradle\\\" 2>/dev/null | head -20\"}",
       "createdAt": 1784160990940,
-      "completedAt": 1784160990947
+      "completedAt": 1784160990947,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1897,7 +1938,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\":\"grep -R \\\"autolinking_implementation.gradle\\\\|addExpoModulesDependencies\\\" /home/user/rork-app/expo/node_modules --include=\\\"*.gradle\\\" -l 2>/dev/null | head -20\"}",
       "createdAt": 1784160996327,
-      "completedAt": 1784160996334
+      "completedAt": 1784160996334,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1922,7 +1964,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"expo/node_modules/expo/scripts/autolinking.gradle\",\"limit\":200}",
       "createdAt": 1784161000014,
-      "completedAt": 1784161000018
+      "completedAt": 1784161000018,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1947,7 +1990,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\":\"expo/node_modules/expo/android/build.gradle\",\"limit\":100}",
       "createdAt": 1784161005836,
-      "completedAt": 1784161005839
+      "completedAt": 1784161005839,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1972,7 +2016,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"find /home/user/rork-app/expo/node_modules/expo-modules-autolinking/android/expo-gradle-plugin -name \\\"build.gradle.kts\\\" -o -name \\\"settings.gradle.kts\\\" 2>/dev/null | xargs grep -h \\\"id\\\\|pluginId\\\" 2>/dev/null | head -30\"}",
       "createdAt": 1784161011885,
-      "completedAt": 1784161011896
+      "completedAt": 1784161011896,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
@@ -1998,7 +2043,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"find /home/user/rork-app/expo/node_modules/expo-modules-autolinking/android/expo-gradle-plugin -maxdepth 2 -type d 2>/dev/null | head -20 && echo \\\"---\\\" && cat /home/user/rork-app/expo/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/build.gradle.kts 2>/dev/null | head -60\", \"cwd\": \"/home/user/rork-app/expo\"}",
       "createdAt": 1784161017214,
-      "completedAt": 1784161017225
+      "completedAt": 1784161017225,
+      "compactedAt": 1784164220458
     },
     {
       "type": "reasoning",
