@@ -1,4 +1,4 @@
-import { generateText, streamText } from 'ai';
+import { generateText, streamText, createGateway } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { acquireAIQueueSlot, classifyRequestLane, type IVXAIQueueLane } from './services/ivx-ai-queue';
 import { estimatePromptTokens, recordProviderTelemetry } from './services/ivx-provider-telemetry';
@@ -509,10 +509,16 @@ export async function requestIVXAIText(input: {
   for (const baseURL of baseUrlCandidates) {
     ensureIVXAIGatewayEnvironment();
     try {
-      const gatewayProvider = createOpenAI({
-        apiKey: getIVXAIGatewayApiKey(),
-        baseURL,
-      });
+      // Use the correct adapter for the key type:
+      //   vck_ key → createGateway (Vercel AI Gateway, sends auth header correctly)
+      //   sk-  key → createOpenAI (OpenAI direct API)
+      // Sending a vck_ key via createOpenAI produces 401 invalid_api_key even
+      // when the baseURL is ai-gateway.vercel.sh — the auth header format differs.
+      const apiKey = getIVXAIGatewayApiKey();
+      const isVercelKey = isVercelGatewayKey(apiKey);
+      const gatewayProvider = isVercelKey
+        ? createGateway({ apiKey })
+        : createOpenAI({ apiKey, baseURL });
       const callTimeoutMs = adaptiveTimeoutMs;
       if (images.length > 0 || files.length > 0) {
         // Multimodal request: build a single user message with text + image/file
@@ -805,7 +811,11 @@ export async function* streamIVXAIText(input: {
   const timer = setTimeout(() => { timedOut = true; }, adaptiveTimeoutMs);
 
   try {
-    const gatewayProvider = createOpenAI({ apiKey: getIVXAIGatewayApiKey(), baseURL });
+    const apiKey = getIVXAIGatewayApiKey();
+    const isVercelKey = isVercelGatewayKey(apiKey);
+    const gatewayProvider = isVercelKey
+      ? createGateway({ apiKey })
+      : createOpenAI({ apiKey, baseURL });
     const streamResult = streamText({
       model: gatewayProvider(model),
       system: system.length > 0 ? system : undefined,
