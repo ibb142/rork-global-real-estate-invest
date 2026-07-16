@@ -997,6 +997,7 @@ import {
   getPublicChatHealthSnapshot,
   mapRoomMessagesToPublicChatHistory,
 } from './public-chat-ai';
+import { validateIVXAIStartup } from './ivx-ai-runtime';
 import { routeDeploymentCommand, isDeploymentCommand } from './services/ivx-deployment-chat-brain';
 import {
   handleChatPost,
@@ -2576,10 +2577,20 @@ app.get('/', async (context) => {
 
 app.get('/health', (context) => {
   const publicChatHealth = getPublicChatHealthSnapshot();
+  const aiStartup = validateIVXAIStartup();
 
   return context.json({
     ok: true,
     status: 'healthy',
+    aiStartupValidation: {
+      ok: aiStartup.ok,
+      provider: aiStartup.provider,
+      model: aiStartup.model,
+      adapterVersion: aiStartup.adapterVersion,
+      keyLoaded: aiStartup.keyLoaded,
+      baseUrl: aiStartup.baseUrl,
+      errors: aiStartup.errors,
+    },
     service: 'ivx-owner-ai-backend',
     deploymentMarker: DEPLOYMENT_MARKER,
     sourceProof: OWNER_SIGNUP_AUDIT_SOURCE_PROOF,

@@ -7282,13 +7282,18 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
     }
 
     const developmentActionIntent = initialDevelopmentActionIntent;
-    const developmentActionResult = developmentActionIntent
+    // Only 'public_deploy' gets a canned confirmation prompt — it correctly asks
+    // the owner to confirm before changing live infrastructure. All other
+    // development intents (implementation_task, keyboard_overlap_fix,
+    // owner_brain_proof) MUST route to the real senior developer runtime below,
+    // NOT produce canned promise text that the execution guard will BLOCK.
+    const developmentActionResult = developmentActionIntent === 'public_deploy'
       ? {
-        answer: formatOwnerDevelopmentActionAnswer(developmentActionIntent),
-        toolName: developmentActionIntent === 'public_deploy' ? 'ivx_public_deploy_action' : developmentActionIntent === 'owner_brain_proof' ? 'ivx_owner_brain_proof_action' : 'ivx_development_action',
-        selectedRoute: developmentActionIntent === 'public_deploy' ? 'ivx_public_deploy_action' : developmentActionIntent === 'owner_brain_proof' ? 'ivx_owner_brain_proof_action' : 'ivx_development_action',
-        detectedIntent: developmentActionIntent === 'public_deploy' ? 'deployment_action' as const : 'development_action' as const,
-        endpoint: developmentActionIntent === 'public_deploy' ? '/api/ivx/deploy' : developmentActionIntent === 'owner_brain_proof' ? '/api/ivx/owner-ai/brain-proof' : '/api/ivx/development-action',
+        answer: formatOwnerDevelopmentActionAnswer('public_deploy'),
+        toolName: 'ivx_public_deploy_action',
+        selectedRoute: 'ivx_public_deploy_action',
+        detectedIntent: 'deployment_action' as const,
+        endpoint: '/api/ivx/deploy',
       }
       : null;
     if (developmentActionResult) {
@@ -7631,9 +7636,11 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
       }, body.devTestModeActive === true));
     }
 
-    const developmentAuditResult = resolveOwnerDevelopmentAuditIntent(prompt)
-      ? { answer: formatOwnerDevelopmentAuditAnswer(), toolName: 'ivx_development_audit' }
-      : null;
+    // Development audit intents must route to the real senior developer runtime,
+    // NOT produce canned promise text ("I will inspect...") that the execution
+    // guard will BLOCK. The canned path was the root cause of the owner seeing
+    // BLOCKED instead of real work.
+    const developmentAuditResult = null as null | { answer: string; toolName: string };
     if (developmentAuditResult) {
       const answer = assertVisibleOwnerAIAnswer(developmentAuditResult.answer);
       let assistantMessageId: string | null = existingAIRequest?.response_message_id ?? null;

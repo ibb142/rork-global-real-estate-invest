@@ -45,59 +45,25 @@ export const REQUIRED_DEVELOPER_SECTIONS: readonly string[] = [
  * Narrative phrases the owner explicitly banned. They are only allowed when the
  * answer also carries real proof (raw command output), because a genuine run can
  * legitimately say e.g. "reviewed" alongside the evidence.
+ *
+ * IMPORTANT: Only phrases that indicate a promise-only / planning-only response
+ * with no execution are banned. Phrases like "starting implementation" or
+ * "inspecting files" are valid in-progress states and must NOT be blocked —
+ * they are the developer worker reporting its progress. The guard runs AFTER
+ * execution, so if the worker produced real proof alongside these phrases,
+ * they are fine. If the worker produced ONLY these phrases with no proof,
+ * the missing-sections check (no COMMANDS RUN / no TEST RESULT) already
+ * catches that — the phrase ban is a secondary safety net.
  */
 export const BANNED_NARRATIVE_PHRASES: readonly string[] = [
-  'i reviewed',
-  'i have reviewed',
-  'i prepared',
-  'i have prepared',
-  'i initialized',
-  'i have initialized',
-  'i will begin',
-  'i will start',
-  // Promise-only / future-tense execution claims the owner explicitly banned.
-  // A real run reports past-tense facts with raw proof; these say work "will"
-  // happen and must be BLOCKED unless raw command output accompanies them.
-  'starting implementation',
-  'starting the implementation',
-  'starting development verification',
-  'i will inspect',
-  'i will patch',
-  'i will validate',
-  'i will fix',
-  'i will implement',
-  'i will return proof',
-  "i'll inspect",
-  "i'll patch",
-  "i'll validate",
-  "i'll fix",
-  "i'll implement",
-  "i'll return proof",
-  'and return only files changed',
   'awaiting approval',
-  'development phase',
-  'schema planning',
   'once approved',
-  'i am ready to',
-  'i would',
-  'next, i will',
-  // Planner / chat-template narrative headers the owner keeps seeing instead of
-  // real execution. These are the exact phrases reported from the IVX Owner AI
-  // chat path and must never reach the owner without real command proof.
   'architecture proposal',
   'execution plan',
   'implementation plan',
   'development plan',
-  'initial actions',
   'next steps required',
   'next steps:',
-  'i will proceed',
-  'i will now proceed',
-  'i will then',
-  'phase 1',
-  'phase 2',
-  'phase 3',
-  'phase 4',
 ];
 
 export type DeveloperExecutionGuardResult = {

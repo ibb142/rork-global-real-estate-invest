@@ -3,6 +3,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { acquireAIQueueSlot, classifyRequestLane, type IVXAIQueueLane } from './services/ivx-ai-queue';
 import { estimatePromptTokens, recordProviderTelemetry } from './services/ivx-provider-telemetry';
 import { attemptProviderFallback, classifyProviderFailure, isFailureRetryable } from './services/ivx-ai-provider-fallback';
+import { randomUUID } from 'crypto';
 
 export type IVXAIModule = 'owner-room' | 'p0-ai-assistant' | 'p1-plan-creator' | 'public-chat' | string;
 export type IVXAIMessageRole = 'user' | 'assistant';
@@ -58,6 +59,7 @@ type IVXAIGatewayFailureContext = {
   endpoint: string | null;
   status?: number | null;
   responseBody?: unknown;
+  traceId?: string | null;
 };
 
 export type IVXAIConfigurationSnapshot = {
@@ -233,6 +235,7 @@ function extractGatewayFailureContext(error: unknown): { status: number | null; 
 }
 
 function normalizeGatewayFailure(error: unknown, context: IVXAIGatewayFailureContext): Error {
+  const traceId = context.traceId ?? generateTraceId();
   const message = error instanceof Error ? error.message : 'Gateway request failed';
   const body = typeof context.responseBody === 'string'
     ? context.responseBody.slice(0, 600)
@@ -241,6 +244,7 @@ function normalizeGatewayFailure(error: unknown, context: IVXAIGatewayFailureCon
       : null;
   const detail = [
     `IVX AI gateway request failed for ${context.module}.`,
+    `traceId=${traceId}`,
     `endpoint=${context.endpoint ?? 'unresolved'}`,
     `model=${context.model}`,
     context.status ? `status=${context.status}` : null,
@@ -249,6 +253,8 @@ function normalizeGatewayFailure(error: unknown, context: IVXAIGatewayFailureCon
   ].filter(Boolean).join(' ');
   const normalized = new Error(detail);
   normalized.name = 'IVXAIGatewayRequestError';
+  // Attach traceId on the error object so callers can surface it to the user.
+  Object.defineProperty(normalized, 'traceId', { value: traceId, enumerable: false });
   return normalized;
 }
 
@@ -282,13 +288,85 @@ function stripOpenaiPrefix(model: string): string {
   return model.replace(/^openai\//, '');
 }
 
+/**
+ * Returns the API base URL (e.g. https://api.openai.com/v1). The model name is
+ * NOT embedded in the endpoint path — the @ai-sdk/openai provider handles
+ * model-to-route routing internally (chat/completions or responses). Embedding
+ * the model name produced invalid URLs like https://api.openai.com/v1/gpt-4o.
+ */
 export function getIVXAIEndpoint(model: string = DEFAULT_IVX_AI_MODEL): string | null {
+  void model; // model is NOT part of the endpoint URL
+  return getGatewayBaseUrl();
+}
+
+/**
+ * Startup validation — verifies the AI provider/model configuration is sound.
+ * Exposes only safe metadata (never the key value). Called at boot so
+ * misconfigurations surface immediately instead of on the first request.
+ */
+export type IVXAIStartupValidation = {
+  ok: boolean;
+  provider: string;
+  model: string;
+  adapterVersion: string;
+  keyLoaded: boolean;
+  baseUrl: string | null;
+  endpoint: string | null;
+  errors: string[];
+};
+
+let cachedAdapterVersion: string | null = null;
+function getAdapterVersion(): string {
+  if (cachedAdapterVersion) return cachedAdapterVersion;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const pkg = require('@ai-sdk/openai/package.json');
+    cachedAdapterVersion = typeof pkg?.version === 'string' ? pkg.version : 'unknown';
+  } catch {
+    cachedAdapterVersion = 'unknown';
+  }
+  return cachedAdapterVersion;
+}
+
+export function validateIVXAIStartup(): IVXAIStartupValidation {
+  const errors: string[] = [];
+  const model = DEFAULT_IVX_AI_MODEL;
+  const rootUrl = getIVXAIGatewayRootUrl();
+  const apiKey = getIVXAIGatewayApiKey();
+  const keyLoaded = apiKey.length > 0;
   const baseUrl = getGatewayBaseUrl();
-  if (!baseUrl) {
-    return null;
+  const adapterVersion = getAdapterVersion();
+
+  if (!keyLoaded) {
+    errors.push('OPENAI_API_KEY is not set');
+  }
+  if (!rootUrl) {
+    errors.push('AI gateway root URL is empty');
+  }
+  if (rootUrl && isRorkDomain(rootUrl)) {
+    errors.push('AI gateway URL points to a blocked Rork domain');
+  }
+  // Verify the adapter is spec v3 compatible (v4 is rejected by ai@6)
+  const majorVersion = Number.parseInt(adapterVersion.split('.')[0] ?? '0', 10);
+  if (majorVersion > 3) {
+    errors.push(`@ai-sdk/openai@${adapterVersion} uses spec v4, incompatible with ai@6 — downgrade to @ai-sdk/openai@3.x`);
   }
 
-  return `${baseUrl}/${model}`;
+  return {
+    ok: errors.length === 0,
+    provider: 'openai',
+    model,
+    adapterVersion,
+    keyLoaded,
+    baseUrl,
+    endpoint: getIVXAIEndpoint(model),
+    errors,
+  };
+}
+
+/** Generate a short trace ID for request correlation. */
+export function generateTraceId(): string {
+  return `ivx-trace-${randomUUID().split('-')[0]}`;
 }
 
 export function isIVXAIConfigured(): boolean {
@@ -304,7 +382,7 @@ export function getIVXAIConfigurationSnapshot(model: string = DEFAULT_IVX_AI_MOD
     hasGatewayApiKey,
     model,
     endpoint: getIVXAIEndpoint(model),
-    runtime: 'openai_direct',
+    runtime: 'ivx_ai_gateway',
     layer: 'ivx_ai_runtime_wrapper',
     phase: 'agent_runtime_v2',
   };
@@ -435,7 +513,7 @@ export async function requestIVXAIText(input: {
         module: input.module,
         requestId: input.requestId ?? null,
         model,
-            endpoint: `${baseURL}/${model}`,
+            endpoint: baseURL,
         status: failure.status,
         error: error instanceof Error ? error.message : 'Gateway request failed',
         responseBodyType: typeof failure.responseBody,
@@ -538,6 +616,7 @@ export async function requestIVXAIText(input: {
       adaptiveTimeoutMs,
       queueWaitMs: queueSlot.waitMs,
     });
+    const traceId = generateTraceId();
     throw normalizeGatewayFailure(lastError, {
       module: input.module,
       requestId: input.requestId ?? null,
@@ -545,6 +624,7 @@ export async function requestIVXAIText(input: {
       endpoint,
       status: lastFailure.status,
       responseBody: lastFailure.responseBody,
+      traceId,
     });
   }
   queueSlot.release();
@@ -558,7 +638,7 @@ export async function requestIVXAIText(input: {
     provider: 'chatgpt',
     source: 'remote_api',
     model,
-    endpoint: `${successfulBaseUrl}/${model}`,
+    endpoint: successfulBaseUrl,
     runtime: 'ivx_ai_gateway',
     ivxAI: {
       architecture: 'ivx-ai',
@@ -576,7 +656,7 @@ export async function requestIVXAIText(input: {
     traceId: input.requestId ?? null,
     module: String(input.module),
     model,
-    endpoint: `${successfulBaseUrl}/${model}`,
+    endpoint: successfulBaseUrl,
     promptChars,
     promptTokensEstimated: estimatePromptTokens(promptChars),
     completionTokens: typeof usageRecord?.outputTokens === 'number' ? usageRecord.outputTokens : null,
@@ -706,7 +786,7 @@ export async function* streamIVXAIText(input: {
     traceId: input.requestId ?? null,
     module: String(input.module),
     model,
-    endpoint: `${baseURL}/${model}`,
+    endpoint: baseURL,
     promptChars,
     promptTokensEstimated: estimatePromptTokens(promptChars),
     completionTokens: typeof usageRecord?.outputTokens === 'number' ? usageRecord.outputTokens : null,
@@ -730,7 +810,7 @@ export async function* streamIVXAIText(input: {
     provider: 'chatgpt',
     source: 'remote_api',
     model,
-    endpoint: `${baseURL}/${model}`,
+    endpoint: baseURL,
     runtime: 'ivx_ai_gateway',
     ivxAI: {
       architecture: 'ivx-ai',
