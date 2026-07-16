@@ -81,7 +81,7 @@ import {
   ownerOnlyOptions,
   type IVXOwnerRequestContext,
 } from './owner-only';
-import { runIVXSeniorDeveloperTask, type IVXSeniorDeveloperRunProof } from '../services/ivx-senior-developer-runtime';
+import { runIVXSeniorDeveloperTask, IVX_SAFE_PATCH_CONFIRM_TEXT, IVX_GIT_DEPLOY_CONFIRM_TEXT, auditIVXProductionCredentialRuntime, type IVXSeniorDeveloperRunProof } from '../services/ivx-senior-developer-runtime';
 import { buildSeniorDeveloperExecutionAnswer } from '../services/ivx-senior-developer-answer-format';
 import { enforceDeveloperExecutionAnswer } from '../services/ivx-developer-execution-guard';
 import {
@@ -7175,7 +7175,9 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
         goal: prompt,
         systemMode: false,
         approvePatch: autoExecuteEndToEnd,
-        approveGitDeploy: false,
+        patchConfirmationText: autoExecuteEndToEnd ? IVX_SAFE_PATCH_CONFIRM_TEXT : '',
+        approveGitDeploy: autoExecuteEndToEnd,
+        gitDeployConfirmationText: autoExecuteEndToEnd ? IVX_GIT_DEPLOY_CONFIRM_TEXT : '',
         validationMode: 'focused',
       });
       const jobId = proof.jobId;

@@ -746,6 +746,7 @@ import { evaluateAndMaybeRollback } from './services/ivx-production-guard';
 import { OPTIONS as agentJobsOptions, handleIVXAgentJobActionRequest, handleIVXAgentJobsCreateRequest, handleIVXAgentJobsListRequest, handleIVXAgentJobsLiveActivityRequest, handleIVXAgentJobsStatusRequest, handleIVXAgentWorkerRunOnceRequest } from './api/ivx-agent-jobs';
 import { OPTIONS as agentTestTokenOptions, handleIVXAgentTestRunRequest, handleIVXAgentTestTokenMintRequest } from './api/ivx-agent-test-token';
 import { OPTIONS as seniorDeveloperOptions, handleIVXSeniorDeveloperCredentialAuditRequest, handleIVXSeniorDeveloperGithubAuditRequest, handleIVXSeniorDeveloperRunRequest, handleIVXSeniorDeveloperStatusRequest } from './api/ivx-senior-developer-runtime';
+import { auditIVXProductionCredentialRuntime, IVX_SENIOR_DEVELOPER_RUNTIME_MARKER } from './services/ivx-senior-developer-runtime';
 import { OPTIONS as seniorDevToolsOptions, handleIVXSeniorDevAuditReportRequest, handleIVXSeniorDevToolsExecuteRequest, handleIVXSeniorDevToolsListRequest } from './api/ivx-senior-dev-tools';
 import { OPTIONS as seniorDeveloperWorkerOptions, handleSeniorDeveloperWorkerEnqueueRequest, handleSeniorDeveloperWorkerJobRequest, handleSeniorDeveloperWorkerJobsRequest, handleSeniorDeveloperWorkerLastProofRequest, handleSeniorDeveloperWorkerLedgerRequest, handleSeniorDeveloperWorkerStatusRequest } from './api/ivx-senior-developer-worker';
 import {
@@ -2590,9 +2591,56 @@ app.get('/', async (context) => {
   });
 });
 
-app.get('/health', (context) => {
+app.get('/health', async (context) => {
   const publicChatHealth = getPublicChatHealthSnapshot();
   const aiStartup = validateIVXAIStartup();
+
+  // Senior Developer Runtime diagnostic: validates that all execution
+  // credentials (GitHub, Render) are present and reachable at runtime.
+  let seniorDeveloperRuntime: Record<string, unknown> = {
+    enabled: false,
+    variablesValidated: false,
+    toolRegistryReady: false,
+    commitSha: LIVE_COMMIT_SHA,
+    checkedAt: nowIso(),
+  };
+  try {
+    const credAudit = await auditIVXProductionCredentialRuntime();
+    seniorDeveloperRuntime = {
+      enabled: true,
+      variablesValidated: credAudit.ok,
+      toolRegistryReady: credAudit.ok,
+      commitSha: LIVE_COMMIT_SHA,
+      checkedAt: nowIso(),
+      markers: {
+        runtime: IVX_SENIOR_DEVELOPER_RUNTIME_MARKER,
+        deployment: DEPLOYMENT_MARKER,
+      },
+      credentials: {
+        GITHUB_REPO_URL: credAudit.credentials.GITHUB_REPO_URL.present,
+        GITHUB_TOKEN: credAudit.credentials.GITHUB_TOKEN.present,
+        RENDER_API_KEY: credAudit.credentials.RENDER_API_KEY.present,
+        RENDER_SERVICE_ID: credAudit.credentials.RENDER_SERVICE_ID.present,
+      },
+      github: {
+        canReadRepo: credAudit.github.canReadRepo,
+        canPush: credAudit.github.canPush,
+      },
+      render: {
+        canDeploy: credAudit.render.canDeploy,
+      },
+      blockers: credAudit.blockers,
+    };
+  } catch (error) {
+    seniorDeveloperRuntime = {
+      enabled: false,
+      variablesValidated: false,
+      toolRegistryReady: false,
+      commitSha: LIVE_COMMIT_SHA,
+      checkedAt: nowIso(),
+      error: error instanceof Error ? error.message : 'audit failed',
+    };
+  }
 
   return context.json({
     ok: true,
@@ -2608,6 +2656,7 @@ app.get('/health', (context) => {
       baseUrl: aiStartup.baseUrl,
       errors: aiStartup.errors,
     },
+    seniorDeveloperRuntime,
     service: 'ivx-owner-ai-backend',
     deploymentMarker: DEPLOYMENT_MARKER,
     sourceProof: OWNER_SIGNUP_AUDIT_SOURCE_PROOF,
