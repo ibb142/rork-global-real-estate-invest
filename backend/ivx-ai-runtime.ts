@@ -233,6 +233,13 @@ function ensureIVXAIGatewayEnvironment(): void {
       'IVX AI runtime is not configured. Set OPENAI_API_KEY on the backend host.',
     );
   }
+  // Bridge OPENAI_API_KEY → AI_GATEWAY_API_KEY so createGateway() can find the
+  // key via its expected env var. Without this, createGateway sends no auth
+  // header and the Vercel AI Gateway returns "Unauthenticated. Configure
+  // AI_GATEWAY_API_KEY" even though the key is present in OPENAI_API_KEY.
+  if (isVercelGatewayKey(apiKey) && !process.env.AI_GATEWAY_API_KEY) {
+    process.env.AI_GATEWAY_API_KEY = apiKey;
+  }
 }
 
 
@@ -516,8 +523,12 @@ export async function requestIVXAIText(input: {
       // when the baseURL is ai-gateway.vercel.sh — the auth header format differs.
       const apiKey = getIVXAIGatewayApiKey();
       const isVercelKey = isVercelGatewayKey(apiKey);
+      // For vck_ keys, use createGateway (the Vercel AI Gateway adapter).
+      // It reads AI_GATEWAY_API_KEY from env — ensureIVXAIGatewayEnvironment()
+      // bridges OPENAI_API_KEY → AI_GATEWAY_API_KEY so the key is found.
+      // For sk- keys, use createOpenAI with the direct OpenAI base URL.
       const gatewayProvider = isVercelKey
-        ? createGateway({ apiKey })
+        ? createGateway()
         : createOpenAI({ apiKey, baseURL });
       const callTimeoutMs = adaptiveTimeoutMs;
       if (images.length > 0 || files.length > 0) {
@@ -814,7 +825,7 @@ export async function* streamIVXAIText(input: {
     const apiKey = getIVXAIGatewayApiKey();
     const isVercelKey = isVercelGatewayKey(apiKey);
     const gatewayProvider = isVercelKey
-      ? createGateway({ apiKey })
+      ? createGateway()
       : createOpenAI({ apiKey, baseURL });
     const streamResult = streamText({
       model: gatewayProvider(model),
