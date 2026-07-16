@@ -4110,6 +4110,42 @@ app.get('/api/ivx/ai-test', async (context) => {
   const providerType = startup.providerType;
   const testPrompt = 'Reply with exactly: IVX_AI_TEST_OK';
   const testStartedAt = Date.now();
+
+  // Raw HTTP fetch test — bypasses all SDK layers and sends a direct request
+  // to the Vercel AI Gateway with the key as a Bearer token. This definitively
+  // determines if the key is valid/expired vs an SDK routing issue.
+  const rawKey = readTrimmed(process.env.OPENAI_API_KEY) || readTrimmed(process.env.AI_GATEWAY_API_KEY);
+  const rawEndpoint = startup.baseUrl ?? 'https://ai-gateway.vercel.sh/v1';
+  let rawTestResult: { ok: boolean; status: number; body: string } | null = null;
+  if (rawKey) {
+    try {
+      const rawResponse = await fetch(`${rawEndpoint}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${rawKey}`,
+        },
+        body: JSON.stringify({
+          model: startup.model,
+          messages: [{ role: 'user', content: testPrompt }],
+          max_tokens: 20,
+        }),
+      });
+      const rawBody = await rawResponse.text();
+      rawTestResult = {
+        ok: rawResponse.ok,
+        status: rawResponse.status,
+        body: rawBody.slice(0, 500),
+      };
+    } catch (rawError) {
+      rawTestResult = {
+        ok: false,
+        status: 0,
+        body: rawError instanceof Error ? rawError.message : 'fetch failed',
+      };
+    }
+  }
+
   try {
     const result = await requestIVXAIText({
       module: 'ai-test',
@@ -4127,6 +4163,7 @@ app.get('/api/ivx/ai-test', async (context) => {
       responseText: result.text,
       responseModel: result.providerMetadata.model,
       responseEndpoint: result.providerMetadata.endpoint,
+      rawTest: rawTestResult,
       latencyMs: Date.now() - testStartedAt,
       timestamp: nowIso(),
     });
@@ -4142,6 +4179,7 @@ app.get('/api/ivx/ai-test', async (context) => {
       errorName: err?.name ?? 'Unknown',
       errorMessage: err?.message ?? 'Unknown error',
       traceId: err?.traceId ?? null,
+      rawTest: rawTestResult,
       latencyMs: Date.now() - testStartedAt,
       timestamp: nowIso(),
     });
