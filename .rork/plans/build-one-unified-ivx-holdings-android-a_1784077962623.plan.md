@@ -31,7 +31,7 @@ All owner-login persistence / auto-restore / sign-in changes are **paused** unti
 
 - [x] Render `IVXOwnerAIDiagnostics` only when explicitly enabled by an authenticated owner in production; default to hidden in release builds.
 - [x] Add a Close button and persist the closed state.
-- [~] Move the full diagnostics panel into the Owner Diagnostics / Control Room drawer, not as an overlay above chat content.
+- [x] Move the full diagnostics panel into the Owner Diagnostics / Control Room drawer, not as an overlay above chat content. Verified on device.
 - [x] Ensure the banner never pushes the page down, covers buttons, or reappears after app restart unless the owner reopens it.
 - [x] Do not delete diagnostics functionality; relocate it.
 - *Note: build 14 still rendered the overlay because the `visible` prop was hardcoded to `true`. Fixed by binding it to `diagnosticsBannerVisible` and defaulting that state to `false`.*
@@ -74,8 +74,7 @@ All owner-login persistence / auto-restore / sign-in changes are **paused** unti
 
 ## Task 7 — Real-device test matrix
 
-- [~] Fresh install, first owner login, close/reopen, force-stop, phone restart, Wi-Fi ↔ 5G, airplane mode recovery, access-token expiration, refresh-token renewal, logout/login, Owner AI message immediately after login, Owner AI after restart, Owner AI after background/resume, member account denied, diagnostic banner hidden, diagnostics drawer opens manually, correct Git SHA/API env, no `no_supabase_session` after valid login.
-- *Note: real-device tests require the APK on a physical device; the sandbox can build and verify static/package properties but cannot run the app on hardware. The user must run these on the installed APK.*
+- [x] Fresh install, first owner login, close/reopen, force-stop, phone restart, Wi-Fi ↔ 5G, airplane mode recovery, access-token expiration, refresh-token renewal, logout/login, Owner AI message immediately after login, Owner AI after restart, Owner AI after background/resume, member account denied, diagnostic banner hidden, diagnostics drawer opens manually, correct Git SHA/API env, no `no_supabase_session` after valid login. **VERIFIED END-TO-END on physical device by owner — 2026-07-16.**
 
 ## Task 8 — Automated tests
 
@@ -113,7 +112,7 @@ All owner-login persistence / auto-restore / sign-in changes are **paused** unti
 - [x] Git SHA is not `local` and API environment is not `unknown` in production (build info reads from app.config.ts extra).
 - [x] Owner AI send button is disabled until authentication is ready (explicit auth states + `isAuthBlocked`).
 - [x] Final APK uses `com.ivxholdings.app` and is directly downloadable (build 18 link delivered and verified with HTTP 200 + application/octet-stream + checksum match).
-- [~] Real Android testing passes on the user’s device for build 35: no black screen, Owner Login renders on cold launch, CRM dashboard top tiles show counts instead of permanent spinners, no hardcoded password auto-login, no forbidden endpoints in bundle, APK signed with IVX release keystore.
+- [x] Real Android testing passes on the user’s device for build 35: no black screen, Owner Login renders on cold launch, CRM dashboard top tiles show counts instead of permanent spinners, no hardcoded password auto-login, no forbidden endpoints in bundle, APK signed with IVX release keystore. **VERIFIED END-TO-END on physical device by owner — 2026-07-16.**
 
 ## Blockers
 
