@@ -118,10 +118,13 @@ export interface HomeFeedDeal {
   created_at: string | null;
 }
 
+/** display_type explicitly maps each block to its card component — no inference from media. */
+export type DisplayType = 'investment_card' | 'reel';
+
 /** One block of the investor-first home layout: a deal card or a featured project video. */
 export type HomeFeedBlock =
-  | { position: number; type: 'deal'; deal: HomeFeedDeal }
-  | { position: number; type: 'video'; video: FeedVideo };
+  | { position: number; type: 'deal'; display_type: 'investment_card'; deal: HomeFeedDeal }
+  | { position: number; type: 'video'; display_type: 'reel'; video: FeedVideo };
 
 export interface HomeFeedResponse {
   pattern: string;
@@ -129,6 +132,7 @@ export interface HomeFeedResponse {
   blocks: HomeFeedBlock[];
   deal_count: number;
   video_count: number;
+  total_approved_videos?: number;
 }
 
 /**

@@ -733,7 +733,11 @@ export async function handlePlatformHomeFeed(req: Request): Promise<Response> {
     /* ---- compose: 3 deals → 1 featured project video → repeat ---- */
     const blocks = composeInvestorFirstHome(orderedDeals, featuredVideos)
       .slice(0, limit)
-      .map((b, i) => ({ position: i, ...b }));
+      .map((b, i) => ({
+        position: i,
+        display_type: b.type === 'video' ? 'reel' : 'investment_card',
+        ...b,
+      }));
 
     return json({
       pattern: '3-deals-1-featured-project-video',

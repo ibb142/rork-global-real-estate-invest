@@ -3,11 +3,12 @@
  * GET /api/ivx/video-platform/home-feed (same source of truth as the landing
  * page and iOS app):
  *
- *   Featured Deal 1–3 → 1 Featured Project Video → Deal 4–6 → 1 video → repeat.
+ *   Deal 1 (InvestmentCard) → Deal 2 (InvestmentCard) → Deal 3 (InvestmentCard)
+ *   → 1 Featured Project Video (CanonicalInvestmentReelCard) → repeat.
  *
- * All blocks render the shared CanonicalInvestmentReelCard — the approved
- * full-screen immersive reel design — in feed mode. No old Instagram-style
- * cards are used.
+ * Deal blocks render as compact InvestmentCard (carousel + metrics + CTAs).
+ * Video blocks render as CanonicalInvestmentReelCard (full-bleed reel).
+ * No deal is ever rendered as a reel — explicit display_type mapping.
  */
 import React, { Component, useCallback, useMemo, type ReactNode } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, useWindowDimensions } from 'react-native';
@@ -16,20 +17,22 @@ import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Landmark, Sparkles, TrendingUp } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import InvestmentCard, { type InvestmentCardData } from '@/components/InvestmentCard';
 import CanonicalInvestmentReelCard, {
   feedVideoToReelData,
   homeFeedDealToReelData,
   parsedDealToReelData,
   type CanonicalReelData,
 } from '@/components/CanonicalInvestmentReelCard';
-import { fetchHomeFeed, type HomeFeedBlock } from '@/lib/video-feed';
+import { fetchHomeFeed, type HomeFeedBlock, type HomeFeedDeal } from '@/lib/video-feed';
 import type { ParsedJVDeal } from '@/lib/parse-deal';
 import type { JVAgreement } from '@/types/jv';
 import { toggleProjectLike, trackProjectShare } from '@/lib/project-engagement';
 import { toggleVideoSave, getViewerId, buildVideoShareUrl } from '@/lib/video-platform';
+import { resolveDealPhotos } from '@/lib/parse-deal';
 
-/** Per-card error boundary so one bad reel never crashes the home feed */
-class VideoCardBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+/** Per-card error boundary so one bad card never crashes the home feed */
+class CardBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
   state = { hasError: false };
   static getDerivedStateFromError() { return { hasError: true }; }
   componentDidCatch(err: Error) { console.warn('[InvestorFirstFeed] Card crashed:', err.message); }
@@ -43,6 +46,47 @@ class VideoCardBoundary extends Component<{ children: ReactNode }, { hasError: b
     }
     return this.props.children as React.ReactElement;
   }
+}
+
+/** Map a HomeFeedDeal + local JV deal to InvestmentCardData */
+function homeFeedDealToInvestmentCard(
+  deal: HomeFeedDeal,
+  local: JVAgreement | undefined,
+): InvestmentCardData {
+  let photos: string[] = [];
+  if (local) {
+    photos = resolveDealPhotos({
+      id: local.id,
+      title: local.title,
+      projectName: local.projectName,
+      photos: local.photos,
+      publishedAt: local.publishedAt,
+      created_at: (local as unknown as Record<string, unknown>).created_at as string | undefined,
+      updatedAt: local.updatedAt,
+      updated_at: (local as unknown as Record<string, unknown>).updated_at as string | undefined,
+    });
+  }
+  if (photos.length === 0 && deal.photo_url) {
+    photos = [deal.photo_url];
+  }
+
+  return {
+    dealId: deal.id,
+    title: deal.name ?? 'IVX Investment',
+    location: deal.city ?? null,
+    photos,
+    roi: deal.expected_roi ? parseFloat(deal.expected_roi) : (local?.expectedROI ?? null),
+    minimumInvestment: deal.min_investment ?? (local?.trustMarket?.minInvestment ?? null),
+    status: deal.status ?? 'published',
+    category: deal.deal_type ?? (local?.type ?? null),
+    dealUrl: deal.url ?? null,
+    likeCount: 0,
+    commentCount: 0,
+    saveCount: 0,
+    shareCount: 0,
+    isLiked: false,
+    isSaved: false,
+  };
 }
 
 export default function InvestorFirstFeed({ jvDeals, jvDealsLoading, isXs, cardWidth, openQuickBuy }: {
@@ -104,6 +148,29 @@ export default function InvestorFirstFeed({ jvDeals, jvDealsLoading, isXs, cardW
     router.push({ pathname: '/jv-invest', params: { jvId: dealId } } as any);
   }, [router]);
 
+  // InvestmentCard callbacks
+  const handleCardLike = useCallback(async (data: InvestmentCardData) => {
+    void toggleProjectLike(data.dealId, null).catch(() => {});
+  }, []);
+
+  const handleCardSave = useCallback(async (data: InvestmentCardData) => {
+    const viewerId = await getViewerId().catch(() => null);
+    void toggleVideoSave(`deal-${data.dealId}`, viewerId).catch(() => {});
+  }, []);
+
+  const handleCardShare = useCallback(async (data: InvestmentCardData) => {
+    const url = data.dealUrl ?? `https://ivxholding.com/invest/${data.dealId}`;
+    try {
+      await Share.share({ message: `${data.title} — ${url}` });
+      void trackProjectShare(data.dealId, 'social', null);
+    } catch {}
+  }, []);
+
+  const handleCardComment = useCallback((data: InvestmentCardData) => {
+    router.push({ pathname: '/videos', params: { type: 'reel', focus: `deal-${data.dealId}` } } as any);
+  }, [router]);
+
+  // ReelCard callbacks
   const handleReelLike = useCallback(async (data: CanonicalReelData) => {
     const id = data.dealId ?? data.reelId;
     void toggleProjectLike(id, null).catch(() => {});
@@ -153,12 +220,13 @@ export default function InvestorFirstFeed({ jvDeals, jvDealsLoading, isXs, cardW
           <Text style={styles.emptySubtitle}>Check back soon for new opportunities</Text>
         </View>
       ) : (
-        <View style={{ paddingHorizontal: padH, gap: 14 }}>
-          {blocks.map((block) => {
+        <View style={{ paddingHorizontal: padH, gap: 14, alignItems: 'center' }}>
+          {blocks.map((block, idx) => {
+            // VIDEO block → CanonicalInvestmentReelCard (reel)
             if (block.type === 'video') {
               const reelData = feedVideoToReelData(block.video);
               return (
-                <VideoCardBoundary key={`video-${block.video.id}`}>
+                <CardBoundary key={`video-${block.video.id}`}>
                   <CanonicalInvestmentReelCard
                     data={reelData}
                     mode="feed"
@@ -175,40 +243,32 @@ export default function InvestorFirstFeed({ jvDeals, jvDealsLoading, isXs, cardW
                     onInvest={(d) => goToDeal(d.dealId ?? d.reelId)}
                     testIDPrefix="home-reel"
                   />
-                </VideoCardBoundary>
+                </CardBoundary>
               );
             }
+
+            // DEAL block → InvestmentCard (compact card, NOT a reel)
             const local = localById.get(block.deal.id);
-            let reelData: CanonicalReelData;
-            if (local) {
-              reelData = parsedDealToReelData(local as unknown as ParsedJVDeal);
-            } else {
-              reelData = homeFeedDealToReelData(block.deal);
-            }
+            const cardData = homeFeedDealToInvestmentCard(block.deal, local);
             return (
-              <CanonicalInvestmentReelCard
-                key={`deal-${block.deal.id}`}
-                data={reelData}
-                mode="feed"
-                isActive={false}
-                shouldMountVideo={false}
-                isMuted={muted}
-                feedHeight={feedHeight}
-                onToggleMute={() => setMuted(m => !m)}
-                onLike={handleReelLike}
-                onComment={handleReelComment}
-                onSave={handleReelSave}
-                onShare={handleReelShare}
-                onOpenDeal={(d) => goToDeal(d.dealId ?? d.reelId)}
-                onInvest={(d) => {
-                  if (local) {
-                    openQuickBuy(local);
-                  } else {
-                    goToDeal(d.dealId ?? d.reelId);
-                  }
-                }}
-                testIDPrefix="home-reel"
-              />
+              <CardBoundary key={`deal-${block.deal.id}`}>
+                <InvestmentCard
+                  data={cardData}
+                  onOpenDeal={(d) => goToDeal(d.dealId)}
+                  onInvest={(d) => {
+                    if (local) {
+                      openQuickBuy(local);
+                    } else {
+                      goToDeal(d.dealId);
+                    }
+                  }}
+                  onLike={handleCardLike}
+                  onComment={handleCardComment}
+                  onSave={handleCardSave}
+                  onShare={handleCardShare}
+                  testIDPrefix="home-card"
+                />
+              </CardBoundary>
             );
           })}
         </View>
