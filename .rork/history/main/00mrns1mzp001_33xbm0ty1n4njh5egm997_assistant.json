@@ -391,7 +391,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"curl -s -H \\\"Authorization: Bearer rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs\\\" \\\"https://api.render.com/v1/services/srv-d7t9ivreo5us73ftose0/env-vars\\\" 2>&1 | python3 -c \\\"\\nimport json, sys\\ndata = json.load(sys.stdin)\\nfor v in data:\\n    val = v.get('key','')\\n    # Only show key names, not values, but show first 4 chars of value for prefix detection\\n    val_preview = v.get('value','')\\n    prefix = val_preview[:4] + '***' if len(val_preview) > 4 else '(empty)'\\n    print(f'{val}: {prefix} (len={len(val_preview)})')\\n\\\" 2>&1\"}",
       "createdAt": 1784222081903,
-      "completedAt": 1784222085897
+      "completedAt": 1784222085897,
+      "compactedAt": 1784224823365
     },
     {
       "type": "reasoning",
@@ -439,7 +440,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Test the Vercel AI Gateway key directly from Render\\n# First, get the actual key value from Render env vars\\ncurl -s -H \\\"Authorization: Bearer rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs\\\" \\\"https://api.render.com/v1/services/srv-d7t9ivreo5us73ftose0/env-vars\\\" 2>&1 | python3 -c \\\"\\nimport json, sys\\nraw = sys.stdin.read()\\nprint('Raw response length:', len(raw))\\nprint('First 200 chars:', raw[:200])\\ntry:\\n    data = json.loads(raw)\\n    if isinstance(data, list):\\n        for v in data:\\n            key = v.get('key', 'unknown')\\n            val = v.get('value', '')\\n            print(f'  {key}: prefix={val[:4]}*** len={len(val)}')\\n    elif isinstance(data, dict):\\n        for k, v in data.items():\\n            val = str(v)\\n            print(f'  {k}: prefix={val[:4]}*** len={len(val)}')\\nexcept Exception as e:\\n    print(f'Parse error: {e}')\\n    print(raw[:500])\\n\\\" 2>&1\"}",
       "createdAt": 1784222121531,
-      "completedAt": 1784222126073
+      "completedAt": 1784222126073,
+      "compactedAt": 1784224823365
     },
     {
       "type": "reasoning",
@@ -469,7 +471,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Get all Render env vars with proper parsing\\ncurl -s -H \\\"Authorization: Bearer rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs\\\" \\\"https://api.render.com/v1/services/srv-d7t9ivreo5us73ftose0/env-vars\\\" 2>&1 | python3 -c \\\"\\nimport json, sys\\nraw = sys.stdin.read()\\ndata = json.loads(raw)\\nfor item in data:\\n    ev = item.get('envVar', item)\\n    key = ev.get('key', 'unknown')\\n    val = ev.get('value', '')\\n    prefix = val[:4] + '***' if len(val) > 4 else '(empty)' if not val else val\\n    print(f'  {key}: prefix={prefix} len={len(val)}')\\n\\\" 2>&1\"}",
       "createdAt": 1784222143727,
-      "completedAt": 1784222144862
+      "completedAt": 1784222144862,
+      "compactedAt": 1784224823365
     },
     {
       "type": "reasoning",
@@ -516,7 +519,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Phase 2: Test every existing provider credential\\n# Test 1: vck_ key against Vercel AI Gateway\\n# Test 2: vck_ key against OpenAI direct API  \\n# Test 3: Rork toolkit proxy\\ncat > /tmp/ivx-provider-audit.ts << 'SCRIPT'\\nasync function testVercelGateway(apiKey: string): Promise<{name: string; httpStatus: number; ok: boolean; error: string}> {\\n  console.log('\\\\n▶ Test 1: vck_ key → Vercel AI Gateway (ai-gateway.vercel.sh/v1/chat/completions)');\\n  try {\\n    const resp = await fetch('https://ai-gateway.vercel.sh/v1/chat/completions', {\\n      method: 'POST',\\n      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },\\n      body: JSON.stringify({ model: 'openai/gpt-4o-mini', messages: [{ role: 'user', content: 'Say OK' }], max_tokens: 5 }),\\n      signal: AbortSignal.timeout(15000),\\n    });\\n    const body = await resp.text();\\n    console.log(`  HTTP: ${resp.status}`);\\n    console.log(`  OK: ${resp.ok}`);\\n    console.log(`  Response (first 300): ${body.slice(0, 300)}`);\\n    return { name: 'vercel_gateway', httpStatus: resp.status, ok: resp.ok, error: resp.ok ? '' : body.slice(0, 200) };\\n  } catch (e: any) {\\n    console.log(`  ERROR: ${e.message}`);\\n    return { name: 'vercel_gateway', httpStatus: 0, ok: false, error: e.message };\\n  }\\n}\\n\\nasync function testOpenAIDirect(apiKey: string): Promise<{name: string; httpStatus: number; ok: boolean; error: string}> {\\n  console.log('\\\\n▶ Test 2: vck_ key → OpenAI direct API (api.openai.com/v1/chat/completions)');\\n  try {\\n    const resp = await fetch('https://api.openai.com/v1/chat/completions', {\\n      method: 'POST',\\n      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },\\n      body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: 'Say OK' }], max_tokens: 5 }),\\n      signal: AbortSignal.timeout(15000),\\n    });\\n    const body = await resp.text();\\n    console.log(`  HTTP: ${resp.status}`);\\n    console.log(`  OK: ${resp.ok}`);\\n    console.log(`  Response (first 300): ${body.slice(0, 300)}`);\\n    return { name: 'openai_direct', httpStatus: resp.status, ok: resp.ok, error: resp.ok ? '' : body.slice(0, 200) };\\n  } catch (e: any) {\\n    console.log(`  ERROR: ${e.message}`);\\n    return { name: 'openai_direct', httpStatus: 0, ok: false, error: e.message };\\n  }\\n}\\n\\nasync function testRorkToolkit(toolkitUrl: string, toolkitKey: string): Promise<{name: string; httpStatus: number; ok: boolean; error: string}> {\\n  console.log('\\\\n▶ Test 3: Rork toolkit proxy');\\n  console.log(`  URL: ${toolkitUrl}`);\\n  console.log(`  Key prefix: ${toolkitKey.slice(0, 8)}***`);\\n  try {\\n    const resp = await fetch(`${toolkitUrl}/v1/chat/completions`, {\\n      method: 'POST',\\n      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${toolkitKey}` },\\n      body: JSON.stringify({ model: 'openai/gpt-4o-mini', messages: [{ role: 'user', content: 'Say OK' }], max_tokens: 5 }),\\n      signal: AbortSignal.timeout(15000),\\n    });\\n    const body = await resp.text();\\n    console.log(`  HTTP: ${resp.status}`);\\n    console.log(`  OK: ${resp.ok}`);\\n    console.log(`  Response (first 500): ${body.slice(0, 500)}`);\\n    return { name: 'rork_toolkit', httpStatus: resp.status, ok: resp.ok, error: resp.ok ? '' : body.slice(0, 200) };\\n  } catch (e: any) {\\n    console.log(`  ERROR: ${e.message}`);\\n    return { name: 'rork_toolkit', httpStatus: 0, ok: false, error: e.message };\\n  }\\n}\\n\\nasync function main() {\\n  console.log('=== PHASE 2: CREDENTIAL AUDIT ===\\\\n');\\n\\n  // Get the vck_ key from Render\\n  console.log('▶ Fetching credentials from Render...');\\n  const renderResp = await fetch('https://api.render.com/v1/services/srv-d7t9ivreo5us73ftose0/env-vars', {\\n    headers: { 'Authorization': 'Bearer rnd_1H0XCquMZQTRyAnHgbEv8dVWYPVs' },\\n  });\\n  const renderData = await renderResp.json() as any[];\\n  const envVars: Record<string, string> = {};\\n  for (const item of renderData) {\\n    const ev = item.envVar || item;\\n    envVars[ev.key] = ev.value || '';\\n  }\\n\\n  const vckKey = envVars['AI_GATEWAY_API_KEY'] || envVars['OPENAI_API_KEY'] || '';\\n  console.log(`  AI_GATEWAY_API_KEY: prefix=${vckKey.slice(0,4)}*** len=${vckKey.length}`);\\n  console.log(`  OPENAI_API_KEY: prefix=${envVars['OPENAI_API_KEY']?.slice(0,4)}*** len=${envVars['OPENAI_API_KEY']?.length || 0}`);\\n  console.log(`  ANTHROPIC_API_KEY: ${envVars['ANTHROPIC_API_KEY'] ? 'present' : 'NOT SET'}`);\\n\\n  // Get Rork toolkit credentials from public env vars\\n  const rorkToolKitUrl = process.env.EXPO_PUBLIC_TOOLKIT_URL || '';\\n  const rorkToolKitKey = process.env.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY || '';\\n  console.log(`  EXPO_PUBLIC_TOOLKIT_URL: ${rorkToolKitUrl ? 'present' : 'NOT SET'} (val=${rorkToolKitUrl})`);\\n  console.log(`  EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY: ${rorkToolKitKey ? 'present' : 'NOT SET'} (prefix=${rorkToolKitKey.slice(0,8)}***)`);\\n\\n  const results: {name: string; httpStatus: number; ok: boolean; error: string}[] = [];\\n\\n  // Test 1: vck_ key against Vercel AI Gateway\\n  if (vckKey) {\\n    results.push(await testVercelGateway(vckKey));\\n  }\\n\\n  // Test 2: vck_ key against OpenAI direct (expected to fail — wrong key type)\\n  if (vckKey) {\\n    results.push(await testOpenAIDirect(vckKey));\\n  }\\n\\n  // Test 3: Rork toolkit proxy\\n  if (rorkToolKitUrl && rorkToolKitKey) {\\n    results.push(await testRorkToolkit(rorkToolKitUrl, rorkToolKitKey));\\n  }\\n\\n  // Summary\\n  console.log('\\\\n=== CREDENTIAL AUDIT SUMMARY ===');\\n  for (const r of results) {\\n    const status = r.ok ? 'PASS ✓' : `FAIL (HTTP ${r.httpStatus})`;\\n    console.log(`  ${r.name}: ${status}`);\\n  }\\n\\n  const anyPass = results.some(r => r.ok);\\n  console.log(`\\\\n  Any provider working: ${anyPass ? 'YES' : 'NO'}`);\\n  \\n  if (!anyPass) {\\n    console.log('\\\\n  ⚠️ All existing credentials failed. Owner must provide a valid OpenAI API key (sk-...).');\\n  }\\n}\\n\\nmain().catch(e => { console.error('FATAL:', e.message); process.exit(1); });\\nSCRIPT\\nbun /tmp/ivx-provider-audit.ts 2>&1\"}",
       "createdAt": 1784222184178,
-      "completedAt": 1784222209539
+      "completedAt": 1784222209539,
+      "compactedAt": 1784224823365
     },
     {
       "type": "reasoning",
@@ -546,7 +550,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"echo \\\"TOOLKIT_URL=${EXPO_PUBLIC_TOOLKIT_URL:-NOT_SET}\\\" && echo \\\"TOOLKIT_KEY_LEN=${#EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY}\\\" && echo \\\"TOOLKIT_KEY_PREFIX=${EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY:0:12}***\\\" && echo \\\"RORK_API_BASE=${EXPO_PUBLIC_RORK_API_BASE_URL:-NOT_SET}\\\" && echo \\\"RORK_APP_KEY_PREFIX=${EXPO_PUBLIC_RORK_APP_KEY:0:8}***\\\"\"}",
       "createdAt": 1784222250337,
-      "completedAt": 1784222253400
+      "completedAt": 1784222253400,
+      "compactedAt": 1784224823365
     },
     {
       "type": "tool",
@@ -563,7 +568,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \".env.example\"}",
       "createdAt": 1784222253301,
-      "completedAt": 1784222253401
+      "completedAt": 1784222253401,
+      "compactedAt": 1784224823365
     },
     {
       "type": "reasoning",
@@ -593,7 +599,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"env | grep -i -E \\\"TOOLKIT|RORK|EXPO_PUBLIC\\\" | sort\"}",
       "createdAt": 1784222346845,
-      "completedAt": 1784222347779
+      "completedAt": 1784222347779,
+      "compactedAt": 1784224823365
     },
     {
       "type": "reasoning",
@@ -622,7 +629,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"rork.json\"}",
       "createdAt": 1784222363575,
-      "completedAt": 1784222367098
+      "completedAt": 1784222367098,
+      "compactedAt": 1784224823365
     },
     {
       "type": "tool",
@@ -643,7 +651,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"pattern\": \"TOOLKIT_URL|TOOLKIT_SECRET|toolkit\", \"include\": \"*.ts\", \"path\": \"expo/constants\"}",
       "createdAt": 1784222364117,
-      "completedAt": 1784222367104
+      "completedAt": 1784222367104,
+      "compactedAt": 1784224823365
     },
     {
       "type": "tool",
@@ -661,7 +670,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"printenv EXPO_PUBLIC_TOOLKIT_URL 2>/dev/null || echo \\\"NOT IN ENV\\\"; printenv EXPO_PUBLIC_TOOLKIT_SECRET_KEY 2>/dev/null || echo \\\"NOT IN ENV\\\"; printenv EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY 2>/dev/null || echo \\\"NOT IN ENV\\\"\"}",
       "createdAt": 1784222365318,
-      "completedAt": 1784222367134
+      "completedAt": 1784222367134,
+      "compactedAt": 1784224823365
     },
     {
       "type": "reasoning",
@@ -691,7 +701,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"env | grep -E \\\"EXPO_PUBLIC|RORK|TOOLKIT\\\" 2>/dev/null | sort\"}",
       "createdAt": 1784222381198,
-      "completedAt": 1784222384394
+      "completedAt": 1784222384394,
+      "compactedAt": 1784224823365
     },
     {
       "type": "tool",
@@ -712,7 +723,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"pattern\": \"TOOLKIT_URL|TOOLKIT_SECRET|toolkit\\\\.rork|rork-toolkit\", \"path\": \"expo\", \"include\": \"*.ts\"}",
       "createdAt": 1784222382209,
-      "completedAt": 1784222384406
+      "completedAt": 1784222384406,
+      "compactedAt": 1784224823365
     },
     {
       "type": "reasoning",
@@ -745,7 +757,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"include\": \"*.ts\", \"path\": \"expo\", \"pattern\": \"TOOLKIT_URL|RORK_TOOLKIT|toolkitUrl|toolkitSecret\"}",
       "createdAt": 1784222411017,
-      "completedAt": 1784222411798
+      "completedAt": 1784222411798,
+      "compactedAt": 1784224823365
     },
     {
       "type": "tool",
@@ -762,7 +775,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/app.config.ts\"}",
       "createdAt": 1784222411617,
-      "completedAt": 1784222411801
+      "completedAt": 1784222411801,
+      "compactedAt": 1784224823365
     },
     {
       "type": "reasoning",
@@ -792,7 +806,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"bun -e \\\"const keys = ['EXPO_PUBLIC_TOOLKIT_URL', 'EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY', 'EXPO_PUBLIC_RORK_API_BASE_URL', 'EXPO_PUBLIC_RORK_APP_KEY', 'EXPO_PUBLIC_RORK_AUTH_URL', 'EXPO_PUBLIC_RORK_FUNCTIONS_URL', 'EXPO_PUBLIC_TEAM_ID']; for (const k of keys) { const v = process.env[k]; console.log(k + ': ' + (v ? (v.slice(0,12) + '*** len=' + v.length) : 'NOT SET')); }\\\" 2>&1\"}",
       "createdAt": 1784222433733,
-      "completedAt": 1784222440049
+      "completedAt": 1784222440049,
+      "compactedAt": 1784224823365
     },
     {
       "type": "tool",
@@ -810,7 +825,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"ls -la /home/user/rork-app/.env* /home/user/rork-app/expo/.env* 2>/dev/null; find /home/user/rork-app -maxdepth 2 -name \\\".env\\\" -o -name \\\".env.local\\\" -o -name \\\".env.production\\\" 2>/dev/null | head -10\"}",
       "createdAt": 1784222436852,
-      "completedAt": 1784222440078
+      "completedAt": 1784222440078,
+      "compactedAt": 1784224823365
     },
     {
       "type": "reasoning",
@@ -834,7 +850,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"expo/.env\"}",
       "createdAt": 1784222443204,
-      "completedAt": 1784222444100
+      "completedAt": 1784222444100,
+      "compactedAt": 1784224823365
     },
     {
       "type": "tool",
@@ -851,7 +868,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"filePath\": \"android-ivx-holdings/.env\"}",
       "createdAt": 1784222444091,
-      "completedAt": 1784222444102
+      "completedAt": 1784222444102,
+      "compactedAt": 1784224823365
     },
     {
       "type": "reasoning",
@@ -881,7 +899,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"cat > /tmp/ivx-rork-toolkit-test.ts << 'SCRIPT'\\nconst TOOLKIT_URL = 'https://toolkit.rork.com';\\nconst TOOLKIT_KEY = 'rork_sk_krty78xsmsmmuvqbcyetnc7jv3qoq1hl';\\n\\nasync function testRorkToolkit() {\\n  console.log('=== Test: Rork Toolkit Proxy ===');\\n  console.log(`  URL: ${TOOLKIT_URL}`);\\n  console.log(`  Key prefix: ${TOOLKIT_KEY.slice(0, 12)}***`);\\n  \\n  // Test 1: Vercel AI Gateway via Rork proxy\\n  console.log('\\\\n▶ Test 1a: /v2/vercel/v1/chat/completions (Vercel AI Gateway via Rork proxy)');\\n  try {\\n    const resp = await fetch(`${TOOLKIT_URL}/v2/vercel/v1/chat/completions`, {\\n      method: 'POST',\\n      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOOLKIT_KEY}` },\\n      body: JSON.stringify({ model: 'openai/gpt-4o-mini', messages: [{ role: 'user', content: 'Say OK' }], max_tokens: 5 }),\\n      signal: AbortSignal.timeout(20000),\\n    });\\n    const body = await resp.text();\\n    console.log(`  HTTP: ${resp.status}`);\\n    console.log(`  OK: ${resp.ok}`);\\n    console.log(`  Response (first 500): ${body.slice(0, 500)}`);\\n    return resp.ok;\\n  } catch (e: any) {\\n    console.log(`  ERROR: ${e.message}`);\\n    return false;\\n  }\\n}\\n\\nasync function testRorkToolkitDirect() {\\n  // Test 2: Direct chat completions via Rork proxy (v1 path)\\n  console.log('\\\\n▶ Test 1b: /v1/chat/completions (Direct via Rork proxy)');\\n  try {\\n    const resp = await fetch(`${TOOLKIT_URL}/v1/chat/completions`, {\\n      method: 'POST',\\n      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOOLKIT_KEY}` },\\n      body: JSON.stringify({ model: 'openai/gpt-4o-mini', messages: [{ role: 'user', content: 'Say OK' }], max_tokens: 5 }),\\n      signal: AbortSignal.timeout(20000),\\n    });\\n    const body = await resp.text();\\n    console.log(`  HTTP: ${resp.status}`);\\n    console.log(`  OK: ${resp.ok}`);\\n    console.log(`  Response (first 500): ${body.slice(0, 500)}`);\\n    return resp.ok;\\n  } catch (e: any) {\\n    console.log(`  ERROR: ${e.message}`);\\n    return false;\\n  }\\n}\\n\\nasync function main() {\\n  const r1 = await testRorkToolkit();\\n  const r2 = await testRorkToolkitDirect();\\n  console.log(`\\\\n=== SUMMARY ===`);\\n  console.log(`  Rork proxy /v2/vercel/: ${r1 ? 'PASS' : 'FAIL'}`);\\n  console.log(`  Rork proxy /v1/: ${r2 ? 'PASS' : 'FAIL'}`);\\n}\\nmain().catch(e => { console.error('FATAL:', e); process.exit(1); });\\nSCRIPT\\nbun /tmp/ivx-rork-toolkit-test.ts 2>&1\"}",
       "createdAt": 1784222473114,
-      "completedAt": 1784222488433
+      "completedAt": 1784222488433,
+      "compactedAt": 1784224823365
     },
     {
       "type": "reasoning",
@@ -926,7 +945,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"envs\": [{\"name\": \"OPENAI_API_KEY\", \"description\": \"A valid OpenAI API key (starts with sk-) to replace the expired vck_ Vercel AI Gateway key on Render. This will be set as OPENAI_API_KEY on Render via safe env merge. Get one from https://platform.openai.com/api-keys\", \"placeholder\": \"sk-proj-xxxxxxxxxxxxxxxxxxxx\", \"isPublic\": false}], \"reason\": \"The current vck_ Vercel AI Gateway key is expired (HTTP 401). No other AI provider credentials exist on Render. To restore IVX Owner AI production chat, a valid OpenAI API key (sk-...) is needed. This will be set on Render via the safe env merge workflow (read→merge→write→validate) and never exposed in logs or code.\"}",
       "createdAt": 1784222555205,
-      "completedAt": 1784222560100
+      "completedAt": 1784222560100,
+      "compactedAt": 1784224823365
     },
     {
       "type": "meta",
