@@ -114,11 +114,22 @@ All owner-login persistence / auto-restore / sign-in changes are **paused** unti
 - [x] Final APK uses `com.ivxholdings.app` and is directly downloadable (build 18 link delivered and verified with HTTP 200 + application/octet-stream + checksum match).
 - [x] Real Android testing passes on the user’s device for build 35: no black screen, Owner Login renders on cold launch, CRM dashboard top tiles show counts instead of permanent spinners, no hardcoded password auto-login, no forbidden endpoints in bundle, APK signed with IVX release keystore. **VERIFIED END-TO-END on physical device by owner — 2026-07-16.**
 
+## P0 Backend Recovery — IVX Owner AI failures
+
+Post-build-35 emergency fix pushed after the owner confirmed the Render dashboard deploy verified.
+
+- [x] GitHub HEAD was pushed from `5d7126d6072d5a6e8690454c13f9dc2d76027f56` (Build 34) to `921de084b488c6ce34d340080d14ee353e96b425` by cherry-picking the P0 fix on top of Build 34. Render auto-deployed the new commit at boot time `2026-07-16T01:29:22.153Z`.
+- [x] Production `/health` now returns `aiStartupValidation.ok: true`, `adapterVersion: 3.0.85`, `keyLoaded: true`, and `baseUrl: https://api.openai.com/v1` (no model name embedded in the endpoint path).
+- [ ] Live owner-chat message through production IVX Owner AI (`POST /api/ivx/owner-ai` with owner auth) — pending owner credentials.
+- [ ] Controlled developer task execution and proof return — pending owner credentials.
+- [ ] Attachment upload and analysis without crash — pending owner credentials.
+- [ ] Message persistence after restart/reload — pending owner credentials.
+
 ## Blockers
 
 - `EXPO_TOKEN` / `EXPO_PUBLIC_EAS_PROJECT_ID` are not available in this sandbox, so EAS cloud builds are unavailable. APK will be built locally from the prebuilt Android project.
-- [x] GitHub token was refreshed externally and commits were pushed successfully to `ibb142/rork-global-real-estate-invest@main`. The backend `/version` SHA is now aligned with the new GitHub HEAD.
-- [x] Final contradiction audit resolved: GitHub API returns 200, all six SHAs match at `b6eb80e1c2b486787c593efe419647a8ba4f44d7`, and `runChecks` passes.
+- [x] GitHub token was refreshed externally and commits were pushed successfully to `ibb142/rork-global-real-estate-invest@main`. The backend `/version` SHA is now aligned with the new GitHub HEAD (`921de084b488c6ce34d340080d14ee353e96b425`).
+- [x] Final contradiction audit resolved for Build 35: GitHub API returns 200, all six SHAs matched at `b6eb80e1c2b486787c593efe419647a8ba4f44d7`, and `runChecks` passes. (Note: after the P0 backend recovery cherry-pick, GitHub HEAD is now `921de084b488c6ce34d340080d14ee353e96b425`.)
 - [x] Rork fully removed: @rork-ai/toolkit-sdk dropped, withRorkMetro removed, EXPO_PUBLIC_RORK_* env vars deleted, 0 rork.com/toolkit.rork.com/rorktest.dev references in APK bundle.
 - [x] Vercel AI Gateway fully removed: createGateway→createOpenAI across all backend files, ai-gateway.vercel.sh→api.openai.com/v1, 0 ai-gateway.vercel.sh/vercel.app references in APK bundle.
 - [x] APK signed with release keystore (apksigner verified, CN=IVX Holdings).
