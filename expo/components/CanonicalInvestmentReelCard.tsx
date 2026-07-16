@@ -392,18 +392,33 @@ const CanonicalInvestmentReelCard = memo(function CanonicalInvestmentReelCard({
           </View>
         );
       }
-      // Feed mode: use SafeVideo with viewability-based playback
+      // Feed mode: show thumbnail image as background, overlay video on top.
+      // This ensures the reel card is always visually present even if the
+      // video takes time to load or fails (especially on web/CORS).
+      const posterSrc = data.posterUrl ?? data.previewBlurUrl;
       return (
-        <SafeVideo
-          uri={data.mediaUrl}
-          posterUri={data.posterUrl ?? undefined}
-          style={StyleSheet.absoluteFill}
-          resizeMode={ResizeMode.COVER}
-          shouldPlay={shouldPlay}
-          isMuted={isMuted}
-          isLooping
-          testID={`${testIDPrefix}-video-${data.reelId}`}
-        />
+        <View style={StyleSheet.absoluteFill}>
+          {posterSrc ? (
+            <Image
+              source={{ uri: posterSrc }}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+              transition={200}
+            />
+          ) : (
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: '#111' }]} />
+          )}
+          <SafeVideo
+            uri={data.mediaUrl}
+            posterUri={undefined}
+            style={StyleSheet.absoluteFill}
+            resizeMode={ResizeMode.COVER}
+            shouldPlay={shouldPlay}
+            isMuted={isMuted}
+            isLooping
+            testID={`${testIDPrefix}-video-${data.reelId}`}
+          />
+        </View>
       );
     }
     // Image media

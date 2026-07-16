@@ -74,14 +74,66 @@ export interface FeedVideo {
  * videos, subsequent calls pass `offset = limit`, `offset = limit * 2`, etc.
  */
 export async function fetchVideoFeed(limit = 24, offset = 0): Promise<FeedVideo[]> {
-  const params = new URLSearchParams({ limit: String(limit) });
-  if (offset > 0) params.set('offset', String(offset));
-  const res = await fetch(`${API_BASE}/api/ivx/video-platform/feed?${params.toString()}`);
-  if (!res.ok) {
-    throw new Error(`Feed request failed (${res.status})`);
+  try {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (offset > 0) params.set('offset', String(offset));
+    const res = await fetch(`${API_BASE}/api/ivx/video-platform/feed?${params.toString()}`);
+    if (!res.ok) {
+      throw new Error(`Feed request failed (${res.status})`);
+    }
+    const data = (await res.json()) as { videos?: FeedVideo[] };
+    return Array.isArray(data.videos) ? data.videos : [];
+  } catch {
+    return fetchVideoFeedFromSupabase(limit, offset);
   }
-  const data = (await res.json()) as { videos?: FeedVideo[] };
-  return Array.isArray(data.videos) ? data.videos : [];
+}
+
+/**
+ * Supabase fallback for the video feed — fetches approved project_videos
+ * directly when the backend API is CORS-blocked or unreachable.
+ */
+async function fetchVideoFeedFromSupabase(limit: number, offset: number): Promise<FeedVideo[]> {
+  const sbUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
+  const sbKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+  if (!sbUrl || !sbKey) return [];
+
+  const headers: Record<string, string> = {
+    apikey: sbKey,
+    Authorization: `Bearer ${sbKey}`,
+  };
+
+  const res = await fetch(
+    `${sbUrl}/rest/v1/project_videos?select=id,project_id,title,video_url,thumbnail_url,duration_sec,width,height,orientation,is_pinned,created_at&is_approved=eq.true&order=is_pinned.desc,created_at.desc&limit=${limit}&offset=${offset}`,
+    { headers },
+  );
+  if (!res.ok) return [];
+  const rows: Record<string, unknown>[] = await res.json();
+
+  return rows.map((v): FeedVideo => ({
+    id: String(v.id),
+    project_id: v.project_id ? String(v.project_id) : null,
+    video_url: (v.video_url as string) || '',
+    hls_url: null,
+    poster_url: null,
+    preview_blur_url: null,
+    playback_status: null,
+    thumbnail_url: (v.thumbnail_url as string) || null,
+    title: (v.title as string) || null,
+    duration_sec: (v.duration_sec as number) ?? 0,
+    width: (v.width as number) ?? null,
+    height: (v.height as number) ?? null,
+    orientation: (v.orientation as string) || 'landscape',
+    is_pinned: v.is_pinned === true,
+    created_at: (v.created_at as string) || '',
+    like_count: 0,
+    comment_count: 0,
+    share_count: 0,
+    save_count: 0,
+    view_count: 0,
+    video_type: 'deal',
+    is_featured: v.is_pinned === true,
+    status: 'published',
+  }));
 }
 
 /**
@@ -90,12 +142,16 @@ export async function fetchVideoFeed(limit = 24, offset = 0): Promise<FeedVideo[
  * interrupt the investor deal flow of the main feed.
  */
 export async function fetchProjectReels(limit = 24): Promise<FeedVideo[]> {
-  const res = await fetch(`${API_BASE}/api/ivx/video-platform/feed?limit=${limit}&type=reel`);
-  if (!res.ok) {
-    throw new Error(`Reels request failed (${res.status})`);
+  try {
+    const res = await fetch(`${API_BASE}/api/ivx/video-platform/feed?limit=${limit}&type=reel`);
+    if (!res.ok) {
+      throw new Error(`Reels request failed (${res.status})`);
+    }
+    const data = (await res.json()) as { videos?: FeedVideo[] };
+    return Array.isArray(data.videos) ? data.videos : [];
+  } catch {
+    return fetchVideoFeedFromSupabase(limit, 0);
   }
-  const data = (await res.json()) as { videos?: FeedVideo[] };
-  return Array.isArray(data.videos) ? data.videos : [];
 }
 
 /** Deal payload inside the investor-first home feed (canonical across platforms). */
@@ -139,17 +195,177 @@ export interface HomeFeedResponse {
  * on every platform. One admin publish updates all of them.
  */
 export async function fetchHomeFeed(limit = 60): Promise<HomeFeedResponse> {
-  const res = await fetch(`${API_BASE}/api/ivx/video-platform/home-feed?limit=${limit}`);
-  if (!res.ok) {
-    throw new Error(`Home feed request failed (${res.status})`);
+  try {
+    const res = await fetch(`${API_BASE}/api/ivx/video-platform/home-feed?limit=${limit}`);
+    if (!res.ok) {
+      throw new Error(`Home feed request failed (${res.status})`);
+    }
+    const data = (await res.json()) as HomeFeedResponse;
+    const result = {
+      pattern: data.pattern ?? '',
+      ordering: data.ordering ?? '',
+      blocks: Array.isArray(data.blocks) ? data.blocks : [],
+      deal_count: data.deal_count ?? 0,
+      video_count: data.video_count ?? 0,
+    };
+    console.log(`[fetchHomeFeed] API success: ${result.blocks.length} blocks, ${result.deal_count} deals, ${result.video_count} videos`);
+    return result;
+  } catch (err) {
+    console.warn(`[fetchHomeFeed] API failed, using Supabase fallback:`, err instanceof Error ? err.message : err);
+    // Fallback: fetch deals + videos directly from Supabase (permissive CORS)
+    // when the backend API is unreachable or blocked by CORS.
+    const fallback = await fetchHomeFeedFromSupabase(limit);
+    console.log(`[fetchHomeFeed] Supabase fallback: ${fallback.blocks.length} blocks, ${fallback.deal_count} deals, ${fallback.video_count} videos`);
+    return fallback;
   }
-  const data = (await res.json()) as HomeFeedResponse;
+}
+
+/**
+ * Supabase fallback for the home feed — fetches published JV deals and
+ * approved project videos directly, then composes the same 3-deals-1-video
+ * pattern the backend uses. Used when the backend API is CORS-blocked.
+ */
+async function fetchHomeFeedFromSupabase(limit = 60): Promise<HomeFeedResponse> {
+  const sbUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '');
+  const sbKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+  if (!sbUrl || !sbKey) {
+    return { pattern: '', ordering: 'supabase-fallback', blocks: [], deal_count: 0, video_count: 0 };
+  }
+
+  const headers: Record<string, string> = {
+    apikey: sbKey,
+    Authorization: `Bearer ${sbKey}`,
+  };
+
+  // Fetch published deals
+  const dealsRes = await fetch(
+    `${sbUrl}/rest/v1/jv_deals?select=id,title,project_name,type,total_investment,expected_roi,min_investment,status,property_address,city,state,photos,created_at&published=eq.true&order=created_at.desc&limit=100`,
+    { headers },
+  );
+  const dealRows: Record<string, unknown>[] = dealsRes.ok ? await dealsRes.json() : [];
+
+  // Fetch approved videos
+  const vidsRes = await fetch(
+    `${sbUrl}/rest/v1/project_videos?select=id,project_id,title,video_url,thumbnail_url,duration_sec,width,height,orientation,is_pinned,created_at&is_approved=eq.true&order=is_pinned.desc,created_at.desc&limit=50`,
+    { headers },
+  );
+  const vidRows: Record<string, unknown>[] = vidsRes.ok ? await vidsRes.json() : [];
+
+  // Build deals with photo resolution
+  const deals: HomeFeedDeal[] = dealRows
+    .filter((r) => {
+      const st = String(r.status ?? '').toLowerCase();
+      return !['trashed', 'archived', 'permanently_deleted', 'expired'].includes(st);
+    })
+    .map((r): HomeFeedDeal => {
+      const photos = Array.isArray(r.photos) ? r.photos as string[] : [];
+      const photoUrl = photos.length > 0 ? photos[0] : null;
+      const cityState = [r.city, r.state].filter(Boolean).join(', ');
+      return {
+        id: String(r.id),
+        name: (r.project_name as string) || (r.title as string) || null,
+        city: cityState || (r.property_address as string) || null,
+        phase: null,
+        status: (r.status as string) || 'published',
+        deal_type: (r.type as string) || null,
+        investment_amount: (r.total_investment as number) ?? null,
+        expected_roi: r.expected_roi != null ? String(r.expected_roi) : null,
+        min_investment: (r.min_investment as number) ?? 50,
+        progress_percent: null,
+        photo_url: photoUrl,
+        url: `https://ivxholding.com/?deal=${r.id}#deals`,
+        is_featured: false,
+        priority: 0,
+        display_order: null,
+        created_at: (r.created_at as string) || null,
+      };
+    });
+
+  // Build videos and attach deals by title match
+  const titleToDeal = new Map<string, HomeFeedDeal>();
+  for (const d of deals) {
+    const name = (d.name ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (name) titleToDeal.set(name, d);
+  }
+
+  const videos: FeedVideo[] = vidRows.map((v): FeedVideo => {
+    const title = String(v.title ?? '');
+    const cleanTitle = title.toLowerCase().replace(/[^a-z0-9]/g, '');
+    let matchedDeal: HomeFeedDeal | null = null;
+    for (const [name, deal] of titleToDeal) {
+      if (cleanTitle.includes(name) || name.includes(cleanTitle)) {
+        matchedDeal = deal;
+        break;
+      }
+    }
+    return {
+      id: String(v.id),
+      project_id: v.project_id ? String(v.project_id) : null,
+      video_url: (v.video_url as string) || '',
+      hls_url: null,
+      poster_url: null,
+      preview_blur_url: null,
+      playback_status: null,
+      thumbnail_url: (v.thumbnail_url as string) || null,
+      title: title || null,
+      duration_sec: (v.duration_sec as number) ?? 0,
+      width: (v.width as number) ?? null,
+      height: (v.height as number) ?? null,
+      orientation: (v.orientation as string) || 'landscape',
+      is_pinned: v.is_pinned === true,
+      created_at: (v.created_at as string) || '',
+      like_count: 0,
+      comment_count: 0,
+      share_count: 0,
+      save_count: 0,
+      view_count: 0,
+      video_type: 'deal',
+      is_featured: v.is_pinned === true,
+      property_id: matchedDeal?.id ?? null,
+      deal: matchedDeal ? {
+        id: matchedDeal.id,
+        title: matchedDeal.name,
+        price: matchedDeal.investment_amount,
+        min_investment: matchedDeal.min_investment,
+        expected_roi: matchedDeal.expected_roi,
+        deal_type: matchedDeal.deal_type,
+        url: matchedDeal.url,
+      } : null,
+      status: 'published',
+    };
+  });
+
+  // Compose 3-deals-1-video pattern
+  const blocks: HomeFeedBlock[] = [];
+  const usedVideoIds = new Set<string>();
+  for (let i = 0; i < deals.length; i++) {
+    blocks.push({
+      position: blocks.length,
+      type: 'deal' as const,
+      display_type: 'investment_card' as const,
+      deal: deals[i],
+    });
+    if ((i + 1) % 3 === 0) {
+      const nextVideo = videos.find((v) => !usedVideoIds.has(v.id));
+      if (nextVideo) {
+        usedVideoIds.add(nextVideo.id);
+        blocks.push({
+          position: blocks.length,
+          type: 'video' as const,
+          display_type: 'reel' as const,
+          video: nextVideo,
+        });
+      }
+    }
+    if (blocks.length >= limit) break;
+  }
+
   return {
-    pattern: data.pattern ?? '',
-    ordering: data.ordering ?? '',
-    blocks: Array.isArray(data.blocks) ? data.blocks : [],
-    deal_count: data.deal_count ?? 0,
-    video_count: data.video_count ?? 0,
+    pattern: '3-deals-1-featured-project-video',
+    ordering: 'supabase-fallback-v1',
+    blocks,
+    deal_count: deals.length,
+    video_count: videos.length,
   };
 }
 
