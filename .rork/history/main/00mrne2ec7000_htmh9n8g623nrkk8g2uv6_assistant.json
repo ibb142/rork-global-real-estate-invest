@@ -1959,7 +1959,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Check if the backend has been re-deployed since our push - poll the health endpoint\\ncurl -s https://api.ivxholding.com/health 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nprint(f'Commit: {d.get(\\\\\\\"commit\\\\\\\",\\\\\\\"?\\\\\\\")[:12]}')\\nprint(f'BootTime: {d.get(\\\\\\\"bootTime\\\\\\\",\\\\\\\"?\\\\\\\")}')\\nprint(f'Status: {d.get(\\\\\\\"status\\\\\\\",\\\\\\\"?\\\\\\\")}')\\n\\\" 2>&1\"}",
       "createdAt": 1784198846059,
-      "completedAt": 1784198847242
+      "completedAt": 1784198847242,
+      "compactedAt": 1784202938465
     },
     {
       "type": "reasoning",
@@ -1989,7 +1990,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Extract owner token for backend API calls\\npython3 -c \\\"\\nwith open('/home/user/rork-app/android-ivx-holdings/.env', 'r') as f:\\n    for line in f:\\n        stripped = line.strip()\\n        if stripped.startswith('IVX_OWNER_TOKEN='):\\n            val = stripped[len('IVX_OWNER_TOKEN='):]\\n            if val.startswith('IVX_'):\\n                with open('/tmp/ivx_owner_token', 'w') as out:\\n                    out.write(val)\\n                print(f'Owner token extracted, len={len(val)}')\\n\\\" 2>&1\"}",
       "createdAt": 1784198856966,
-      "completedAt": 1784198858113
+      "completedAt": 1784198858113,
+      "compactedAt": 1784202938465
     },
     {
       "type": "tool",
@@ -2007,7 +2009,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Check developer deploy status endpoint (no auth needed for status)\\ncurl -s -w \\\"\\\\n%{http_code}\\\" https://api.ivxholding.com/api/ivx/developer-deploy/status 2>&1 | tail -20\"}",
       "createdAt": 1784198857623,
-      "completedAt": 1784198858293
+      "completedAt": 1784198858293,
+      "compactedAt": 1784202938465
     },
     {
       "type": "reasoning",
@@ -2032,7 +2035,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Use the backend's self-deploy endpoint with owner token\\nOWNER_TOKEN=$(cat /tmp/ivx_owner_token)\\ncurl -s -X POST \\\"https://api.ivxholding.com/api/ivx/developer-deploy/action\\\" \\\\\\n  -H \\\"Authorization: Bearer $OWNER_TOKEN\\\" \\\\\\n  -H \\\"Content-Type: application/json\\\" \\\\\\n  -d '{\\\"action\\\":\\\"deploy\\\",\\\"clearCache\\\":false}' 2>&1 | head -40\"}",
       "createdAt": 1784198860040,
-      "completedAt": 1784198862341
+      "completedAt": 1784198862341,
+      "compactedAt": 1784202938465
     },
     {
       "type": "tool",
@@ -2050,7 +2054,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Also try the control room status with auth\\nOWNER_TOKEN=$(cat /tmp/ivx_owner_token)\\ncurl -s \\\"https://api.ivxholding.com/api/ivx/developer-deploy/status\\\" \\\\\\n  -H \\\"Authorization: Bearer $OWNER_TOKEN\\\" 2>&1 | python3 -c \\\"import sys,json; print(json.dumps(json.load(sys.stdin), indent=2))\\\" 2>&1 | head -40\"}",
       "createdAt": 1784198860867,
-      "completedAt": 1784198862519
+      "completedAt": 1784198862519,
+      "compactedAt": 1784202938465
     },
     {
       "type": "reasoning",
@@ -2080,7 +2085,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Extract Supabase URL and anon key, then authenticate with owner credentials\\npython3 -c \\\"\\nwith open('/home/user/rork-app/android-ivx-holdings/.env', 'r') as f:\\n    for line in f:\\n        stripped = line.strip()\\n        if stripped.startswith('EXPO_PUBLIC_SUPABASE_URL='):\\n            val = stripped[len('EXPO_PUBLIC_SUPABASE_URL='):]\\n            with open('/tmp/ivx_supabase_url', 'w') as out:\\n                out.write(val)\\n        elif stripped.startswith('EXPO_PUBLIC_SUPABASE_ANON_KEY='):\\n            val = stripped[len('EXPO_PUBLIC_SUPABASE_ANON_KEY='):]\\n            with open('/tmp/ivx_supabase_anon', 'w') as out:\\n                out.write(val)\\n        elif stripped.startswith('IVX_OWNER_EMAIL='):\\n            val = stripped[len('IVX_OWNER_EMAIL='):]\\n            with open('/tmp/ivx_owner_email', 'w') as out:\\n                out.write(val)\\n        elif stripped.startswith('IVX_OWNER_PASSWORD='):\\n            val = stripped[len('IVX_OWNER_PASSWORD='):]\\n            with open('/tmp/ivx_owner_pass', 'w') as out:\\n                out.write(val)\\nprint('Credentials extracted')\\n\\\" 2>&1\"}",
       "createdAt": 1784198868597,
-      "completedAt": 1784198873756
+      "completedAt": 1784198873756,
+      "compactedAt": 1784202938465
     },
     {
       "type": "reasoning",
@@ -2105,7 +2111,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Authenticate with Supabase to get a valid session token\\nSUPABASE_URL=$(cat /tmp/ivx_supabase_url)\\nSUPABASE_ANON=$(cat /tmp/ivx_supabase_anon)\\nOWNER_EMAIL=$(cat /tmp/ivx_owner_email)\\nOWNER_PASS=$(cat /tmp/ivx_owner_pass)\\n\\ncurl -s -X POST \\\"$SUPABASE_URL/auth/v1/token?grant_id=password\\\" \\\\\\n  -H \\\"apikey: $SUPABASE_ANON\\\" \\\\\\n  -H \\\"Content-Type: application/json\\\" \\\\\\n  -d \\\"{\\\\\\\"email\\\\\\\":\\\\\\\"$OWNER_EMAIL\\\\\\\",\\\\\\\"password\\\\\\\":\\\\\\\"$OWNER_PASS\\\\\\\"}\\\" 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nif 'access_token' in d:\\n    with open('/tmp/ivx_access_token', 'w') as f:\\n        f.write(d['access_token'])\\n    print(f'Session token extracted, len={len(d[\\\\\\\"access_token\\\\\\\"])}')\\n    print(f'User: {d.get(\\\\\\\"user\\\\\\\",{}).get(\\\\\\\"email\\\\\\\",\\\\\\\"?\\\\\\\")}')\\nelse:\\n    print(f'Auth failed: {d.get(\\\\\\\"error_description\\\\\\\", d.get(\\\\\\\"error\\\\\\\", str(d)[:200]))}')\\n\\\" 2>&1\"}",
       "createdAt": 1784198876093,
-      "completedAt": 1784198877468
+      "completedAt": 1784198877468,
+      "compactedAt": 1784202938465
     },
     {
       "type": "reasoning",
@@ -2135,7 +2142,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Fix: use grant_type=password (not grant_id)\\nSUPABASE_URL=$(cat /tmp/ivx_supabase_url)\\nSUPABASE_ANON=$(cat /tmp/ivx_supabase_anon)\\nOWNER_EMAIL=$(cat /tmp/ivx_owner_email)\\nOWNER_PASS=$(cat /tmp/ivx_owner_pass)\\n\\ncurl -s -X POST \\\"$SUPABASE_URL/auth/v1/token?grant_type=password\\\" \\\\\\n  -H \\\"apikey: $SUPABASE_ANON\\\" \\\\\\n  -H \\\"Content-Type: application/json\\\" \\\\\\n  -d \\\"{\\\\\\\"email\\\\\\\":\\\\\\\"$OWNER_EMAIL\\\\\\\",\\\\\\\"password\\\\\\\":\\\\\\\"$OWNER_PASS\\\\\\\"}\\\" 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nif 'access_token' in d:\\n    with open('/tmp/ivx_access_token', 'w') as f:\\n        f.write(d['access_token'])\\n    print(f'Session token extracted, len={len(d[\\\\\\\"access_token\\\\\\\"])}')\\n    print(f'User: {d.get(\\\\\\\"user\\\\\\\",{}).get(\\\\\\\"email\\\\\\\",\\\\\\\"?\\\\\\\")}')\\n    print(f'Expires: {d.get(\\\\\\\"expires_in\\\\\\\",\\\\\\\"?\\\\\\\")}')\\nelse:\\n    print(f'Auth failed: {json.dumps(d, indent=2)[:300]}')\\n\\\" 2>&1\"}",
       "createdAt": 1784198879171,
-      "completedAt": 1784198881053
+      "completedAt": 1784198881053,
+      "compactedAt": 1784202938465
     },
     {
       "type": "reasoning",
@@ -2165,7 +2173,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Trigger Render deploy via backend self-deploy endpoint\\nACCESS_TOKEN=$(cat /tmp/ivx_access_token)\\ncurl -s -X POST \\\"https://api.ivxholding.com/api/ivx/developer-deploy/action\\\" \\\\\\n  -H \\\"Authorization: Bearer $ACCESS_TOKEN\\\" \\\\\\n  -H \\\"Content-Type: application/json\\\" \\\\\\n  -d '{\\\"action\\\":\\\"deploy\\\",\\\"clearCache\\\":false}' 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nprint(json.dumps(d, indent=2)[:500])\\n\\\" 2>&1\"}",
       "createdAt": 1784198883359,
-      "completedAt": 1784198885764
+      "completedAt": 1784198885764,
+      "compactedAt": 1784202938465
     },
     {
       "type": "tool",
@@ -2183,7 +2192,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Also check deploy status with the valid token\\nACCESS_TOKEN=$(cat /tmp/ivx_access_token)\\ncurl -s \\\"https://api.ivxholding.com/api/ivx/developer-deploy/status\\\" \\\\\\n  -H \\\"Authorization: Bearer $ACCESS_TOKEN\\\" 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nprint(json.dumps(d, indent=2)[:500])\\n\\\" 2>&1\"}",
       "createdAt": 1784198884460,
-      "completedAt": 1784198886536
+      "completedAt": 1784198886536,
+      "compactedAt": 1784202938465
     },
     {
       "type": "reasoning",
@@ -2213,7 +2223,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Check the developer deploy endpoint to see supported actions\\ngrep -A 20 \\\"Unsupported IVX developer deploy\\\" /home/user/rork-app/backend/api/ivx-developer-deploy-control.ts 2>&1 | head -25\"}",
       "createdAt": 1784198900770,
-      "completedAt": 1784198900804
+      "completedAt": 1784198900804,
+      "compactedAt": 1784202938465
     },
     {
       "type": "tool",
@@ -2231,7 +2242,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Poll backend health to see if a new deploy is in progress\\nfor i in 1 2 3; do\\n  echo \\\"--- Poll $i ---\\\"\\n  curl -s https://api.ivxholding.com/health 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nprint(f'Commit: {d.get(\\\\\\\"commit\\\\\\\",\\\\\\\"?\\\\\\\")[:12]}')\\nprint(f'BootTime: {d.get(\\\\\\\"bootTime\\\\\\\",\\\\\\\"?\\\\\\\")}')\\nprint(f'Status: {d.get(\\\\\\\"status\\\\\\\",\\\\\\\"?\\\\\\\")}')\\n\\\" 2>&1\\n  sleep 5\\ndone\"}",
       "createdAt": 1784198900778,
-      "completedAt": 1784198914548
+      "completedAt": 1784198914548,
+      "compactedAt": 1784202938465
     },
     {
       "type": "tool",
@@ -2249,7 +2261,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Check the landing deployment script\\ncd /home/user/rork-app/expo && head -60 deploy-landing.mjs 2>&1\"}",
       "createdAt": 1784198900794,
-      "completedAt": 1784198914578
+      "completedAt": 1784198914578,
+      "compactedAt": 1784202938465
     },
     {
       "type": "reasoning",
@@ -2279,7 +2292,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Find the confirmation text required for render_trigger_deploy\\ngrep -B2 -A5 \\\"RENDER_DEPLOY_CONFIRM_TEXT\\\\|render_trigger_deploy\\\" /home/user/rork-app/backend/api/ivx-developer-deploy-control.ts 2>&1 | head -30\"}",
       "createdAt": 1784198918731,
-      "completedAt": 1784198918747
+      "completedAt": 1784198918747,
+      "compactedAt": 1784202938465
     },
     {
       "type": "tool",
@@ -2297,7 +2311,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Check the full action handler to understand the request format\\ngrep -B5 -A20 \\\"render_trigger_deploy\\\" /home/user/rork-app/backend/api/ivx-developer-deploy-control.ts 2>&1 | head -40\"}",
       "createdAt": 1784198918737,
-      "completedAt": 1784198918747
+      "completedAt": 1784198918747,
+      "compactedAt": 1784202938465
     },
     {
       "type": "reasoning",
@@ -2327,7 +2342,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Trigger Render deploy with correct action and confirmation text\\nACCESS_TOKEN=$(cat /tmp/ivx_access_token)\\ncurl -s -X POST \\\"https://api.ivxholding.com/api/ivx/developer-deploy/action\\\" \\\\\\n  -H \\\"Authorization: Bearer $ACCESS_TOKEN\\\" \\\\\\n  -H \\\"Content-Type: application/json\\\" \\\\\\n  -d '{\\\"action\\\":\\\"render_trigger_deploy\\\",\\\"confirmText\\\":\\\"CONFIRM_IVX_RENDER_DEPLOY\\\",\\\"reason\\\":\\\"P0 Release: TTL feed cache + redesigned video view\\\"}' 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nprint(json.dumps(d, indent=2)[:600])\\n\\\" 2>&1\"}",
       "createdAt": 1784198921526,
-      "completedAt": 1784198923645
+      "completedAt": 1784198923645,
+      "compactedAt": 1784202938465
     },
     {
       "type": "tool",
@@ -2345,7 +2361,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Confirm the Render deploy with confirm=true\\nACCESS_TOKEN=$(cat /tmp/ivx_access_token)\\ncurl -s -X POST \\\"https://api.ivxholding.com/api/ivx/developer-deploy/action\\\" \\\\\\n  -H \\\"Authorization: Bearer $ACCESS_TOKEN\\\" \\\\\\n  -H \\\"Content-Type: application/json\\\" \\\\\\n  -d '{\\\"action\\\":\\\"render_trigger_deploy\\\",\\\"confirm\\\":true,\\\"confirmText\\\":\\\"CONFIRM_IVX_RENDER_DEPLOY\\\",\\\"reason\\\":\\\"P0 Release: TTL feed cache + redesigned video view\\\"}' 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nprint(json.dumps(d, indent=2)[:800])\\n\\\" 2>&1\"}",
       "createdAt": 1784198924730,
-      "completedAt": 1784198927080
+      "completedAt": 1784198927080,
+      "compactedAt": 1784202938465
     },
     {
       "type": "tool",
@@ -2363,7 +2380,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Meanwhile, build the Expo web export for the chat frontend (chat.ivxholding.com)\\ncd /home/user/rork-app/expo && bunx expo export --platform web 2>&1 | tail -20\"}",
       "createdAt": 1784198925507,
-      "completedAt": 1784198970028
+      "completedAt": 1784198970028,
+      "compactedAt": 1784202938465
     },
     {
       "type": "reasoning",
@@ -2393,7 +2411,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Try listing Render services with the real API key to find the actual service ID\\nRENDER_KEY=$(cat /tmp/ivx_render_key)\\necho \\\"Key prefix: ${RENDER_KEY:0:4}...\\\"\\ncurl -s \\\"https://api.render.com/v1/services?limit=10\\\" \\\\\\n  -H \\\"Authorization: Bearer $RENDER_KEY\\\" 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nif isinstance(d, list):\\n    for svc in d:\\n        print(f'ID: {svc.get(\\\\\\\"id\\\\\\\",\\\\\\\"?\\\\\\\")} | Name: {svc.get(\\\\\\\"name\\\\\\\",\\\\\\\"?\\\\\\\")} | Type: {svc.get(\\\\\\\"type\\\\\\\",\\\\\\\"?\\\\\\\")} | Status: {svc.get(\\\\\\\"status\\\\\\\",\\\\\\\"?\\\\\\\")}')\\nelif isinstance(d, dict):\\n    print(f'Error: {d.get(\\\\\\\"message\\\\\\\", json.dumps(d)[:200])}')\\nelse:\\n    print(str(d)[:200])\\n\\\" 2>&1\"}",
       "createdAt": 1784198983435,
-      "completedAt": 1784198983473
+      "completedAt": 1784198983473,
+      "compactedAt": 1784202938465
     },
     {
       "type": "tool",
@@ -2411,7 +2430,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Continue polling backend for new deploy\\nfor i in 1 2 3 4 5 6; do\\n  echo \\\"--- Poll $i ($(date +%H:%M:%S)) ---\\\"\\n  curl -s https://api.ivxholding.com/health 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nprint(f'  Commit: {d.get(\\\\\\\"commit\\\\\\\",\\\\\\\"?\\\\\\\")[:12]} | Boot: {d.get(\\\\\\\"bootTime\\\\\\\",\\\\\\\"?\\\\\\\")[:19]} | Status: {d.get(\\\\\\\"status\\\\\\\",\\\\\\\"?\\\\\\\")}')\\n\\\" 2>&1\\n  sleep 10\\ndone\"}",
       "createdAt": 1784198983456,
-      "completedAt": 1784199042833
+      "completedAt": 1784199042833,
+      "compactedAt": 1784202938465
     },
     {
       "type": "reasoning",
@@ -2441,7 +2461,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Post-deploy validation: verify backend health, readiness, and the new feed cache endpoint\\necho \\\"=== HEALTH ===\\\" && curl -s https://api.ivxholding.com/health 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nprint(f'Commit: {d.get(\\\\\\\"commit\\\\\\\",\\\\\\\"?\\\\\\\")[:12]}')\\nprint(f'BootTime: {d.get(\\\\\\\"bootTime\\\\\\\",\\\\\\\"?\\\\\\\")}')\\nprint(f'Status: {d.get(\\\\\\\"status\\\\\\\",\\\\\\\"?\\\\\\\")}')\\nprint(f'AI Enabled: {d.get(\\\\\\\"aiEnabled\\\\\\\",\\\\\\\"?\\\\\\\")}')\\nprint(f'Routes: {len(d.get(\\\\\\\"routes\\\\\\\",[]))} registered')\\n\\\" 2>&1\\n\\necho \\\"=== READINESS ===\\\" && curl -s https://api.ivxholding.com/readiness 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nprint(f'Ready: {d.get(\\\\\\\"ready\\\\\\\",\\\\\\\"?\\\\\\\")} | Status: {d.get(\\\\\\\"status\\\\\\\",\\\\\\\"?\\\\\\\")}')\\n\\\" 2>&1\\n\\necho \\\"=== VIDEO PLATFORM FEED ===\\\" && curl -s -w \\\"\\\\n%{http_code}\\\" https://api.ivxholding.com/api/ivx/video-platform/feed 2>&1 | tail -5\"}",
       "createdAt": 1784199047597,
-      "completedAt": 1784199057262
+      "completedAt": 1784199057262,
+      "compactedAt": 1784202938465
     },
     {
       "type": "tool",
@@ -2459,7 +2480,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Verify the video platform feed cache header is present (X-IVX-Cache)\\ncurl -s -D - https://api.ivxholding.com/api/ivx/video-platform/feed 2>&1 | grep -i \\\"x-ivx-cache\\\\|cache-control\\\\|content-type\\\" | head -5\\necho \\\"---SECOND REQUEST (should be HIT)---\\\"\\ncurl -s -D - https://api.ivxholding.com/api/ivx/video-platform/feed 2>&1 | grep -i \\\"x-ivx-cache\\\" | head -3\"}",
       "createdAt": 1784199050177,
-      "completedAt": 1784199057534
+      "completedAt": 1784199057534,
+      "compactedAt": 1784202938465
     },
     {
       "type": "tool",
@@ -2477,7 +2499,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Verify landing page is live\\ncurl -s -w \\\"\\\\n%{http_code}\\\" https://ivxholding.com 2>&1 | tail -3\\necho \\\"---HEALTH---\\\"\\ncurl -s https://ivxholding.com/health 2>&1 | python3 -c \\\"\\nimport sys, json\\nd = json.load(sys.stdin)\\nprint(f'OK: {d.get(\\\\\\\"ok\\\\\\\",\\\\\\\"?\\\\\\\")} | Deals: {d.get(\\\\\\\"checks\\\\\\\",{}).get(\\\\\\\"deals\\\\\\\",{}).get(\\\\\\\"count\\\\\\\",\\\\\\\"?\\\\\\\")}')\\n\\\" 2>&1\"}",
       "createdAt": 1784199051510,
-      "completedAt": 1784199058400
+      "completedAt": 1784199058400,
+      "compactedAt": 1784202938465
     },
     {
       "type": "tool",
@@ -2495,7 +2518,8 @@
       "state": "output-available",
       "inputArgsStr": "{\"command\": \"# Verify chat frontend is live\\ncurl -s -w \\\"\\\\n%{http_code}\\\" -o /dev/null https://chat.ivxholding.com 2>&1 | tail -3\"}",
       "createdAt": 1784199052238,
-      "completedAt": 1784199058633
+      "completedAt": 1784199058633,
+      "compactedAt": 1784202938465
     },
     {
       "type": "reasoning",
