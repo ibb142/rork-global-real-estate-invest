@@ -62,7 +62,6 @@ import CanonicalInvestmentReelCard, {
   publishedCardToReelData,
   type CanonicalReelData,
 } from '@/components/CanonicalInvestmentReelCard';
-import TrustDealCard from '@/components/TrustDealCard';
 import InvestorSupportChat, { type HumanSupportRequestResult } from '@/components/InvestorSupportChat';
 import {
   diagnoseDealPhotos,
@@ -458,19 +457,7 @@ function LandingDealsShowcase({ scrollToForm }: { scrollToForm: () => void }) {
           >
             {deals.map((deal, idx) => {
               const sharedDeal = buildLandingShowcaseDeal(deal);
-              const isCard = idx < 3;
-              if (isCard) {
-                return (
-                  <View key={`landing-card-${deal.id || idx}`} style={{ width: cardWidth, marginRight: idx < deals.length - 1 ? 14 : 0 }} testID={`landing-deal-card-${deal.id || idx}`}>
-                    <TrustDealCard
-                      deal={sharedDeal}
-                      onInvestNow={() => scrollToForm()}
-                      onViewDetails={() => router.push(`/jv-invest?jvId=${deal.id}` as any)}
-                      galleryWidth={cardWidth - 32}
-                    />
-                  </View>
-                );
-              }
+
               const reelData = publishedCardToReelData(deal, deal.resolvedPhotos);
               return (
                 <View key={deal.id || `deal-${idx}`} style={{ width: cardWidth, marginRight: idx < deals.length - 1 ? 14 : 0 }} testID={`landing-deal-card-${deal.id || idx}`}>

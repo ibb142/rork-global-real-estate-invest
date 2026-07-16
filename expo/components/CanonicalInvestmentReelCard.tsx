@@ -221,10 +221,7 @@ const CanonicalInvestmentReelCard = memo(function CanonicalInvestmentReelCard({
   const viewRef = useRef<View>(null);
 
   const isReel = mode === 'reel';
-  const usableReelHeight = isReel
-    ? Math.max(0, screenHeight - insets.top - insets.bottom - (Platform.OS === 'android' ? 48 : 0))
-    : feedHeight;
-  const cardHeight = isReel ? usableReelHeight : feedHeight;
+  const cardHeight = isReel ? screenHeight : feedHeight;
 
   // Fetch viewer ID for engagement tracking
   useEffect(() => {
@@ -346,8 +343,8 @@ const CanonicalInvestmentReelCard = memo(function CanonicalInvestmentReelCard({
   }, [onInvest, data]);
 
   // Rail position: account for safe area in reel mode, fixed offset in feed mode
-  const railBottom = isReel ? Math.max(insets.bottom, 12) + 96 : 96;
-  const infoBottom = isReel ? Math.max(insets.bottom, 12) + 32 : 32;
+  const railBottom = isReel ? insets.bottom + 96 : 96;
+  const infoBottom = isReel ? insets.bottom + 32 : 32;
 
   const renderMedia = () => {
     if (data.mediaType === 'video' && data.mediaUrl) {
@@ -392,33 +389,18 @@ const CanonicalInvestmentReelCard = memo(function CanonicalInvestmentReelCard({
           </View>
         );
       }
-      // Feed mode: show thumbnail image as background, overlay video on top.
-      // This ensures the reel card is always visually present even if the
-      // video takes time to load or fails (especially on web/CORS).
-      const posterSrc = data.posterUrl ?? data.previewBlurUrl;
+      // Feed mode: use SafeVideo with viewability-based playback
       return (
-        <View style={StyleSheet.absoluteFill}>
-          {posterSrc ? (
-            <Image
-              source={{ uri: posterSrc }}
-              style={StyleSheet.absoluteFill}
-              contentFit="cover"
-              transition={200}
-            />
-          ) : (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: '#111' }]} />
-          )}
-          <SafeVideo
-            uri={data.mediaUrl}
-            posterUri={undefined}
-            style={StyleSheet.absoluteFill}
-            resizeMode={ResizeMode.COVER}
-            shouldPlay={shouldPlay}
-            isMuted={isMuted}
-            isLooping
-            testID={`${testIDPrefix}-video-${data.reelId}`}
-          />
-        </View>
+        <SafeVideo
+          uri={data.mediaUrl}
+          posterUri={data.posterUrl ?? undefined}
+          style={StyleSheet.absoluteFill}
+          resizeMode={ResizeMode.COVER}
+          shouldPlay={shouldPlay}
+          isMuted={isMuted}
+          isLooping
+          testID={`${testIDPrefix}-video-${data.reelId}`}
+        />
       );
     }
     // Image media

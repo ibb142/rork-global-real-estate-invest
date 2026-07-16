@@ -66,7 +66,7 @@ import {
 } from '../services/ivx-video-platform-store';
 
 const CORS_HEADERS: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': 'https://ivxholding.com',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey, Range',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
@@ -730,14 +730,10 @@ export async function handlePlatformHomeFeed(req: Request): Promise<Response> {
       });
     }
 
-    /* ---- compose: 3 deals → 1 featured project video → repeat (display_type: investment_card | reel) ---- */
+    /* ---- compose: 3 deals → 1 featured project video → repeat ---- */
     const blocks = composeInvestorFirstHome(orderedDeals, featuredVideos)
       .slice(0, limit)
-      .map((b, i) => ({
-        position: i,
-        display_type: b.type === 'deal' ? 'investment_card' : 'reel' as const,
-        ...b,
-      }));
+      .map((b, i) => ({ position: i, ...b }));
 
     return json({
       pattern: '3-deals-1-featured-project-video',

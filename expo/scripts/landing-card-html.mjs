@@ -42,6 +42,19 @@ function escapeJs(value) {
     .replace(/"/g, '\\"');
 }
 
+function formatCurrencyCompact(amount) {
+  const safeAmount = asNumber(amount);
+  if (safeAmount >= 1000000000) return `${(safeAmount / 1000000000).toFixed(2)}B`;
+  if (safeAmount >= 1000000) return `${(safeAmount / 1000000).toFixed(2)}M`;
+  if (safeAmount >= 1000) return `${new Intl.NumberFormat('en-US').format(Math.round(safeAmount))}`;
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(safeAmount);
+}
+
 function formatCurrencyWithDecimals(amount) {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -51,17 +64,9 @@ function formatCurrencyWithDecimals(amount) {
   }).format(asNumber(amount));
 }
 
-function formatCurrencyCompact(amount) {
-  const safeAmount = asNumber(amount);
-  if (safeAmount >= 1000000000) return `${(safeAmount / 1000000000).toFixed(2)}B`;
-  if (safeAmount >= 1000000) return `${(safeAmount / 1000000).toFixed(2)}M`;
-  if (safeAmount >= 1000) return `$${new Intl.NumberFormat('en-US').format(Math.round(safeAmount))}`;
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(safeAmount);
+function formatMarketValue(amount) {
+  const compact = formatCurrencyCompact(amount);
+  return compact.startsWith('$') ? compact : `$${compact}`;
 }
 
 function isRenderablePhotoUrl(value) {
@@ -86,212 +91,104 @@ function extractLocation(card) {
   return '';
 }
 
-function buildOwnershipText(minInvestment, salePrice) {
-  if (!(minInvestment > 0) || !(salePrice > 0)) return 'Ownership updates from live sale price';
-  const percent = (minInvestment / salePrice) * 100;
-  return `${percent.toFixed(percent >= 1 ? 2 : 4)}% minimum ownership`;
-}
-
-function getMinimumOwnershipLabel(minInvestment, salePrice) {
-  if (!(minInvestment > 0) || !(salePrice > 0)) return 'Live sync pending';
-  return `${((minInvestment / salePrice) * 100).toFixed(4)}% min`;
-}
-
-function normalizeTrustInfo(value) {
-  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
-  if (typeof value === 'string' && value.trim()) {
-    try {
-      const parsed = JSON.parse(value);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
-    } catch (e) {}
-  }
-  return {};
-}
-
-function getDealAddressShort(deal) {
-  const addressShort = asString(deal.addressShort || deal.address_short || '').trim();
-  if (addressShort) return addressShort;
-  if (deal.city && deal.state) return `${asString(deal.city).trim()}, ${asString(deal.state).trim()}`;
-  const propertyAddress = asString(deal.propertyAddress || deal.property_address || '').trim();
-  if (propertyAddress) {
-    const parts = propertyAddress.split(',').map((s) => s.trim()).filter(Boolean);
-    if (parts.length >= 2) return `${parts[parts.length - 2]}, ${parts[parts.length - 1]}`;
-    return propertyAddress;
-  }
+function extractTimeline(card, trustInfo) {
+  const explicitTimeline = asString(card.timeline).trim();
+  if (explicitTimeline) return explicitTimeline;
+  const min = asNumber(trustInfo.timelineMin ?? trustInfo.timeline_min);
+  const max = asNumber(trustInfo.timelineMax ?? trustInfo.timeline_max);
+  const unit = (trustInfo.timelineUnit || trustInfo.timeline_unit) === 'years' ? 'yr' : 'mo';
+  if (min > 0 && max > 0) return `${min}–${max} ${unit}`;
+  if (max > 0) return `${max} ${unit}`;
+  if (min > 0) return `${min} ${unit}`;
   return '';
 }
 
-function getDealSalePrice(deal, trustInfo) {
-  const salePrice = asNumber(
-    deal.salePrice || deal.sale_price || trustInfo.salePrice || trustInfo.sale_price ||
-    deal.propertyValue || deal.property_value || deal.estimated_value ||
-    deal.totalInvestment || deal.total_investment
-  );
-  return salePrice > 0 ? salePrice : 0;
+function buildOwnershipText(minInvestment, salePrice) {
+  if (!(minInvestment > 0) || !(salePrice > 0)) return '';
+  const percent = (minInvestment / salePrice) * 100;
+  return `${percent.toFixed(percent >= 1 ? 2 : 4)}% ownership at minimum`;
 }
 
-function getDealMinInvestment(deal, trustInfo) {
-  const minInvestment = asNumber(
-    deal.minInvestment || deal.min_investment || deal.minimum_investment ||
-    trustInfo.minInvestment || trustInfo.min_investment || 50
-  );
-  return minInvestment > 0 ? minInvestment : 50;
-}
-
-function getDealFractionalSharePrice(deal, trustInfo, minInvestment) {
-  const sharePrice = asNumber(
-    deal.fractionalSharePrice || deal.fractional_share_price ||
-    trustInfo.fractionalSharePrice || trustInfo.fractional_share_price || minInvestment
-  );
-  return sharePrice > 0 ? sharePrice : minInvestment;
-}
-
-function getDealOwnershipText(deal, trustInfo, minInvestment, salePrice) {
-  const explicit = asString(deal.ownershipText || deal.ownership_text || trustInfo.ownershipLabel || trustInfo.ownership_label).trim();
-  return explicit || buildOwnershipText(minInvestment, salePrice);
-}
-
-function getDealDeveloperName(deal, trustInfo) {
-  return asString(
-    trustInfo.llcName || trustInfo.builderName ||
-    deal.developerName || deal.developer_name ||
-    deal.projectName || deal.project_name || 'IVX Holdings LLC'
-  ).trim();
-}
-
-function getDealPostVideos(deal) {
-  const postVideos = deal.postVideos || deal.post_videos || deal.dealVideos || deal.deal_videos || deal.videos || [];
-  if (Array.isArray(postVideos) && postVideos.length > 0) return postVideos;
-  return [];
-}
-
-function isRenderableGalleryPhoto(value) {
-  const v = asString(value).trim();
-  return v.length > 0 && !v.startsWith('data:image/gif;base64,R0lGODlhAQABA');
-}
-
-function getPhotoSourceBadgeHtml(source) {
-  const map = {
-    db: { cls: 'db', label: 'Database' },
-    storage: { cls: 'storage', label: 'Cloud Storage' },
-    fallback: { cls: 'fallback', label: 'Fallback' },
-  };
-  const entry = map[source] || { cls: 'missing', label: 'No Photo' };
-  return `<div class="live-deal-source-badge ${entry.cls}">${entry.label}</div>`;
-}
-
-export function generateLandingCardHtml(deal) {
-  const card = deal && typeof deal === 'object' ? deal : {};
-  const trustInfo = normalizeTrustInfo(card.trustInfo || card.trust_info || {});
-  const photos = (Array.isArray(card.photos) ? card.photos : []).filter(isRenderableGalleryPhoto).slice(0, 8);
-  const dealVideos = getDealPostVideos(card);
-  const verifiedCount = [trustInfo.titleVerified, trustInfo.insuranceCoverage, trustInfo.escrowProtected, trustInfo.permitStatus === 'approved', trustInfo.thirdPartyAudit].filter(Boolean).length;
-  const verifiedBadgeHtml = verifiedCount >= 3 ? '<div class="live-deal-verified-badge"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> VERIFIED</div>' : '';
-  const photoSourceBadgeHtml = getPhotoSourceBadgeHtml(card.photoSource || (photos.length > 0 ? 'db' : 'none'));
-  const salePrice = getDealSalePrice(card, trustInfo);
-  const minInvestment = getDealMinInvestment(card, trustInfo);
-  const shareEntryPrice = getDealFractionalSharePrice(card, trustInfo, minInvestment);
-  const ownershipText = getDealOwnershipText(card, trustInfo, minInvestment, salePrice);
-  const minimumOwnershipLabel = getMinimumOwnershipLabel(minInvestment, salePrice);
-  const location = getDealAddressShort(card);
-  const developerName = getDealDeveloperName(card, trustInfo);
-  const dealType = asString(card.deal_type || card.type || 'investment').toLowerCase();
-  const typeLabel = dealType === 'jv' ? 'JV Deal' : (dealType === 'development' ? 'Development' : 'Investment');
+export function generateLandingCardHtml(rawCard) {
+  const card = rawCard && typeof rawCard === 'object' ? rawCard : {};
+  const trustInfo = parseMaybeJsonObject(card.trustInfo || card.trust_info) || {};
+  const photos = (Array.isArray(card.photos) ? card.photos : []).filter(isRenderablePhotoUrl);
+  const location = extractLocation(card);
+  const salePrice = asNumber(card.salePrice || card.sale_price || card.propertyValue || card.property_value || card.totalInvestment || card.total_investment);
+  const minInvestment = Math.max(asNumber(card.minInvestment || card.min_investment || card.minimum_investment || trustInfo.minInvestment || trustInfo.min_investment || 50), 1);
+  const shareEntryPrice = Math.max(asNumber(card.fractionalSharePrice || card.fractional_share_price || trustInfo.fractionalSharePrice || trustInfo.fractional_share_price || minInvestment), 1);
+  const ownershipText = asString(card.ownershipText || card.ownership_text || trustInfo.ownershipLabel || trustInfo.ownership_label).trim() || buildOwnershipText(minInvestment, salePrice);
+  const minOwnershipLabel = salePrice > 0 ? `${((minInvestment / salePrice) * 100).toFixed(4)}% min` : 'Live sync pending';
+  const investmentAmountLabel = formatMarketValue(card.totalInvestment || card.total_investment || 0);
+  const salePriceLabel = formatMarketValue(salePrice);
+  const timeline = extractTimeline(card, trustInfo);
   const showEntryPill = Math.abs(shareEntryPrice - minInvestment) > 0.009;
-  const slideTotal = dealVideos.length + photos.length;
-  const sliderId = 'slider-' + (card.id || Math.random().toString(36).substr(2, 6));
-  const firstThumb = (photos[0] || (typeof dealVideos[0] === 'string' ? '' : (dealVideos[0] && dealVideos[0].thumbnail_url) || '')) || '';
+  const developerName = asString(trustInfo.llcName || trustInfo.builderName || card.projectName || card.project_name || card.developerName || card.developer_name || 'IVX Holdings LLC').trim();
+  let verifiedCount = 0;
+  if (trustInfo.titleVerified) verifiedCount += 1;
+  if (trustInfo.insuranceCoverage) verifiedCount += 1;
+  if (trustInfo.escrowProtected) verifiedCount += 1;
+  if (trustInfo.permitStatus === 'approved') verifiedCount += 1;
+  if (trustInfo.thirdPartyAudit) verifiedCount += 1;
 
-  let mediaHtml = '';
-  if (slideTotal > 0) {
-    let imgsHtml = '';
-    for (let dvi = 0; dvi < dealVideos.length; dvi++) {
-      const dv = dealVideos[dvi] || {};
-      const dvSrc = typeof dv === 'string' ? dv : (dv.video_url || dv.url || '');
-      if (!dvSrc) continue;
-      const dvPoster = typeof dv === 'string' ? '' : (dv.thumbnail_url || dv.cover_url || '');
-      imgsHtml += `<video ${/\.m3u8($|\?)/.test(dvSrc) ? `data-hls="${escapeHtml(dvSrc)}"` : `src="${escapeHtml(dvSrc)}"`}${dvPoster ? ` poster="${escapeHtml(dvPoster)}"` : ''} data-igplay="1" preload="metadata" muted loop playsinline controls controlslist="nodownload noremoteplayback" style="min-width:100%;width:100%;height:100%;object-fit:cover;scroll-snap-align:start;flex:0 0 100%;background:#000;"></video>`;
-    }
-    for (let pi = 0; pi < photos.length; pi++) {
-      imgsHtml += `<img src="${escapeHtml(photos[pi])}" alt="" loading="lazy" decoding="async" fetchpriority="low" referrerpolicy="no-referrer" style="min-width:100%;width:100%;height:100%;object-fit:cover;scroll-snap-align:start;flex:0 0 100%;" onerror="this.closest('.ivx-imm-gallery')?.classList.add('ivx-imm-gallery-empty');this.remove();" />`;
-    }
-    let dotsHtml = '';
-    if (slideTotal > 1) {
-      dotsHtml = `<div class="live-deal-photo-dots" data-slider="${sliderId}">${Array.from({ length: slideTotal }, (_, di) => `<div class="live-deal-photo-dot${di === 0 ? ' active' : ''}" data-idx="${di}"></div>`).join('')}</div>`;
-    }
-    mediaHtml = `<div class="ivx-imm-gallery" style="position:relative;min-width:100%;min-height:100%;width:100%;height:100%;">`
-      + `<div class="live-deal-gallery-slider" id="${sliderId}" style="position:absolute;inset:0;">${imgsHtml}</div>`
-      + `<div class="live-deal-overlay-badge"><div class="live-deal-overlay-dot"></div> LIVE</div>`
-      + photoSourceBadgeHtml + verifiedBadgeHtml
-      + (slideTotal > 1 ? `<div class="live-deal-photo-count">1/${slideTotal}</div>` : '')
-      + dotsHtml
-      + `</div>`;
-  } else {
-    const dealTitle = escapeHtml(asString(card.title || 'Deal').toUpperCase());
-    const dealSubtitle = escapeHtml(location ? `${location} · ${formatCurrencyCompact(asNumber(card.totalInvestment || card.total_investment || 0))}` : formatCurrencyCompact(asNumber(card.totalInvestment || card.total_investment || 0)));
-    mediaHtml = `<div class="ivx-imm-gallery" style="position:relative;min-width:100%;min-height:100%;width:100%;height:100%;">`
-      + `<div class="live-deal-gallery-slider" style="position:absolute;inset:0;">`
-      + `<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(135deg,#1A1A1A 0%,#141414 50%,#000000 100%);gap:8px;position:relative;overflow:hidden;">`
-      + `<div style="position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 50% 40%,rgba(255,215,0,0.06),transparent 70%);pointer-events:none;"></div>`
-      + `<div style="width:56px;height:56px;border-radius:16px;background:rgba(255,215,0,0.1);border:1.5px solid rgba(255,215,0,0.2);display:flex;align-items:center;justify-content:center;font-size:24px;position:relative;z-index:1;">&#127960;</div>`
-      + `<div style="font-size:13px;font-weight:800;color:#FFD700;letter-spacing:1px;position:relative;z-index:1;text-align:center;padding:0 16px;">${dealTitle}</div>`
-      + `<div style="font-size:10px;color:#6A6A6A;position:relative;z-index:1;">${dealSubtitle}</div>`
-      + `</div></div>`
-      + `<div class="live-deal-overlay-badge"><div class="live-deal-overlay-dot"></div> LIVE</div>`
-      + photoSourceBadgeHtml + verifiedBadgeHtml
-      + `</div>`;
-  }
+  const imageSection = photos.length > 0
+    ? `<div class="live-deal-gallery" style="position:relative;">
+        <div class="live-deal-gallery-slider" id="slider-${escapeHtml(card.id || Math.random().toString(36).slice(2, 8))}">
+          ${photos.map((photo) => `<img src="${escapeHtml(photo)}" alt="" loading="lazy" decoding="async" fetchpriority="low" referrerpolicy="no-referrer" onerror="this.closest('.live-deal-gallery')?.classList.add('live-deal-gallery-empty');this.remove();" />`).join('')}
+        </div>
+        ${photos.length > 1 ? `<div class="live-deal-photo-dots">${photos.map((_, idx) => `<div class="live-deal-photo-dot${idx === 0 ? ' active' : ''}" data-idx="${idx}"></div>`).join('')}</div>` : ''}
+        ${photos.length > 1 ? `<div class="live-deal-photo-count">1/${photos.length}</div>` : ''}
+        <div class="live-deal-overlay-badge"><div class="live-deal-overlay-dot"></div> LIVE</div>
+        ${verifiedCount >= 3 ? `<div class="live-deal-verified-badge"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> VERIFIED</div>` : ''}
+      </div>`
+    : '';
 
-  const expectedRoi = asNumber(card.expectedROI || card.expected_roi || 0);
-  const city = escapeHtml(card.city || location || '');
-  const title = escapeHtml(card.title || card.projectName || card.project_name || 'Untitled');
-  const subtitle = escapeHtml(card.projectName || card.project_name || title);
-  const dealId = escapeHtml(card.id || '');
-  const firstVideoThumb = firstThumb ? `<img class="ivx-imm-thumb" src="${escapeHtml(firstThumb)}" alt="" loading="lazy" />` : '';
+  const trustBadges = [
+    trustInfo.titleVerified ? '<div class="live-deal-trust-badge"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span>Title Verified</span></div>' : '',
+    trustInfo.insuranceCoverage ? '<div class="live-deal-trust-badge"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#4A90D9" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>Insured</span></div>' : '',
+    trustInfo.escrowProtected ? '<div class="live-deal-trust-badge"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#FFD700" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span>Escrow</span></div>' : '',
+    trustInfo.permitStatus === 'approved' ? '<div class="live-deal-trust-badge"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><span>Permitted</span></div>' : '',
+  ].filter(Boolean).join('');
 
-  return `<div class="live-deal-card" data-deal-id="${dealId}">`
-    + `<div class="ivx-imm-media">`
-    + mediaHtml
-    + `<div class="ivx-imm-overlay">`
-    + `<div class="ivx-imm-top">`
-    + `<div class="ivx-imm-badges">`
-    + `<span class="ivx-imm-badge ivx-imm-badge-filled">${escapeHtml(typeLabel)}</span>`
-    + `<span class="ivx-imm-badge ivx-imm-badge-outline">ACTIVE</span>`
-    + `</div>`
-    + `<div class="ivx-imm-actions-right">`
-    + `<button class="ivx-imm-icon" aria-label="Like" onclick="event.stopPropagation();">&#9825;</button>`
-    + `<button class="ivx-imm-icon" aria-label="Comment" onclick="event.stopPropagation();">&#128172;</button>`
-    + `<button class="ivx-imm-icon" aria-label="Save" onclick="event.stopPropagation();">&#128278;</button>`
-    + `<button class="ivx-imm-icon" aria-label="Share" onclick="event.stopPropagation();">&#8599;</button>`
-    + `</div>`
-    + `</div>`
-    + `<div class="ivx-imm-bottom">`
-    + `<div class="ivx-imm-title-block">`
-    + `<div class="ivx-imm-title">${title}</div>`
-    + `<div class="ivx-imm-subtitle">${subtitle} &mdash; ${escapeHtml(typeLabel)}</div>`
-    + (city ? `<div class="ivx-imm-loc">&#128205; ${city}</div>` : '')
-    + `</div>`
-    + `<div class="ivx-imm-stats">`
-    + `<div class="ivx-imm-stat"><span class="ivx-imm-stat-v">${escapeHtml(String(expectedRoi))}%</span><span class="ivx-imm-stat-l">ROI</span></div>`
-    + `<div class="ivx-imm-stat"><span class="ivx-imm-stat-v">${escapeHtml(formatCurrencyWithDecimals(minInvestment))}</span><span class="ivx-imm-stat-l">Min Invest</span></div>`
-    + `<div class="ivx-imm-stat"><span class="ivx-imm-stat-v">${escapeHtml(minimumOwnershipLabel)}</span><span class="ivx-imm-stat-l">Min Ownership</span></div>`
-    + `</div>`
-    + `<div class="ivx-imm-actions-row">`
-    + `<span class="ivx-imm-pill">Tokenized</span>`
-    + `<span class="ivx-imm-pill">${escapeHtml(typeLabel)}</span>`
-    + `<span class="ivx-imm-pill">E</span>`
-    + firstVideoThumb
-    + `<span class="ivx-imm-ai-badge">&#10024; Restyle with AI</span>`
-    + `</div>`
-    + `<div class="ivx-imm-btns">`
-    + `<button class="ivx-imm-details" onclick="investInDeal('${dealId}');">View Deal</button>`
-    + `<button class="ivx-imm-invest" onclick="investInDeal('${dealId}');">Invest Now</button>`
-    + `</div>`
-    + `<div class="ivx-imm-caption">`
-    + `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>`
-    + `Add a caption...`
-    + `</div>`
-    + `</div>`
-    + `</div>`
-    + `</div>`;
+  return `<div class="live-deal-card" data-deal-id="${escapeHtml(card.id)}">
+    ${imageSection}
+    <div class="live-deal-content">
+      <div class="live-deal-header-row">
+        <div style="flex:1;min-width:0;">
+          <div class="live-deal-title">${escapeHtml(card.title || card.projectName || 'Untitled')}</div>
+          ${location ? `<div class="live-deal-location"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6A6A6A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>${escapeHtml(location)}</div>` : ''}
+        </div>
+        <div class="live-deal-market-pill live-deal-sale-pill" style="min-width:118px;background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.24);">
+          <div class="live-deal-market-pill-label">Sale Price</div>
+          <div class="live-deal-market-pill-value" style="color:#FFD700;">${escapeHtml(salePriceLabel)}</div>
+          <div class="live-deal-market-pill-label" style="color:#22C55E;">${escapeHtml(minOwnershipLabel)}</div>
+        </div>
+      </div>
+      <div class="live-deal-divider"></div>
+      <div class="live-deal-metrics">
+        <div class="live-deal-metric"><div class="live-deal-metric-val">${escapeHtml(investmentAmountLabel)}</div><div class="live-deal-metric-lbl">Investment</div></div>
+        <div class="live-deal-metric-div"></div>
+        <div class="live-deal-metric"><div class="live-deal-metric-val">${escapeHtml(String(asNumber(card.expectedROI || card.expected_roi)))}%</div><div class="live-deal-metric-lbl">ROI</div></div>
+        <div class="live-deal-metric-div"></div>
+        <div class="live-deal-metric"><div class="live-deal-metric-val">${escapeHtml(timeline)}</div><div class="live-deal-metric-lbl">Timeline</div></div>
+      </div>
+      <div class="live-deal-divider"></div>
+      <div class="live-deal-market-strip">
+        <div class="live-deal-market-pill"><div class="live-deal-market-pill-label">Fractional</div><div class="live-deal-market-pill-value">from ${escapeHtml(formatCurrencyWithDecimals(minInvestment))}</div></div>
+        ${showEntryPill ? `<div class="live-deal-market-pill"><div class="live-deal-market-pill-label">Entry</div><div class="live-deal-market-pill-value">${escapeHtml(formatCurrencyWithDecimals(shareEntryPrice))}</div></div>` : ''}
+        <div class="live-deal-market-pill"><div class="live-deal-market-pill-label">Ownership</div><div class="live-deal-market-pill-value">${escapeHtml(minOwnershipLabel)}</div></div>
+      </div>
+      <div class="live-deal-ownership-hint">${escapeHtml(ownershipText)}</div>
+      <div class="live-deal-developer-row">
+        <div class="live-deal-developer-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FFD700" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 18v3c0 .6.4 1 1 1h4v-3h3v3h4v-3h3v3h4c.6 0 1-.4 1-1v-3"/><path d="M2 18V8c0-.6.4-1 1-1h18c.6 0 1 .4 1 1v10"/><path d="M9 7V4c0-.6.4-1 1-1h4c.6 0 1 .4 1 1v3"/></svg></div>
+        <span class="live-deal-developer-text">Developed by <span class="live-deal-developer-name">${escapeHtml(developerName)}</span></span>
+      </div>
+      ${trustBadges ? `<div class="live-deal-trust-indicators">${trustBadges}</div>` : ''}
+      <div class="live-deal-actions">
+        <button class="live-deal-details-btn" onclick="openInvestModal('${escapeHtml(card.id)}','${escapeJs(card.title || card.projectName || '')}',${asNumber(card.totalInvestment || card.total_investment)},${asNumber(card.expectedROI || card.expected_roi)},'${escapeJs(location)}',${salePrice},${minInvestment},${shareEntryPrice})">Details</button>
+        <button class="live-deal-invest-btn" onclick="openInvestModal('${escapeHtml(card.id)}','${escapeJs(card.title || card.projectName || '')}',${asNumber(card.totalInvestment || card.total_investment)},${asNumber(card.expectedROI || card.expected_roi)},'${escapeJs(location)}',${salePrice},${minInvestment},${shareEntryPrice})">Invest Now</button>
+      </div>
+      <div class="live-deal-min-invest">Fractional starts at <strong>${escapeHtml(formatCurrencyWithDecimals(minInvestment))}</strong> · <strong>${escapeHtml(ownershipText)}</strong></div>
+    </div>
+  </div>`;
 }

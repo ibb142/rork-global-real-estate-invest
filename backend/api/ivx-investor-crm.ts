@@ -117,13 +117,11 @@ function bodyToUpdateInput(body: Record<string, unknown>): UpdateInvestorInput {
 export async function handleInvestorListRequest(request: Request): Promise<Response> {
   const denied = await requireOwner(request);
   if (denied) return denied;
-
   const url = new URL(request.url);
   const limitParam = parseInt(url.searchParams.get('limit') ?? '200', 10);
   const offsetParam = parseInt(url.searchParams.get('offset') ?? '0', 10);
   const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 500) : 200;
   const offset = Number.isFinite(offsetParam) && offsetParam >= 0 ? offsetParam : 0;
-
   const [allInvestors, summary] = await Promise.all([listInvestors(), summarizeInvestors()]);
   const total = allInvestors.length;
   const investors = allInvestors.slice(offset, offset + limit);

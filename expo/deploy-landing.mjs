@@ -192,20 +192,6 @@ async function verifyPublicJsonEndpoints() {
     verifyPublicJsonEndpoint(`${PUBLIC_BASE_URL}/api/published-jv-deals`, 'deals'),
     verifyPublicJsonEndpoint(`${PUBLIC_BASE_URL}/health`, 'health'),
   ]);
-  console.log('\n🔍 Validating ivx-home-feed.js is served with immersive card code...');
-  try {
-    const jsResp = await fetch(`${PUBLIC_BASE_URL}/ivx-home-feed.js`, { headers: { 'cache-control': 'no-cache' } });
-    const jsBody = await jsResp.text();
-    if (jsResp.ok && jsBody.includes('ivx-hf-overlay') && jsBody.includes('ivx-hf-ai-badge')) {
-      console.log('   ✅ ivx-home-feed.js is live with immersive card code');
-    } else if (jsResp.ok) {
-      console.log('   ⚠️  ivx-home-feed.js is served but may be an older version (immersive classes not found)');
-    } else {
-      console.log(`   ⚠️  ivx-home-feed.js returned HTTP ${jsResp.status}`);
-    }
-  } catch (jsErr) {
-    console.log(`   ⚠️  Could not verify ivx-home-feed.js: ${jsErr.message}`);
-  }
 
   return checks.every(Boolean);
 }
@@ -453,17 +439,6 @@ async function deploy() {
     CacheControl: 'public, max-age=300',
   }));
   console.log('   ✅ ivx-reels.js uploaded');
-
-  console.log('\n🎬 Uploading ivx-home-feed.js (immersive deal/video feed interleave)...');
-  const homeFeedJs = readFileSync('./ivxholding-landing/ivx-home-feed.js', 'utf-8');
-  await s3.send(new PutObjectCommand({
-    Bucket: BUCKET_NAME,
-    Key: 'ivx-home-feed.js',
-    Body: homeFeedJs,
-    ContentType: 'application/javascript; charset=utf-8',
-    CacheControl: 'public, max-age=300',
-  }));
-  console.log('   ✅ ivx-home-feed.js uploaded');
 
   console.log('\n🗺️  Uploading sitemap.xml...');
   const sitemapXml = readFileSync('./ivxholding-landing/sitemap.xml', 'utf-8');

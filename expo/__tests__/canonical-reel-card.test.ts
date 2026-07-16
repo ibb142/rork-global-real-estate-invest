@@ -19,15 +19,10 @@ function readFile(path: string): string {
 }
 
 describe('Canonical Reel Card Migration', () => {
-  describe('Mixed home/invest/landing feed: regular cards + reels', () => {
-    it('InvestorFirstFeed imports TrustDealCard for regular investment cards', () => {
+  describe('Old card removal', () => {
+    it('InvestorFirstFeed does not import TrustDealCard', () => {
       const content = readFile('components/InvestorFirstFeed.tsx');
-      expect(content).toContain("import TrustDealCard");
-    });
-
-    it('InvestorFirstFeed imports CanonicalInvestmentReelCard for reels', () => {
-      const content = readFile('components/InvestorFirstFeed.tsx');
-      expect(content).toContain("import CanonicalInvestmentReelCard");
+      expect(content).not.toContain("import TrustDealCard");
     });
 
     it('InvestorFirstFeed does not import DealVideoCard', () => {
@@ -40,19 +35,19 @@ describe('Canonical Reel Card Migration', () => {
       expect(content).not.toContain("import InstagramProjectCard");
     });
 
-    it('Landing imports TrustDealCard for regular investment cards', () => {
+    it('Landing does not import InstagramProjectCard', () => {
       const content = readFile('app/landing.tsx');
-      expect(content).toContain("import TrustDealCard");
+      expect(content).not.toContain("import InstagramProjectCard");
     });
 
-    it('Landing imports CanonicalInvestmentReelCard for reels', () => {
+    it('Landing does not import TrustDealCard', () => {
       const content = readFile('app/landing.tsx');
-      expect(content).toContain("import CanonicalInvestmentReelCard");
+      expect(content).not.toContain("import TrustDealCard");
     });
 
-    it('Invest tab imports TrustDealCard for regular investment cards', () => {
+    it('Invest tab does not import TrustDealCard', () => {
       const content = readFile('app/(tabs)/invest/index.tsx');
-      expect(content).toContain("import TrustDealCard");
+      expect(content).not.toContain("import TrustDealCard");
     });
 
     it('Reels (videos.tsx) does not import DealVideoCard', () => {

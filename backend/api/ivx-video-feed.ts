@@ -31,7 +31,7 @@ function json(data: unknown, status = 200): Response {
     headers: {
       'Content-Type': 'application/json',
       'Cache-Control': 'no-store',
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'https://ivxholding.com',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey, Range',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     },
@@ -42,7 +42,7 @@ export const videoFeedOptions = (): Response =>
   new Response(null, {
     status: 204,
     headers: {
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'https://ivxholding.com',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey, Range',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Expose-Headers': 'Content-Disposition, Content-Length, Accept-Ranges, Content-Range',
@@ -227,7 +227,7 @@ export async function handleVideoDownload(req: Request, videoId: string): Promis
     if (contentRange) headers.set('Content-Range', contentRange);
     headers.set('Accept-Ranges', 'bytes');
     headers.set('Content-Disposition', `attachment; filename="${sanitizeFilename(title)}.mp4"`);
-    headers.set('Access-Control-Allow-Origin', '*');
+    headers.set('Access-Control-Allow-Origin', 'https://ivxholding.com');
     headers.set('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Accept-Ranges, Content-Range');
     headers.set('Cache-Control', 'public, max-age=3600');
 
