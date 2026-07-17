@@ -173,6 +173,23 @@ async function buildStatusRows(records: Map<string, HistoryRecord>): Promise<Mig
   return rows;
 }
 
+/**
+ * Lightweight migration summary for the QA scheduler's 2-hour owner report.
+ * Returns null when the Management API is unreachable — the caller reports
+ * that honestly instead of showing a stale green.
+ */
+export async function getMigrationSummary(): Promise<{ total: number; applied: number; pending: number; drifted: number } | null> {
+  const { records, error } = await loadHistory();
+  if (error) return null;
+  const rows = await buildStatusRows(records);
+  return {
+    total: rows.length,
+    applied: rows.filter((row) => row.status === 'applied').length,
+    pending: rows.filter((row) => row.status === 'pending' || row.status === 'file_missing').length,
+    drifted: rows.filter((row) => row.status === 'checksum_drift').length,
+  };
+}
+
 export function migrationRunnerOptions(): Response {
   return ownerOnlyOptions();
 }
