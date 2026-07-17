@@ -15,8 +15,7 @@
  */
 import { assertIVXOwnerOnly, ownerOnlyJson, ownerOnlyOptions } from './owner-only';
 import { readDurableJson, writeDurableJson } from '../services/ivx-durable-store';
-import { isSnsSmsConfigured, resolveOwnerRecoveryPhone } from '../services/ivx-sns-sms';
-import { maskPhone, GUARDIAN_STATE_FILE_PATH, EMPTY_GUARDIAN_STATE } from './ivx-owner-auth-guardian';
+import { maskPhone, resolveAlertPhone, GUARDIAN_STATE_FILE_PATH, EMPTY_GUARDIAN_STATE } from './ivx-owner-auth-guardian';
 import type { GuardianState } from './ivx-owner-auth-guardian';
 import path from 'node:path';
 
@@ -162,11 +161,11 @@ async function testSupabaseServiceRole(): Promise<CredentialRow> {
 async function testAwsSms(): Promise<CredentialRow> {
   const testedAt = new Date().toISOString();
   const stored = envPresent('AWS_ACCESS_KEY_ID') && envPresent('AWS_SECRET_ACCESS_KEY');
-  const configured = isSnsSmsConfigured();
+  const configured = stored && resolveAlertPhone().length > 0;
   const guardianState = await readDurableJson<GuardianState>(GUARDIAN_STATE_FILE_PATH, EMPTY_GUARDIAN_STATE);
   const alerts = Array.isArray(guardianState.alerts) ? guardianState.alerts : [];
   const lastSent = alerts.filter((alert) => (alert as { smsStatus?: string }).smsStatus === 'sent')[0] as { messageId?: string; sentAt?: string } | undefined;
-  const phone = maskPhone(resolveOwnerRecoveryPhone());
+  const phone = maskPhone(resolveAlertPhone());
   return {
     service: 'AWS SNS / SMS',
     variable: 'AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY + AWS_REGION',
