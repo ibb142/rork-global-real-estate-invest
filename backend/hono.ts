@@ -748,7 +748,7 @@ import { OPTIONS as agentTestTokenOptions, handleIVXAgentTestRunRequest, handleI
 import { OPTIONS as seniorDeveloperOptions, handleIVXSeniorDeveloperCredentialAuditRequest, handleIVXSeniorDeveloperGithubAuditRequest, handleIVXSeniorDeveloperRunRequest, handleIVXSeniorDeveloperStatusRequest } from './api/ivx-senior-developer-runtime';
 import { auditIVXProductionCredentialRuntime, IVX_SENIOR_DEVELOPER_RUNTIME_MARKER, IVX_GITHUB_CANONICAL_PATH, IVX_GITHUB_CANONICAL_PATH_DESCRIPTION } from './services/ivx-senior-developer-runtime';
 import { OPTIONS as seniorDevToolsOptions, handleIVXSeniorDevAuditReportRequest, handleIVXSeniorDevToolsExecuteRequest, handleIVXSeniorDevToolsListRequest } from './api/ivx-senior-dev-tools';
-import { OPTIONS as seniorDeveloperWorkerOptions, handleSeniorDeveloperWorkerEnqueueRequest, handleSeniorDeveloperWorkerJobRequest, handleSeniorDeveloperWorkerJobsRequest, handleSeniorDeveloperWorkerLastProofRequest, handleSeniorDeveloperWorkerLedgerRequest, handleSeniorDeveloperWorkerStatusRequest } from './api/ivx-senior-developer-worker';
+import { OPTIONS as seniorDeveloperWorkerOptions, handleSeniorDeveloperWorkerEnqueueRequest, handleSeniorDeveloperWorkerJobRequest, handleSeniorDeveloperWorkerJobsRequest, handleSeniorDeveloperWorkerLastProofRequest, handleSeniorDeveloperWorkerLedgerRequest, handleSeniorDeveloperWorkerStatusRequest, handleSeniorDeveloperWorkerActiveJobRequest, handleSeniorDeveloperWorkerCancelJobRequest, handleSeniorDeveloperWorkerResumeJobRequest } from './api/ivx-senior-developer-worker';
 import {
   OPTIONS as seniorDevBuildOptions,
   handleProofRequest as handleSeniorDevProofPost,
@@ -3653,6 +3653,13 @@ app.options('/api/ivx/senior-developer/worker/ledger', () => seniorDeveloperWork
 app.get('/api/ivx/senior-developer/worker/ledger', async (context) => handleSeniorDeveloperWorkerLedgerRequest(context.req.raw));
 app.options('/api/ivx/worker-last-proof', () => seniorDeveloperWorkerOptions());
 app.get('/api/ivx/worker-last-proof', async (context) => handleSeniorDeveloperWorkerLastProofRequest(context.req.raw));
+// Cancel and resume job endpoints — per-owner single-flight queue control.
+app.options('/api/ivx/senior-developer/worker/active', () => seniorDeveloperWorkerOptions());
+app.get('/api/ivx/senior-developer/worker/active', async (context) => handleSeniorDeveloperWorkerActiveJobRequest(context.req.raw));
+app.options('/api/ivx/senior-developer/worker/jobs/:jobId/cancel', () => seniorDeveloperWorkerOptions());
+app.post('/api/ivx/senior-developer/worker/jobs/:jobId/cancel', async (context) => handleSeniorDeveloperWorkerCancelJobRequest(context.req.raw, context.req.param('jobId')));
+app.options('/api/ivx/senior-developer/worker/jobs/:jobId/resume', () => seniorDeveloperWorkerOptions());
+app.post('/api/ivx/senior-developer/worker/jobs/:jobId/resume', async (context) => handleSeniorDeveloperWorkerResumeJobRequest(context.req.raw, context.req.param('jobId')));
 // Live, publicly-readable production visibility for features the Senior Developer builds from scratch.
 // Every committed + deployed feature appears here, proving the new production feature is visible.
 app.options('/api/ivx/senior-developer/features', () => seniorDeveloperOptions());
@@ -5468,6 +5475,34 @@ app.get('/api/ivx/enterprise/capacity', async (context) => {
     return context.json({ ok: false, error: msg.slice(0, 320), marker: 'ivx-enterprise-api-2026-07-14', timestamp: new Date().toISOString() }, isAuth ? 401 : 500);
   }
 });
+// ── IVX Senior Developer Certification App (Isolated) ──
+// Completely isolated from IVX production. Separate in-memory database,
+// separate auth, no access to Supabase or production business data.
+// Mounted at /api/cert-app/* and /cert-app (frontend).
+let certAppInstance: import('hono').Hono | null = null;
+async function getCertApp(): Promise<import('hono').Hono> {
+  if (!certAppInstance) {
+    const { createCertApp } = await import('./cert-app/server');
+    certAppInstance = createCertApp();
+  }
+  return certAppInstance;
+}
+app.get('/api/cert-app/health', async (c) => (await getCertApp()).request(c.req.raw));
+app.get('/api/cert-app/readiness', async (c) => (await getCertApp()).request(c.req.raw));
+app.post('/api/cert-app/auth/login', async (c) => (await getCertApp()).request(c.req.raw));
+app.get('/api/cert-app/items', async (c) => (await getCertApp()).request(c.req.raw));
+app.post('/api/cert-app/items', async (c) => (await getCertApp()).request(c.req.raw));
+app.get('/api/cert-app/items/:id', async (c) => (await getCertApp()).request(c.req.raw));
+app.put('/api/cert-app/items/:id', async (c) => (await getCertApp()).request(c.req.raw));
+app.delete('/api/cert-app/items/:id', async (c) => (await getCertApp()).request(c.req.raw));
+// Serve the cert-app frontend
+app.get('/cert-app', async (c) => {
+  const { readFile } = await import('node:fs/promises');
+  const path = await import('node:path');
+  const html = await readFile(path.resolve(import.meta.dir, 'cert-app', 'frontend', 'index.html'), 'utf-8');
+  return c.html(html);
+});
+
 // Public enterprise health (no auth required)
 app.get('/api/ivx/enterprise/health', () => handleEnterpriseHealthRequest());
 app.options('/api/ivx/enterprise/health', () => new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' } }));
