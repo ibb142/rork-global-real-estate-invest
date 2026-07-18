@@ -50,11 +50,15 @@ function sha256Hex(value: string): string {
 /**
  * Build a SigV4 query-string presigned PUT URL (UNSIGNED-PAYLOAD, host-only
  * signed header). Pure and deterministic for a fixed `now` so it is unit-testable.
+ *
+ * Uses PATH-STYLE addressing (s3.<region>.amazonaws.com/<bucket>/<key>) because
+ * bucket names containing dots (e.g. `ivxholding.com`) break TLS on the
+ * virtual-hosted wildcard certificate (*.s3.<region>.amazonaws.com).
  */
 export function buildIVXS3PresignedPutUrl(input: PresignInput): string {
   const amzDate = input.now.toISOString().replace(/[:.-]/g, '').slice(0, 15) + 'Z';
   const dateStamp = amzDate.slice(0, 8);
-  const host = `${input.bucket}.s3.${input.region}.amazonaws.com`;
+  const host = `s3.${input.region}.amazonaws.com`;
   const credentialScope = `${dateStamp}/${input.region}/s3/aws4_request`;
 
   const queryEntries: [string, string][] = [
@@ -71,7 +75,7 @@ export function buildIVXS3PresignedPutUrl(input: PresignInput): string {
 
   const canonicalRequest = [
     'PUT',
-    `/${input.key}`,
+    `/${input.bucket}/${input.key}`,
     canonicalQuery,
     `host:${host}\n`,
     'host',
@@ -88,7 +92,7 @@ export function buildIVXS3PresignedPutUrl(input: PresignInput): string {
   const signingKey = hmac(hmac(hmac(hmac(`AWS4${input.secretAccessKey}`, dateStamp), input.region), 's3'), 'aws4_request');
   const signature = createHmac('sha256', signingKey).update(stringToSign).digest('hex');
 
-  return `https://${host}/${input.key}?${canonicalQuery}&X-Amz-Signature=${signature}`;
+  return `https://${host}/${input.bucket}/${input.key}?${canonicalQuery}&X-Amz-Signature=${signature}`;
 }
 
 export function isValidIVXApkDistributionKey(key: string): boolean {
