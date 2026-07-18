@@ -118,7 +118,14 @@ export async function startSeniorDevWorker(): Promise<void> {
 async function tick(): Promise<void> {
   const tasks = await listTasks(50);
   const candidates = tasks.filter((t) => {
-    if (t.task_type !== 'senior_dev') return false;
+    // Mark senior_dev tasks via trace_id (always "senior-dev-..." from the
+    // submit endpoint) because the task_type column is only created by the
+    // self-bootstrap DDL, which requires SUPABASE_ACCESS_TOKEN and may not have
+    // run yet. trace_id is in the original CREATE TABLE and is always present,
+    // so it is the reliable marker. task_type is checked too as a fallback.
+    const isSeniorDev = (t.task_type === 'senior_dev')
+      || (typeof t.trace_id === 'string' && t.trace_id.startsWith('senior-dev-'));
+    if (!isSeniorDev) return false;
     if (t.status !== 'QUEUED' && t.status !== 'RETRYING') return false;
     if (t.assigned_worker_id && t.assigned_worker_id !== IVX_SENIOR_DEV_WORKER_ID) return false;
     return true;
