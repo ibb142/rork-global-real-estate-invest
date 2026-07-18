@@ -230,9 +230,14 @@ export async function handleEngagementSaves(req: Request): Promise<Response> {
   return json({ saves: data || [], count: data?.length || 0, projectId, deploymentMarker: DEPLOYMENT_MARKER });
 }
 
+// project_analytics.project_id is a uuid column; reject non-uuid input with 400 instead of letting Postgres throw a 500.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function handleAnalytics(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const projectId = url.searchParams.get('projectId') || url.searchParams.get('project_id') || null;
+  if (projectId && !UUID_RE.test(projectId)) {
+    return json({ error: 'projectId must be a valid UUID', projectId, deploymentMarker: DEPLOYMENT_MARKER }, 400);
+  }
   const days = parseInt(url.searchParams.get('days') || '30', 10);
   const sb = await getSB();
   const since = new Date(Date.now() - days * 86400000).toISOString();
