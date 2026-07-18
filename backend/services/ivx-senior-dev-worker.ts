@@ -242,7 +242,22 @@ async function executeSeniorDevTask(task: IVXOwnerAITaskRow): Promise<void> {
   const localEdits: { path: string; content: string }[] = [];
 
   for (const fileChange of plan.filesToChange) {
-    const current = fileContents.get(fileChange.path) ?? '';
+    // CRITICAL: always read the current file content from GitHub before generating
+    // a patch. If the AI listed the file in filesToChange but NOT in filesToInspect,
+    // the fileContents map would be empty, and generateFilePatch would get current=''
+    // — causing it to hallucinate the full file from scratch (which breaks tsc/tests).
+    let current = fileContents.get(fileChange.path) ?? '';
+    if (!current) {
+      const readFile = await githubReadFile(fileChange.path);
+      if (readFile.ok && readFile.content !== null) {
+        current = readFile.content;
+        fileContents.set(fileChange.path, current);
+        await logCheckpoint(task.id, runId, 'IMPLEMENTING', { file: fileChange.path, note: 'fetched current content from GitHub (not in filesToInspect)' });
+      } else {
+        await logCheckpoint(task.id, runId, 'IMPLEMENTING', { file: fileChange.path, error: 'Could not read current file content from GitHub', githubError: readFile.error });
+        continue;
+      }
+    }
     const patchResult = await generateFilePatch({
       filePath: fileChange.path,
       currentContent: current,
