@@ -31,7 +31,7 @@ import {
   type IVXOwnerAITaskRow,
 } from './ivx-owner-ai-task-queue';
 import { hasApproval, writeProofLedger, updateProofLedger, type IVXSeniorDevApprovalAction } from './ivx-senior-dev-proof';
-import { githubCommitFile, githubReadFile, githubGetHeadSha } from './ivx-senior-dev-git';
+import { githubCommitFile, githubReadFile, githubGetHeadSha, githubListFiles } from './ivx-senior-dev-git';
 import { askAI, planEngineeringTask, generateFilePatch } from './ivx-senior-dev-ai';
 import {
   triggerRenderDeploy,
@@ -202,7 +202,12 @@ async function executeSeniorDevTask(task: IVXOwnerAITaskRow): Promise<void> {
 
   // ─── Phase 1: PLANNING ──────────────────────────────────────────────
   await setPhase(task.id, 'PLANNING', runId);
-  const planResult = await planEngineeringTask(task.prompt);
+  // Fetch the real repo file tree so the AI plans against actual files
+  // (not hallucinated paths like src/chat/ChatService.js that don't exist).
+  const fileTreeResult = await githubListFiles();
+  const repoFileTree = fileTreeResult.ok ? fileTreeResult.files.slice(0, 400) : [];
+  await logCheckpoint(task.id, runId, 'PLANNING', { repoFileCount: repoFileTree.length, fileTreeOk: fileTreeResult.ok, fileTreeError: fileTreeResult.error });
+  const planResult = await planEngineeringTask(task.prompt, repoFileTree);
   let plan: EngineerPlan;
   if (planResult.ok && planResult.content) {
     plan = parsePlan(planResult.content, task.prompt);
