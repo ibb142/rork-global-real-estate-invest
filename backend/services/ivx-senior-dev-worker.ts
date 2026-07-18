@@ -239,7 +239,7 @@ async function executeSeniorDevTask(task: IVXOwnerAITaskRow): Promise<void> {
   // ─── Phase 3: IMPLEMENTING ──────────────────────────────────────────
   await setPhase(task.id, 'IMPLEMENTING', runId);
   const changedFiles: string[] = [];
-  const localEdits: { path: string; content: string }[] = [];
+  let localEdits: { path: string; content: string }[] = [];
 
   for (const fileChange of plan.filesToChange) {
     // CRITICAL: always read the current file content from GitHub before generating
@@ -281,17 +281,66 @@ async function executeSeniorDevTask(task: IVXOwnerAITaskRow): Promise<void> {
   await updateProofLedger(runId, { filesChanged: changedFiles });
   await patchTask(task.id, { files_changed: changedFiles });
 
-  // ─── Phase 4: TESTING ───────────────────────────────────────────────
-  await setPhase(task.id, 'TESTING', runId);
-  const testResults = await runTests(plan.testsToRun);
-  await logCheckpoint(task.id, runId, 'TESTING', testResults as unknown as Record<string, unknown>);
-  await updateProofLedger(runId, { testResults: testResults as unknown as Record<string, unknown> });
-  await patchTask(task.id, { test_summary: testResults as unknown as Record<string, unknown> });
+  // ─── Phase 4: TESTING (with self-healing test-fix loop) ──────────────
+  // Standard autonomous-agent pattern: when tsc/tests fail, feed the error
+  // output back to the AI so it can fix the code. Retry up to 3 times. Only
+  // if all 3 attempts fail do we report FAILED honestly (never fake VERIFIED).
+  const MAX_TEST_FIX_ATTEMPTS = 3;
+  let testResults: TestRunResults | null = null;
+  let testFixAttempts = 0;
+  let testsPassed = false;
 
-  if (!testResults.passed) {
-    // Tests failed — do NOT commit. Report failure honestly.
-    await failTask(task.id, `Tests failed: ${testResults.summary}`);
-    await updateProofLedger(runId, { status: 'failed', errorMessage: `Tests failed: ${testResults.summary}` });
+  while (testFixAttempts < MAX_TEST_FIX_ATTEMPTS && !testsPassed) {
+    testFixAttempts += 1;
+    await setPhase(task.id, 'TESTING', runId);
+    if (testFixAttempts > 1) {
+      await logCheckpoint(task.id, runId, 'TESTING', { attempt: testFixAttempts, note: 'self-healing retry — feeding prior error back to AI' });
+    }
+    testResults = await runTests(plan.testsToRun);
+    await logCheckpoint(task.id, runId, 'TESTING', { attempt: testFixAttempts, ...testResults as unknown as Record<string, unknown> });
+    await patchTask(task.id, { test_summary: testResults as unknown as Record<string, unknown> });
+
+    if (testResults.passed) {
+      testsPassed = true;
+      break;
+    }
+
+    // Tests failed. If this is not the last attempt, feed the error back to
+    // the AI so it can fix each changed file. This is the self-healing loop.
+    if (testFixAttempts < MAX_TEST_FIX_ATTEMPTS && localEdits.length > 0) {
+      await logCheckpoint(task.id, runId, 'TESTING', { attempt: testFixAttempts, status: 'failed, entering self-healing fix loop', summary: testResults.summary });
+      const errorOutput = `typecheck: ${testResults.typecheck}\ntypecheck output:\n${testResults.typecheckOutput.slice(-1200)}\n\ntests: ${testResults.tests}\ntest output:\n${testResults.testOutput.slice(-1200)}`;
+      // Re-generate each changed file with the error context.
+      const healedEdits: { path: string; content: string }[] = [];
+      for (const edit of localEdits) {
+        const current = edit.content; // use the last (failed) version as the base
+        const fixResult = await generateFilePatch({
+          filePath: edit.path,
+          currentContent: current,
+          goal: `${task.prompt}\n\nThe previous version FAILED typecheck/tests. Fix the errors below. Keep the change minimal and surgical — only fix what the errors call out.\n\n--- TEST/TSC ERROR OUTPUT ---\n${errorOutput}\n--- END ERROR OUTPUT ---`,
+          priorContext: plan.summary,
+        });
+        if (fixResult.ok && fixResult.content) {
+          const fixedContent = stripCodeFences(fixResult.content);
+          writeLocalFile(edit.path, fixedContent);
+          healedEdits.push({ path: edit.path, content: fixedContent });
+          await logCheckpoint(task.id, runId, 'TESTING', { file: edit.path, attempt: testFixAttempts, note: 'AI generated fix', bytes: fixedContent.length });
+        } else {
+          // Could not generate a fix — keep the previous version for the next test run.
+          healedEdits.push(edit);
+          await logCheckpoint(task.id, runId, 'TESTING', { file: edit.path, attempt: testFixAttempts, error: fixResult.error ?? 'AI returned empty fix' });
+        }
+      }
+      localEdits = healedEdits;
+    }
+  }
+
+  await updateProofLedger(runId, { testResults: testResults as unknown as Record<string, unknown> });
+
+  if (!testsPassed || !testResults) {
+    // All self-healing attempts failed — report FAILED honestly.
+    await failTask(task.id, `Tests failed after ${testFixAttempts} attempt(s): ${testResults?.summary ?? 'unknown'}`);
+    await updateProofLedger(runId, { status: 'failed', errorMessage: `Tests failed after ${testFixAttempts} attempt(s): ${testResults?.summary ?? 'unknown'}` });
     return;
   }
 
