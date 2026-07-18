@@ -28,7 +28,14 @@ function resolveApiKey(): string {
 }
 
 function resolveModel(): string {
-  return readEnv('IVX_SENIOR_DEV_MODEL') || readEnv('IVX_OPENAI_FALLBACK_MODEL') || 'gpt-4.1-mini';
+  // Vercel AI Gateway requires the provider prefix (e.g. "openai/gpt-4o").
+  // The runtime health endpoint confirms the working key is vck_ + openai/gpt-4o.
+  // Default to the proven-working model so AI planning actually succeeds.
+  const explicit = readEnv('IVX_SENIOR_DEV_MODEL');
+  if (explicit) return explicit;
+  const fallback = readEnv('IVX_OPENAI_FALLBACK_MODEL');
+  if (fallback) return fallback.startsWith('openai/') || fallback.startsWith('anthropic/') ? fallback : `openai/${fallback}`;
+  return 'openai/gpt-4o';
 }
 
 /**
