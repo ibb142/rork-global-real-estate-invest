@@ -236,7 +236,9 @@ export async function handleAnalytics(req: Request): Promise<Response> {
   const days = parseInt(url.searchParams.get('days') || '30', 10);
   const sb = await getSB();
   const since = new Date(Date.now() - days * 86400000).toISOString();
-  let query = sb.from('project_analytics').select('id,project_id,event_type,date,count', { count: 'exact', head: false }).gte('date', since.split('T')[0]);
+  // Columns match the upsert path in ivx-project-engagement.ts (invest_clicks/detail_views),
+  // NOT event_type/count which do not exist on this table.
+  let query = sb.from('project_analytics').select('id,project_id,date,invest_clicks,detail_views', { count: 'exact', head: false }).gte('date', since.split('T')[0]);
   if (projectId) query = query.eq('project_id', projectId);
   const { data, error, count } = await query.order('date', { ascending: false }).limit(100);
   if (error) return json({ error: error.message, deploymentMarker: DEPLOYMENT_MARKER }, 500);
