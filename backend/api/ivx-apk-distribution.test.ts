@@ -34,8 +34,8 @@ describe('buildIVXS3PresignedPutUrl', () => {
     expect(first).toBe(second);
 
     const url = new URL(first);
-    expect(url.hostname).toBe('ivxholding.com.s3.us-east-1.amazonaws.com');
-    expect(url.pathname).toBe('/apk/ivx-holdings-v1.4.7.apk');
+    expect(url.hostname).toBe('s3.us-east-1.amazonaws.com');
+    expect(url.pathname).toBe('/ivxholding.com/apk/ivx-holdings-v1.4.7.apk');
     expect(url.searchParams.get('X-Amz-Algorithm')).toBe('AWS4-HMAC-SHA256');
     expect(url.searchParams.get('X-Amz-Date')).toBe('20260718T153000Z');
     expect(url.searchParams.get('X-Amz-Expires')).toBe('900');
