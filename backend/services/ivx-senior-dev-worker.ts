@@ -156,13 +156,18 @@ async function tick(): Promise<void> {
 
 async function claimTask(taskId: string): Promise<IVXOwnerAITaskRow | null> {
   const now = new Date().toISOString();
+  // The submit endpoint pre-assigns assigned_worker_id='IVX-SENIOR-DEV-01' so the
+  // task is already bound to this worker. The optimistic claim must therefore
+  // accept rows where assigned_worker_id IS NULL (unassigned) OR already equals
+  // IVX-SENIOR-DEV-01 (pre-assigned to us). Using PostgREST or= syntax.
+  const filter = `&status=in.(QUEUED,RETRYING)&or=(assigned_worker_id.is.null,assigned_worker_id.eq.${encodeURIComponent(IVX_SENIOR_DEV_WORKER_ID)})`;
   const patched = await patchTask(taskId, {
     status: 'RUNNING',
     checkpoint: `CLAIMED by ${IVX_SENIOR_DEV_WORKER_ID}`,
     assigned_worker_id: IVX_SENIOR_DEV_WORKER_ID,
     heartbeat_at: now,
     checkpoint_history: appendCheckpoint(null, `CLAIMED by ${IVX_SENIOR_DEV_WORKER_ID} at ${now}`),
-  }, `&status=in.(QUEUED,RETRYING)&assigned_worker_id=is.null`);
+  }, filter);
   return patched;
 }
 
