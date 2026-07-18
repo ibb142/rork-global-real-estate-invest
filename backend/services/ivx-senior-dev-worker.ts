@@ -179,9 +179,14 @@ async function executeSeniorDevTask(task: IVXOwnerAITaskRow): Promise<void> {
     repository: process.env.GITHUB_REPO_URL ?? undefined,
   });
   if (!run) {
-    throw new Error('Failed to create proof ledger run record.');
+    // Proof ledger write failed (table missing / Supabase unreachable). This is
+    // a hard failure for a senior_dev task — without a ledger there is no honest
+    // evidence trail. Do NOT fall through to a hollow VERIFIED. Fail loudly.
+    throw new Error('Failed to create proof ledger run record (ivx_senior_dev_worker_runs table unreachable — check SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY + ensureSeniorDevTables bootstrap).');
   }
   const runId = run.id;
+  // Patch the proof_ledger_id back onto the task so callers can join ledger ↔ task.
+  await patchTask(task.id, { proof_ledger_id: runId });
 
   // ─── Phase 1: PLANNING ──────────────────────────────────────────────
   await setPhase(task.id, 'PLANNING', runId);
@@ -190,16 +195,14 @@ async function executeSeniorDevTask(task: IVXOwnerAITaskRow): Promise<void> {
   if (planResult.ok && planResult.content) {
     plan = parsePlan(planResult.content, task.prompt);
   } else {
-    // Fallback: minimal plan — inspect + no changes (audit-only).
-    plan = {
-      summary: `Audit-only fallback for: ${task.prompt.slice(0, 120)}`,
-      filesToInspect: [],
-      filesToChange: [],
-      testsToRun: ['bun test'],
-      requiresDeploy: false,
-      rollbackNotes: 'No changes — audit only.',
-    };
-    await logCheckpoint(task.id, runId, 'PLANNING', { warning: 'AI planning failed, using audit-only fallback', error: planResult.error });
+    // AI planning failed. The owner forbade fake/hollow VERIFIED certifications.
+    // Instead of silently falling back to an audit-only path that reaches VERIFIED
+    // with no real work, FAIL the task honestly with the AI planning error so the
+    // owner sees exactly why the autonomous worker could not proceed.
+    const planningError = planResult.error ?? 'AI planning returned empty content';
+    await failTask(task.id, `PLANNING failed: ${planningError}`);
+    await updateProofLedger(runId, { status: 'failed', errorMessage: `PLANNING failed: ${planningError}` });
+    return;
   }
   await logCheckpoint(task.id, runId, 'PLANNING', { plan });
   await updateProofLedger(runId, { logs: [`plan: ${plan.summary}`] });
@@ -358,11 +361,18 @@ async function executeSeniorDevTask(task: IVXOwnerAITaskRow): Promise<void> {
   });
   await patchTask(task.id, { runtime_sha: runtimeSha });
 
-  // Verify: production health 200 AND (if deployed) SHA parity.
-  const verified = health.ok && (!requestsDeploy || !changedFiles.length || versionMatch);
+  // Verify: production health 200 AND (if deployed) SHA parity AND at least one
+  // file was actually changed+committed (no hollow VERIFIED on audit-only no-ops).
+  // The owner explicitly forbade fake certifications where a task reaches VERIFIED
+  // with commitSha=null, deployId=null, filesChanged=[] just because /health is 200.
+  const didRealWork = changedFiles.length > 0 && lastCommitSha !== null;
+  const verified = health.ok && didRealWork && (!requestsDeploy || versionMatch);
   if (!verified) {
-    await failTask(task.id, `Live verification failed: health=${health.status}, match=${versionMatch}`);
-    await updateProofLedger(runId, { status: 'failed', errorMessage: 'Live verification failed' });
+    const reason = !didRealWork
+      ? `Live verification failed: no real code change was committed (changedFiles=${changedFiles.length}, commitSha=${lastCommitSha})`
+      : `Live verification failed: health=${health.status}, match=${versionMatch}`;
+    await failTask(task.id, reason);
+    await updateProofLedger(runId, { status: 'failed', errorMessage: reason });
     return;
   }
 
