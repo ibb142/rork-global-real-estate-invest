@@ -684,6 +684,12 @@ function buildOwnerAIResponsePayloadInner(
     continuationNextItemNumber: internalMetadata.continuationNextItemNumber,
     continuationComplete: internalMetadata.continuationComplete,
     continuationPrompt: internalMetadata.continuationPrompt,
+    // FINAL IVX IA CHAT EXECUTION MODE (owner mandate 2026-07-19): forward
+    // the strict 9-field executionStatus payload so the Expo chat can render a
+    // live-polling ExecutionConsoleBubble for execution-mode prompts. Without
+    // this explicit field copy, the payload is constructed but dropped — the
+    // exact "executionStatus: ABSENT" bug the live routing test caught.
+    executionStatus: internalMetadata.executionStatus,
   };
 
   if (!includeDiagnostics) {
