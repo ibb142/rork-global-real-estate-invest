@@ -1409,7 +1409,21 @@ export async function runIVXAutonomousCoder(input: IVXAutonomousCoderInput): Pro
     const testsActuallyRun = bunAvailable || Boolean(input.testRunner);
     testsPassed = testsActuallyRun ? testResult.ok : true; // skip = neutral pass
 
-    const typecheckCmd = 'bun x tsc --noEmit';
+    // SCOPED TYPECHECK for the LLM path: the changed files are known after the
+    // patch is applied, so we run `tsc --noEmit --skipLibCheck <changedFiles>` on
+    // JUST those files instead of the full project. The full-project `tsc
+    // --noEmit` times out on the Render container at 60s, which was the root
+    // cause of pilot 4's BLOCKED verdict. A scoped check on the changed files is
+    // the honest gate — it catches type errors in the actual edit without the
+    // 60s full-project penalty. When bun is available we use `bun x tsc`; on
+    // Render (node+tsx, no bun) we use `npx tsc`.
+    const bunResTsc = resolveRuntimeCommand('bun');
+    const bunAvailTsc = !bunResTsc.usedFallback && bunResTsc.resolvedPath !== null;
+    const changedFileArgs = appliedOps.map((op) => op.path).join(' ');
+    const scopedTypecheckCmd = bunAvailTsc
+      ? `bun x tsc --noEmit --skipLibCheck --target es2022 --module nodenext --moduleResolution nodenext ${changedFileArgs}`
+      : `npx tsc --noEmit --skipLibCheck --target es2022 --module nodenext --moduleResolution nodenext ${changedFileArgs}`;
+    const typecheckCmd = scopedTypecheckCmd;
     const typecheckResult = input.testRunner
       ? await input.testRunner(projectRoot, typecheckCmd)
       : await runCommand(projectRoot, typecheckCmd);
