@@ -74,8 +74,11 @@ const DEFAULT_MAX_RUNTIME_MS = 8 * 60_000;
 const DEFAULT_MAX_LLM_CALLS = MAX_ITERATIONS * MAX_LLM_ATTEMPTS;
 /** Max estimated tokens per job (soft cap — tracked from LLM response lengths).
  * If the cumulative estimated token count exceeds this, the engine BLOCKS with
- * TOKEN_BUDGET_EXCEEDED rather than making another call. */
-const DEFAULT_MAX_TOKEN_BUDGET = 60_000;
+ * TOKEN_BUDGET_EXCEEDED rather than making another call. 200k is realistic for a
+ * real coding task with up to 5 iterations (each iteration sends file previews +
+ * a patch response). The 60k cap was too tight and BLOCKED a legitimate PILOT-3
+ * change after 4 iterations. */
+const DEFAULT_MAX_TOKEN_BUDGET = 200_000;
 /** Max files to inspect per job. */
 const MAX_INSPECTED_FILES = 30;
 /** Max file preview chars sent to the LLM. Small files get full content. */
