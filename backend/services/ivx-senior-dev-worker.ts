@@ -276,10 +276,13 @@ async function executeSeniorDevTask(task: IVXOwnerAITaskRow): Promise<void> {
   let localEdits: { path: string; content: string }[] = [];
 
   for (const fileChange of plan.filesToChange) {
-    // CRITICAL: always read the current file content from GitHub before generating
-    // a patch. If the AI listed the file in filesToChange but NOT in filesToInspect,
-    // the fileContents map would be empty, and generateFilePatch would get current=''
-    // — causing it to hallucinate the full file from scratch (which breaks tsc/tests).
+    // CRITICAL: read the current file content from GitHub before generating a
+    // patch. Two valid cases:
+    //   (A) File EXISTS → current = its real content (surgical edits against truth)
+    //   (B) File DOES NOT EXIST (new file creation) → current = '' is VALID; the
+    //       AI prompt rule 5 handles empty current → minimal new file. Do NOT skip.
+    // Only skip if the read fails for a reason OTHER than "not found" (404), e.g.
+    // auth/network errors — those mean we genuinely cannot proceed.
     let current = fileContents.get(fileChange.path) ?? '';
     if (!current) {
       const readFile = await githubReadFile(fileChange.path);
@@ -288,8 +291,18 @@ async function executeSeniorDevTask(task: IVXOwnerAITaskRow): Promise<void> {
         fileContents.set(fileChange.path, current);
         await logCheckpoint(task.id, runId, 'IMPLEMENTING', { file: fileChange.path, note: 'fetched current content from GitHub (not in filesToInspect)' });
       } else {
-        await logCheckpoint(task.id, runId, 'IMPLEMENTING', { file: fileChange.path, error: 'Could not read current file content from GitHub', githubError: readFile.error });
-        continue;
+        const errMsg = (readFile.error ?? '').toLowerCase();
+        const isNotFound = errMsg.includes('not found') || errMsg.includes('404') || errMsg.includes('does not exist');
+        if (isNotFound) {
+          // New file creation — current='' is valid. Proceed so the AI generates
+          // the minimal new file per prompt rule 5. Do NOT skip.
+          current = '';
+          await logCheckpoint(task.id, runId, 'IMPLEMENTING', { file: fileChange.path, note: 'new file (GitHub 404) — proceeding with empty current for creation' });
+        } else {
+          // Real read error (auth/network) — cannot proceed honestly.
+          await logCheckpoint(task.id, runId, 'IMPLEMENTING', { file: fileChange.path, error: 'Could not read current file content from GitHub', githubError: readFile.error });
+          continue;
+        }
       }
     }
     const patchResult = await generateFilePatch({
