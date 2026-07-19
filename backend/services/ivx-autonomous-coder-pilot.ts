@@ -10,6 +10,7 @@
  *
  * This is intentionally a tiny, side-effect-free module so the pilot is safe.
  */
+// IVX autonomous coder pilot sentinel
 export const PILOT_LABEL = 'AUTONOMOUS-CODER-PILOT-3';
 export const PILOT_LABEL_TARGET = 'AUTONOMOUS-CODER-PILOT-2';
 
