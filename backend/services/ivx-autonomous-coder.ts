@@ -542,25 +542,37 @@ async function callLLMForPatch(
 const PILOT_LABEL_REGEX = /AUTONOMOUS-CODER-PILOT-1/;
 const PILOT_TARGET_LABEL = 'AUTONOMOUS-CODER-PILOT-2';
 const PILOT_GOAL_TRIGGER = /AUTONOMOUS-CODER-PILOT-1[\s\S]*AUTONOMOUS-CODER-PILOT-2|AUTONOMOUS-CODER-PILOT-2[\s\S]*AUTONOMOUS-CODER-PILOT-1/i;
+/** The DEFINITION pattern: matches the file that declares the sentinel label
+ * as an exported constant value (e.g. `export const PILOT_LABEL = 'AUTONOMOUS-CODER-PILOT-1'`).
+ * This is intentionally narrower than a bare mention so that test files, the
+ * engine, and other references do not count as a sentinel match — only the
+ * canonical sentinel-definition file does. */
+const PILOT_LABEL_DEFINITION_REGEX = /(?:export\s+const|const|export\s+let|let)\s+PILOT_LABEL\s*=\s*['"]AUTONOMOUS-CODER-PILOT-1['"]/;
 
 /** Returns true only when the goal is the controlled pilot label change. */
 export function isPilotLabelChangeGoal(goal: string): boolean {
   return PILOT_GOAL_TRIGGER.test(goal) && PILOT_LABEL_REGEX.test(goal);
 }
 
-/** Search all safe source files for the exact pilot label. Returns the single
- * matching file path or null (BLOCKED) if zero or multiple matches. */
+/** Search all safe source files for the pilot sentinel DEFINITION (not mere
+ * mentions). Returns the single matching file path or null (BLOCKED) when zero
+ * or multiple definition matches are found. Test files (.test.ts/.test.tsx)
+ * and this engine file are excluded from the scan so only the canonical sentinel
+ * module counts. */
 async function findPilotSentinelFile(projectRoot: string, fileReader?: (relPath: string) => Promise<string>): Promise<string | null> {
   const candidates: string[] = [];
-  // Walk backend/ + expo/ source files and check each for the label.
   const allFiles: string[] = [];
   await walkInspectableFiles('backend', allFiles, 500, projectRoot);
   await walkInspectableFiles('expo', allFiles, 500, projectRoot);
   const read = fileReader ?? (async (rel: string) => readFile(path.join(projectRoot, rel), 'utf8'));
   for (const file of allFiles) {
+    // Exclude test files and the engine file itself — only the sentinel
+    // definition module should match.
+    if (/\.test\.(ts|tsx)$/.test(file)) continue;
+    if (file.endsWith('ivx-autonomous-coder.ts')) continue;
     try {
       const content = await read(file);
-      if (PILOT_LABEL_REGEX.test(content)) {
+      if (PILOT_LABEL_DEFINITION_REGEX.test(content)) {
         candidates.push(file);
       }
     } catch {
@@ -568,7 +580,6 @@ async function findPilotSentinelFile(projectRoot: string, fileReader?: (relPath:
     }
   }
   if (candidates.length !== 1) return null;
-  // Validate the single match is a safe patch path.
   try {
     assertSafePatchPath(candidates[0]);
   } catch {
@@ -588,13 +599,16 @@ async function deterministicPilotFallback(
   if (!sentinelFile) return null;
   const read = fileReader ?? (async (rel: string) => readFile(path.join(projectRoot, rel), 'utf8'));
   const content = await read(sentinelFile);
-  const match = content.match(PILOT_LABEL_REGEX);
-  if (!match) return null;
-  const oldText = match[0];
-  const newText = PILOT_TARGET_LABEL;
+  // Find the exact definition string so we can replace just the value, not
+  // every mention of the label in comments/metadata.
+  const defMatch = content.match(PILOT_LABEL_DEFINITION_REGEX);
+  if (!defMatch) return null;
+  // Replace only the label value inside the definition match.
+  const oldText = defMatch[0];
+  const newText = oldText.replace('AUTONOMOUS-CODER-PILOT-1', PILOT_TARGET_LABEL);
   return {
-    rootCause: 'Controlled pilot: the repository contains a single sentinel label that must be changed to prove the loop end-to-end.',
-    technicalPlan: 'Apply an exact-replacement of AUTONOMOUS-CODER-PILOT-1 with AUTONOMOUS-CODER-PILOT-2 in the single matching source file, then run targeted tests + typecheck + commit.',
+    rootCause: 'Controlled pilot: the repository contains a single sentinel-label definition that must be changed to prove the loop end-to-end.',
+    technicalPlan: 'Apply an exact-replacement of the PILOT_LABEL definition value (AUTONOMOUS-CODER-PILOT-1 -> AUTONOMOUS-CODER-PILOT-2) in the single matching sentinel-definition file, then run targeted tests + typecheck + commit.',
     operations: [{
       path: sentinelFile,
       kind: 'replace_exact',
