@@ -7446,7 +7446,10 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
     const autonomousCoderTrigger = /autonomous[-_ ]?coder|code[-_ ]?change|write[-_ ]?code|implement[-_ ]?patch|autonomous[-_ ]?coding/i.test(prompt);
     if (autonomousCoderTrigger) {
       const workerOwnerId = ownerContext.userId ?? 'owner';
-      const deployRequested = /deploy|production|live/i.test(prompt);
+      // Detect deploy intent: only when the prompt requests deploy WITHOUT a
+      // negation. "do not deploy" / "without deploying" must NOT trigger deploy.
+      const deployNegated = /do\s+not\s+deploy|don'?t\s+deploy|without\s+deploy|no\s+deploy/i.test(prompt);
+      const deployRequested = !deployNegated && /\bdeploy\b|production|\blive\b/i.test(prompt);
       const autonomousExecutionMode: 'code_change' | 'deploy' = deployRequested ? 'deploy' : 'code_change';
       const autonomousWorkerInput: IVXWorkerJobInput = {
         goal: prompt,
