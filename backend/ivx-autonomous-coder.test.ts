@@ -594,8 +594,11 @@ describe('IVX Autonomous Coder — deterministic pilot fallback (Phase 3)', () =
     expect(proof.filesChanged).toContain('backend/services/ivx-autonomous-coder-pilot.ts');
     expect(proof.finalPatch.length).toBe(1);
     expect(proof.finalPatch[0].kind).toBe('replace_exact');
-    expect(proof.finalPatch[0].oldText).toBe(PILOT_LABEL);
-    expect(proof.finalPatch[0].newText).toBe(PILOT_LABEL_TARGET);
+    // The narrowed fallback replaces the full DEFINITION match, not just the bare label.
+    expect(proof.finalPatch[0].oldText).toBe(`export const PILOT_LABEL = '${PILOT_LABEL}'`);
+    expect(proof.finalPatch[0].newText).toBe(`export const PILOT_LABEL = '${PILOT_LABEL_TARGET}'`);
+    expect(proof.finalPatch[0].oldText).toContain(PILOT_LABEL);
+    expect(proof.finalPatch[0].newText).toContain(PILOT_LABEL_TARGET);
     expect(proof.commitSha).toBe('pilot-fallback-commit-sha-001');
     expect(proof.commitUrl).toContain('pilot-fallback-commit-sha-001');
     expect(proof.branch).toBe('main');
@@ -649,9 +652,10 @@ describe('IVX Autonomous Coder — deterministic pilot fallback (Phase 3)', () =
   it('BLOCKS the pilot fallback when the sentinel label appears in MULTIPLE safe source files (ambiguous match)', async () => {
     const root = path.join(TMP_ROOT, 'pilot-fallback-multi');
     await mkdir(path.join(root, 'backend/services'), { recursive: true });
-    // Two files both contain the sentinel label → ambiguous, must BLOCK.
+    // Two files both DEFINE the sentinel label as an exported constant → ambiguous, must BLOCK.
+    // (The narrowed scan matches only DEFINITIONS, not mere comment mentions, so both must define.)
     const sentinelA = `export const PILOT_LABEL = '${PILOT_LABEL}';\nexport const PILOT_LABEL_TARGET = '${PILOT_LABEL_TARGET}';\n`;
-    const sentinelB = `// Another file referencing the pilot label: ${PILOT_LABEL}\n`;
+    const sentinelB = `export const PILOT_LABEL = '${PILOT_LABEL}';\n// duplicate definition in a second file\n`;
     await writeFile(path.join(root, 'backend/services/ivx-autonomous-coder-pilot.ts'), sentinelA, 'utf8');
     await writeFile(path.join(root, 'backend/services/other-pilot-ref.ts'), sentinelB, 'utf8');
     const fileWriter = async (rel: string, content: string) => {
