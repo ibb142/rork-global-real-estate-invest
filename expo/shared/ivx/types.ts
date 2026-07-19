@@ -1,1 +1,307 @@
-aW1wb3J0IHR5cGUgeyBQcml2aWxlZ2VkSVZYUm9sZSB9IGZyb20gJy4vYWNjZXNzJzsKCmV4cG9ydCBjb25zdCBJVlhfT1dORVJfQUlfQVBJX1BBVEggPSAnL2FwaS9pdngvb3duZXItYWknOwpleHBvcnQgY29uc3QgSVZYX09XTkVSX0FJX0JVQ0tFVCA9ICdpdngtb3duZXItZmlsZXMnOwpleHBvcnQgY29uc3QgSVZYX0NIQVRfVVBMT0FEX0JVQ0tFVCA9ICdpdngtY2hhdC11cGxvYWRzJzsKZXhwb3J0IGNvbnN0IElWWF9PV05FUl9BSV9NQVhfVVBMT0FEX0JZVEVTOiBudW1iZXIgfCBudWxsID0gbnVsbDsKCmV4cG9ydCBjb25zdCBJVlhfT1dORVJfQUlfVEFCTEVTID0gewogIGNvbnZlcnNhdGlvbnM6ICdpdnhfY29udmVyc2F0aW9ucycsCiAgbWVzc2FnZXM6ICdpdnhfbWVzc2FnZXMnLAogIGluYm94U3RhdGU6ICdpdnhfaW5ib3hfc3RhdGUnLAogIGFpUmVxdWVzdHM6ICdpdnhfYWlfcmVxdWVzdHMnLAogIGtub3dsZWRnZURvY3VtZW50czogJ2l2eF9rbm93bGVkZ2VfZG9jdW1lbnRzJywKICBrbm93bGVkZ2VDaHVua3M6ICdpdnhfa25vd2xlZGdlX2NodW5rcycsCiAgY29tbWFuZExvZ3M6ICdpdnhfY29tbWFuZF9sb2dzJywKICBhY2Nlc3NUZXN0Um93czogJ2l2eF9hY2Nlc3NfdGVzdF9yb3dzJywKfSBhcyBjb25zdDsKCmV4cG9ydCB0eXBlIElWWE93bmVyUm9sZSA9IFByaXZpbGVnZWRJVlhSb2xlOwpleHBvcnQgdHlwZSBJVlhNZXNzYWdlU2VuZGVyUm9sZSA9ICdvd25lcicgfCAnYXNzaXN0YW50JyB8ICdzeXN0ZW0nOwpleHBvcnQgdHlwZSBJVlhBdHRhY2htZW50S2luZCA9ICd0ZXh0JyB8ICdpbWFnZScgfCAndmlkZW8nIHwgJ3BkZicgfCAnZmlsZScgfCAnY29tbWFuZCcgfCAnc3lzdGVtJzsKZXhwb3J0IHR5cGUgSVZYVXBsb2FkU291cmNlID0gJ3dlYicgfCAnbW9iaWxlJzsKZXhwb3J0IHR5cGUgSVZYUmVxdWVzdE1vZGUgPSAnY2hhdCcgfCAnY29tbWFuZCc7CgpleHBvcnQgdHlwZSBJVlhDb252ZXJzYXRpb24gPSB7CiAgaWQ6IHN0cmluZzsKICBzbHVnOiBzdHJpbmc7CiAgdGl0bGU6IHN0cmluZzsKICBzdWJ0aXRsZTogc3RyaW5nIHwgbnVsbDsKICBjcmVhdGVkQXQ6IHN0cmluZzsKICB1cGRhdGVkQXQ6IHN0cmluZzsKICBsYXN0TWVzc2FnZVRleHQ6IHN0cmluZyB8IG51bGw7CiAgbGFzdE1lc3NhZ2VBdDogc3RyaW5nIHwgbnVsbDsKfTsKCmV4cG9ydCB0eXBlIElWWE1lc3NhZ2UgPSB7CiAgaWQ6IHN0cmluZzsKICBjb252ZXJzYXRpb25JZDogc3RyaW5nOwogIHNlbmRlclVzZXJJZDogc3RyaW5nIHwgbnVsbDsKICBzZW5kZXJSb2xlOiBJVlhNZXNzYWdlU2VuZGVyUm9sZTsKICBzZW5kZXJMYWJlbDogc3RyaW5nIHwgbnVsbDsKICBib2R5OiBzdHJpbmcgfCBudWxsOwogIGF0dGFjaG1lbnRVcmw6IHN0cmluZyB8IG51bGw7CiAgYXR0YWNobWVudE5hbWU6IHN0cmluZyB8IG51bGw7CiAgYXR0YWNobWVudE1pbWU6IHN0cmluZyB8IG51bGw7CiAgYXR0YWNobWVudFNpemU6IG51bWJlciB8IG51bGw7CiAgYXR0YWNobWVudEtpbmQ6IElWWEF0dGFjaG1lbnRLaW5kOwogIGNyZWF0ZWRBdDogc3RyaW5nOwogIHVwZGF0ZWRBdDogc3RyaW5nOwp9OwoKZXhwb3J0IHR5cGUgSVZYSW5ib3hJdGVtID0gewogIGNvbnZlcnNhdGlvbklkOiBzdHJpbmc7CiAgc2x1Zzogc3RyaW5nOwogIHRpdGxlOiBzdHJpbmc7CiAgc3VidGl0bGU6IHN0cmluZyB8IG51bGw7CiAgdW5yZWFkQ291bnQ6IG51bWJlcjsKICBsYXN0UmVhZEF0OiBzdHJpbmcgfCBudWxsOwogIGxhc3RNZXNzYWdlVGV4dDogc3RyaW5nIHwgbnVsbDsKICBsYXN0TWVzc2FnZUF0OiBzdHJpbmcgfCBudWxsOwp9OwoKZXhwb3J0IHR5cGUgSVZYV2ViVXBsb2FkRmlsZSA9IHsKICBhcnJheUJ1ZmZlcjogKCkgPT4gUHJvbWlzZTxBcnJheUJ1ZmZlcj47CiAgdHlwZT86IHN0cmluZzsKICBzaXplPzogbnVtYmVyOwogIG5hbWU/OiBzdHJpbmc7Cn07CgpleHBvcnQgdHlwZSBJVlhVcGxvYWRJbnB1dCA9IHsKICB1cmk/OiBzdHJpbmc7CiAgZmlsZT86IElWWFdlYlVwbG9hZEZpbGUgfCBudWxsOwogIG5hbWU6IHN0cmluZzsKICB0eXBlPzogc3RyaW5nIHwgbnVsbDsKICBzaXplPzogbnVtYmVyIHwgbnVsbDsKfTsKCmV4cG9ydCB0eXBlIElWWFVwbG9hZGVkRmlsZSA9IHsKICBidWNrZXQ6IHN0cmluZzsKICBwYXRoOiBzdHJpbmc7CiAgcHVibGljVXJsOiBzdHJpbmc7CiAgZmlsZU5hbWU6IHN0cmluZzsKICBtaW1lVHlwZTogc3RyaW5nIHwgbnVsbDsKICBzaXplOiBudW1iZXIgfCBudWxsOwogIHNvdXJjZTogSVZYVXBsb2FkU291cmNlOwp9OwoKZXhwb3J0IHR5cGUgSVZYT3duZXJBdXRoQ29udGV4dCA9IHsKICB1c2VySWQ6IHN0cmluZzsKICBlbWFpbDogc3RyaW5nIHwgbnVsbDsKICByb2xlOiBJVlhPd25lclJvbGU7CiAgYWNjZXNzVG9rZW46IHN0cmluZzsKfTsKCmV4cG9ydCB0eXBlIElWWE93bmVyQUlSZXF1ZXN0ID0gewogIHJlcXVlc3RJZD86IHN0cmluZzsKICBjb252ZXJzYXRpb25JZD86IHN0cmluZzsKICBtZXNzYWdlOiBzdHJpbmc7CiAgc2VuZGVyTGFiZWw/OiBzdHJpbmcgfCBudWxsOwogIG1vZGU/OiBJVlhSZXF1ZXN0TW9kZTsKICBwZXJzaXN0VXNlck1lc3NhZ2U/OiBib29sZWFuOwogIHBlcnNpc3RBc3Npc3RhbnRNZXNzYWdlPzogYm9vbGVhbjsKICBkZXZUZXN0TW9kZUFjdGl2ZT86IGJvb2xlYW47CiAgY29udGludWF0aW9uVG9rZW4/OiBzdHJpbmcgfCBudWxsOwp9OwoKZXhwb3J0IHR5cGUgSVZYT3duZXJBSVRvb2xPdXRwdXQgPSB7CiAgdG9vbDogc3RyaW5nOwogIG9rOiBib29sZWFuOwogIGlucHV0OiBSZWNvcmQ8c3RyaW5nLCB1bmtub3duPjsKICBvdXRwdXQ/OiB1bmtub3duOwogIGVycm9yPzogc3RyaW5nOwogIHRpbWVzdGFtcDogc3RyaW5nOwp9OwoKZXhwb3J0IHR5cGUgSVZYT3duZXJBSVJvdXRlckRlYnVnID0gewogIHNlbGVjdGVkSW50ZW50OiBzdHJpbmc7CiAgc2VsZWN0ZWRUb29sOiBzdHJpbmcgfCBudWxsOwogIG1hbnVhbE1vZGU6IGJvb2xlYW47CiAgcm91dGU6IHN0cmluZzsKICByZWFzb246IHN0cmluZzsKfTsKCmV4cG9ydCB0eXBlIElWWEFnZW50UnVudGltZVYyU25hcHNob3QgPSB7CiAgdmVyc2lvbjogJ2FnZW50X3J1bnRpbWVfdjInOwogIG1hcmtlcjogc3RyaW5nOwogIHJlcXVlc3RJZDogc3RyaW5nIHwgbnVsbDsKICBjb252ZXJzYXRpb25JZDogc3RyaW5nIHwgbnVsbDsKICBnZW5lcmF0ZWRBdD86IHN0cmluZzsKICBiYWNrZW5kU3RhdGU6IHsKICAgIGZhbGxiYWNrTWFza2luZzogZmFsc2U7CiAgICB0cnVlU3RhdGVFeHBvc2VkOiB0cnVlOwogICAgZGVzdHJ1Y3RpdmVBY3Rpb25zUmVxdWlyZUFwcHJvdmFsOiB0cnVlOwogIH07CiAgbWVtb3J5OiBSZWNvcmQ8c3RyaW5nLCB1bmtub3duPjsKICBwbGFubmVyOiBSZWNvcmQ8c3RyaW5nLCB1bmtub3duPjsKICB0YXNrVHJlZTogUmVjb3JkPHN0cmluZywgdW5rbm93bj47CiAgc3RyZWFtaW5nOiBSZWNvcmQ8c3RyaW5nLCB1bmtub3duPjsKICByZXRyeVJlY292ZXJ5OiBSZWNvcmQ8c3RyaW5nLCB1bmtub3duPjsKICB0b29sQ2hhaW46IHVua25vd25bXTsKICBtdWx0aUFnZW50OiBSZWNvcmQ8c3RyaW5nLCB1bmtub3duPjsKICBidXNpbmVzc1JlYXNvbmluZzogUmVjb3JkPHN0cmluZywgdW5rbm93bj47Cn07CgpleHBvcnQgdHlwZSBJVlhPd25lckFJUmVzcG9uc2UgPSB7CiAgcmVxdWVzdElkOiBzdHJpbmc7CiAgY29udmVyc2F0aW9uSWQ6IHN0cmluZzsKICBhbnN3ZXI6IHN0cmluZzsKICBtb2RlbDogc3RyaW5nOwogIHN0YXR1czogJ29rJzsKICBzb3VyY2U/OiAncmVtb3RlX2FwaScgfCAnbG9jYWxfYXBwX2JyYWluJyB8ICdwcm92aWRlcl9mYWxsYmFjaycgfCAnbG9jYWxfcnVudGltZSc7CiAgcHJvdmlkZXI/OiAnY2hhdGdwdCcgfCAnaXZ4X2RhaWx5X2ltcHJvdmVtZW50JyB8ICdpdnhfc2VsZl9kZXZlbG9wZXJfcnVudGltZSc7CiAgZW5kcG9pbnQ/OiBzdHJpbmc7CiAgZGVwbG95bWVudE1hcmtlcj86IHN0cmluZzsKICBhc3Npc3RhbnRNZXNzYWdlSWQ/OiBzdHJpbmcgfCBudWxsOwogIGFzc2lzdGFudFBlcnNpc3RlZD86IGJvb2xlYW47CiAgc2VsZWN0ZWRJbnRlbnQ/OiBzdHJpbmcgfCBudWxsOwogIHNlbGVjdGVkVG9vbD86IHN0cmluZyB8IG51bGw7CiAgcm91dGVyRGVidWc/OiBJVlhPd25lckFJUm91dGVyRGVidWc7CiAgdG9vbElucHV0PzogUmVjb3JkPHN0cmluZywgdW5rbm93bj5bXTsKICB0b29sT3V0cHV0PzogdW5rbm93bltdOwogIGZhbGxiYWNrVXNlZD86IGJvb2xlYW47CiAgdG9vbE91dHB1dHM/OiBJVlhPd25lckFJVG9vbE91dHB1dFtdOwogIHJ1bnRpbWVWMj86IElWWEFnZW50UnVudGltZVYyU25hcHNob3Q7CiAgY29udGludWF0aW9uVG9rZW4/OiBzdHJpbmcgfCBudWxsOwogIGNvbnRpbnVhdGlvblBhcnQ/OiBudW1iZXIgfCBudWxsOwogIGNvbnRpbnVhdGlvblRvdGFsUGFydHM/OiBudW1iZXIgfCBudWxsOwogIGNvbnRpbnVhdGlvbk5leHRJdGVtTnVtYmVyPzogbnVtYmVyIHwgbnVsbDsKICBjb250aW51YXRpb25Db21wbGV0ZT86IGJvb2xlYW47CiAgY29udGludWF0aW9uUHJvbXB0Pzogc3RyaW5nIHwgbnVsbDsKICAvKioKICAgKiBGSU5BTCBJVlggSUEgQ0hBVCBFWEVDVVRJT04gTU9ERSAob3duZXIgbWFuZGF0ZSAyMDI2LTA3LTE5KToKICAgKiBQcmVzZW50IG9uIGV2ZXJ5IGV4ZWN1dGlvbi1tb2RlIHJlc3BvbnNlIChmaXgvYnVpbGQvZGVwbG95L2F1ZGl0L1FBLwogICAqIHJlZmFjdG9yL21pZ3JhdGlvbi9jcmVhdGUgbW9kdWxlL2NyZWF0ZSBhcHAvc2VuaW9yIGRldmVsb3BlcikuIENhcnJpZXMKICAgKiB0aGUgOSBvd25lci1yZXF1aXJlZCBmaWVsZHM6IHRhc2tJZCwgc3RhdHVzLCBzdGFnZSwgbGl2ZVByb2dyZXNzLAogICAqIGZpbGVzQ2hhbmdlZCwgdGVzdHMsIGNvbW1pdFNoYSwgZGVwbG95bWVudElkLCBldmlkZW5jZS4gQWJzZW50IG9uIG5vcm1hbAogICAqIGNvbnZlcnNhdGlvbi9leHBsYW5hdGlvbiByZXNwb25zZXMuCiAgICovCiAgZXhlY3V0aW9uU3RhdHVzPzogSVZYRXhlY3V0aW9uU3RhdHVzUGF5bG9hZDsKfTsKCi8qKgogKiBFeGVjdXRpb24tbW9kZSBzdGF0dXMgcGF5bG9hZCDigJQgdGhlIHN0cmljdCA5LWZpZWxkIHNjaGVtYSB0aGUgb3duZXIgbWFuZGF0ZXMKICogZm9yIGV2ZXJ5IGRldmVsb3BlciByZXF1ZXN0LiBNaXJyb3JzIHRoZSBiYWNrZW5kCiAqIGBJVlhFeGVjdXRpb25TdGF0dXNQYXlsb2FkYCBpbiBiYWNrZW5kL3NlcnZpY2VzL2l2eC1leGVjdXRpb24tc3RhdHVzLXNjaGVtYS50cy4KICovCmV4cG9ydCB0eXBlIElWWEV4ZWN1dGlvblN0YXR1c1BheWxvYWQgPSB7CiAgdGFza0lkOiBzdHJpbmc7CiAgc3RhdHVzOiBzdHJpbmc7CiAgc3RhZ2U6IHN0cmluZzsKICBsaXZlUHJvZ3Jlc3M6IG51bWJlcjsKICBmaWxlc0NoYW5nZWQ6IHN0cmluZ1tdOwogIHRlc3RzOiB7CiAgICBydW46IGJvb2xlYW47CiAgICBwYXNzZWQ6IGJvb2xlYW47CiAgICBjb21tYW5kOiBzdHJpbmcgfCBudWxsOwogIH07CiAgY29tbWl0U2hhOiBzdHJpbmcgfCBudWxsOwogIGRlcGxveW1lbnRJZDogc3RyaW5nIHwgbnVsbDsKICBldmlkZW5jZTogSVZYRXhlY3V0aW9uRXZpZGVuY2UgfCBudWxsOwogIGh0dHBTdGF0dXM6IDIwMCB8IDIwMjsKICBjYXRlZ29yeTogc3RyaW5nIHwgbnVsbDsKICBzdGF0dXNVcmw6IHN0cmluZzsKICBnZW5lcmF0ZWRBdDogc3RyaW5nOwp9OwoKZXhwb3J0IHR5cGUgSVZYRXhlY3V0aW9uRXZpZGVuY2UgPSB7CiAgZGVwbG95ZWRUb1Byb2R1Y3Rpb246IGJvb2xlYW47CiAgbGl2ZUNvbW1pdDogc3RyaW5nIHwgbnVsbDsKICBjb21taXRNYXRjaDogYm9vbGVhbjsKICBoZWFsdGhPazogYm9vbGVhbjsKICB0eXBlY2hlY2s6IHsKICAgIHJ1bjogYm9vbGVhbjsKICAgIHBhc3NlZDogYm9vbGVhbjsKICB9OwogIGJ1aWxkUnVuOiBib29sZWFuOwogIGZpbmFsU3RhdHVzOiBzdHJpbmc7CiAgZXJyb3I6IHN0cmluZyB8IG51bGw7CiAgYW5zd2VyQmxvY2s6IHN0cmluZzsKfTsKCmV4cG9ydCB0eXBlIElWWE93bmVyQUlDYW5vbmljYWxSZXNwb25zZSA9IHsKICByZXF1ZXN0SWQ6IHN0cmluZzsKICBjb252ZXJzYXRpb25JZDogc3RyaW5nOwogIGFuc3dlcjogc3RyaW5nOwogIG1vZGVsOiBzdHJpbmc7CiAgc3RhdHVzOiAnb2snOwogIHNvdXJjZTogJ3JlbW90ZV9hcGknIHwgJ2xvY2FsX2FwcF9icmFpbic7CiAgcHJvdmlkZXI/OiAnY2hhdGdwdCc7CiAgZGVwbG95bWVudE1hcmtlcj86IHN0cmluZzsKICBhc3Npc3RhbnRNZXNzYWdlSWQ/OiBzdHJpbmcgfCBudWxsOwogIGFzc2lzdGFudFBlcnNpc3RlZD86IGJvb2xlYW47CiAgc2VsZWN0ZWRJbnRlbnQ/OiBzdHJpbmcgfCBudWxsOwogIHNlbGVjdGVkVG9vbD86IHN0cmluZyB8IG51bGw7CiAgcm91dGVyRGVidWc/OiBJVlhPd25lckFJUm91dGVyRGVidWc7CiAgdG9vbElucHV0PzogUmVjb3JkPHN0cmluZywgdW5rbm93bj5bXTsKICB0b29sT3V0cHV0PzogdW5rbm93bltdOwogIGZhbGxiYWNrVXNlZD86IGJvb2xlYW47CiAgdG9vbE91dHB1dHM/OiBJVlhPd25lckFJVG9vbE91dHB1dFtdOwogIHJ1bnRpbWVWMj86IElWWEFnZW50UnVudGltZVYyU25hcHNob3Q7CiAgLyoqCiAgICogRklOQUwgSVZYIElBIENIQVQgRVhFQ1VUSU9OIE1PREUgKG93bmVyIG1hbmRhdGUgMjAyNi0wNy0xOSk6CiAgICogUHJlc2VudCBvbiBleGVjdXRpb24tbW9kZSByZXNwb25zZXMgKGZpeC9idWlsZC9kZXBsb3kvYXVkaXQvUUEvcmVmYWN0b3IvCiAgICogbWlncmF0aW9uL2NyZWF0ZSBtb2R1bGUvY3JlYXRlIGFwcC9zZW5pb3IgZGV2ZWxvcGVyKS4gRm9yd2FyZGVkIHRocm91Z2gKICAgKiB2YWxpZGF0ZUNhbm9uaWNhbE93bmVyQUlSZXNwb25zZSBzbyB0aGUgY2hhdCBjYW4gcmVuZGVyIGEgbGl2ZS1wb2xsaW5nCiAgICogZXhlY3V0aW9uIGNvbnNvbGUgYnViYmxlLiBBYnNlbnQgb24gbm9ybWFsIGNvbnZlcnNhdGlvbi9leHBsYW5hdGlvbi4KICAgKi8KICBleGVjdXRpb25TdGF0dXM/OiBJVlhFeGVjdXRpb25TdGF0dXNQYXlsb2FkOwp9OwoKZXhwb3J0IHR5cGUgSVZYT3duZXJBSVJlamVjdGVkUmVzcG9uc2UgPSB7CiAgcmVhc29uOgogICAgfCAnbm9uX29iamVjdF9wYXlsb2FkJwogICAgfCAnbWlzc2luZ19yZXF1ZXN0X2lkJwogICAgfCAnbWlzc2luZ19jb252ZXJzYXRpb25faWQnCiAgICB8ICdtaXNzaW5nX2Fuc3dlcicKICAgIHwgJ21pc3NpbmdfbW9kZWwnCiAgICB8ICdpbnZhbGlkX3N0YXR1cycKICAgIHwgJ2ludmFsaWRfc291cmNlJwogICAgfCAnaW52YWxpZF9kZXBsb3ltZW50X21hcmtlcic7CiAgcGF5bG9hZFR5cGU6ICdudWxsJyB8ICdhcnJheScgfCAnb2JqZWN0JyB8ICdzdHJpbmcnIHwgJ251bWJlcicgfCAnYm9vbGVhbicgfCAndW5kZWZpbmVkJzsKfTsKCmV4cG9ydCB0eXBlIElWWE93bmVyQUlSb29tU3RhdHVzID0gewogIHN0b3JhZ2VNb2RlOiAncHJpbWFyeV9zdXBhYmFzZV90YWJsZXMnIHwgJ2FsdGVybmF0ZV9yb29tX3NjaGVtYScgfCAnc25hcHNob3Rfc3RvcmFnZScgfCAnbG9jYWxfZGV2aWNlX29ubHknOwogIHZpc2liaWxpdHk6ICdwcml2YXRlJyB8ICdzaGFyZWQnIHwgJ2xvY2FsX29ubHknOwogIGRlbGl2ZXJ5TWV0aG9kOiAncHJpbWFyeV9yZWFsdGltZScgfCAncHJpbWFyeV9wb2xsaW5nJyB8ICdhbHRlcm5hdGVfc2hhcmVkJyB8ICdzbmFwc2hvdF9mYWxsYmFjaycgfCAnbG9jYWxfb25seSc7CiAgd2FybmluZz86IHN0cmluZzsKfTsKCmV4cG9ydCB0eXBlIElWWE93bmVyQUlDYXBhYmlsaXR5SWQgPQogIHwgJ2FpX2NoYXQnCiAgfCAna25vd2xlZGdlX2Fuc3dlcnMnCiAgfCAnb3duZXJfY29tbWFuZHMnCiAgfCAnY29kZV9hd2FyZV9zdXBwb3J0JwogIHwgJ2ZpbGVfdXBsb2FkJwogIHwgJ2luYm94X3N5bmMnCiAgfCAnYmFja2VuZF9hY2Nlc3MnCiAgfCAnc3VwYWJhc2VfaW5zcGVjdGlvbicKICB8ICdzdXBhYmFzZV90YWJsZXMnCiAgfCAnc3VwYWJhc2Vfc2NoZW1hJwogIHwgJ3N1cGFiYXNlX2NvbHVtbnMnCiAgfCAnc3VwYWJhc2VfcmxzJzsKCmV4cG9ydCB0eXBlIElWWE93bmVyQUlDYXBhYmlsaXR5UHJvb2YgPSB7CiAgc3VjY2VzczogYm9vbGVhbjsKICBleGVjdXRhYmxlOiBib29sZWFuOwogIGZ1bmN0aW9uTmFtZTogc3RyaW5nOwogIGNoZWNrZWRBdDogc3RyaW5nOwogIHByb29mOiBSZWNvcmQ8c3RyaW5nLCB1bmtub3duPjsKICBlcnJvcj86IHN0cmluZzsKfTsKCmV4cG9ydCB0eXBlIElWWE93bmVyQUlIZWFsdGhQcm9iZVJlc3BvbnNlID0gSVZYT3duZXJBSVJlc3BvbnNlICYgewogIHByb2JlOiB0cnVlOwogIHJlc29sdmVkU2NoZW1hOiAnaXZ4JyB8ICdnZW5lcmljJyB8ICdub25lJzsKICByb29tU3RhdHVzOiBJVlhPd25lckFJUm9vbVN0YXR1czsKICBjYXBhYmlsaXRpZXM6IFJlY29yZDxJVlhPd25lckFJQ2FwYWJpbGl0eUlkLCBib29sZWFuPjsKICBjYXBhYmlsaXR5UHJvb2ZzOiBSZWNvcmQ8SVZYT3duZXJBSUNhcGFiaWxpdHlJZCwgSVZYT3duZXJBSUNhcGFiaWxpdHlQcm9vZj47Cn07CgpleHBvcnQgdHlwZSBJVlhBcGlFcnJvciA9IHsKICBlcnJvcjogc3RyaW5nOwogIHN0YXR1c0NvZGU6IG51bWJlcjsKfTsK
+import type { PrivilegedIVXRole } from './access';
+
+export const IVX_OWNER_AI_API_PATH = '/api/ivx/owner-ai';
+export const IVX_OWNER_AI_BUCKET = 'ivx-owner-files';
+export const IVX_CHAT_UPLOAD_BUCKET = 'ivx-chat-uploads';
+export const IVX_OWNER_AI_MAX_UPLOAD_BYTES: number | null = null;
+
+export const IVX_OWNER_AI_TABLES = {
+  conversations: 'ivx_conversations',
+  messages: 'ivx_messages',
+  inboxState: 'ivx_inbox_state',
+  aiRequests: 'ivx_ai_requests',
+  knowledgeDocuments: 'ivx_knowledge_documents',
+  knowledgeChunks: 'ivx_knowledge_chunks',
+  commandLogs: 'ivx_command_logs',
+  accessTestRows: 'ivx_access_test_rows',
+} as const;
+
+export type IVXOwnerRole = PrivilegedIVXRole;
+export type IVXMessageSenderRole = 'owner' | 'assistant' | 'system';
+export type IVXAttachmentKind = 'text' | 'image' | 'video' | 'pdf' | 'file' | 'command' | 'system';
+export type IVXUploadSource = 'web' | 'mobile';
+export type IVXRequestMode = 'chat' | 'command';
+
+export type IVXConversation = {
+  id: string;
+  slug: string;
+  title: string;
+  subtitle: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastMessageText: string | null;
+  lastMessageAt: string | null;
+};
+
+export type IVXMessage = {
+  id: string;
+  conversationId: string;
+  senderUserId: string | null;
+  senderRole: IVXMessageSenderRole;
+  senderLabel: string | null;
+  body: string | null;
+  attachmentUrl: string | null;
+  attachmentName: string | null;
+  attachmentMime: string | null;
+  attachmentSize: number | null;
+  attachmentKind: IVXAttachmentKind;
+  createdAt: string;
+  updatedAt: string;
+  /** Optional durable task id attached by execution-mode responses (client-only; not persisted to DB). */
+  taskId?: string | null;
+};
+
+export type IVXInboxItem = {
+  conversationId: string;
+  slug: string;
+  title: string;
+  subtitle: string | null;
+  unreadCount: number;
+  lastReadAt: string | null;
+  lastMessageText: string | null;
+  lastMessageAt: string | null;
+};
+
+export type IVXWebUploadFile = {
+  arrayBuffer: () => Promise<ArrayBuffer>;
+  type?: string;
+  size?: number;
+  name?: string;
+};
+
+export type IVXUploadInput = {
+  uri?: string;
+  file?: IVXWebUploadFile | null;
+  name: string;
+  type?: string | null;
+  size?: number | null;
+};
+
+export type IVXUploadedFile = {
+  bucket: string;
+  path: string;
+  publicUrl: string;
+  fileName: string;
+  mimeType: string | null;
+  size: number | null;
+  source: IVXUploadSource;
+};
+
+export type IVXOwnerAuthContext = {
+  userId: string;
+  email: string | null;
+  role: IVXOwnerRole;
+  accessToken: string;
+};
+
+export type IVXOwnerAIRequest = {
+  requestId?: string;
+  conversationId?: string;
+  message: string;
+  senderLabel?: string | null;
+  mode?: IVXRequestMode;
+  persistUserMessage?: boolean;
+  persistAssistantMessage?: boolean;
+  devTestModeActive?: boolean;
+  continuationToken?: string | null;
+};
+
+export type IVXOwnerAIToolOutput = {
+  tool: string;
+  ok: boolean;
+  input: Record<string, unknown>;
+  output?: unknown;
+  error?: string;
+  timestamp: string;
+};
+
+export type IVXOwnerAIRouterDebug = {
+  selectedIntent: string;
+  selectedTool: string | null;
+  manualMode: boolean;
+  route: string;
+  reason: string;
+};
+
+export type IVXAgentRuntimeV2Snapshot = {
+  version: 'agent_runtime_v2';
+  marker: string;
+  requestId: string | null;
+  conversationId: string | null;
+  generatedAt?: string;
+  backendState: {
+    fallbackMasking: false;
+    trueStateExposed: true;
+    destructiveActionsRequireApproval: true;
+  };
+  memory: Record<string, unknown>;
+  planner: Record<string, unknown>;
+  taskTree: Record<string, unknown>;
+  streaming: Record<string, unknown>;
+  retryRecovery: Record<string, unknown>;
+  toolChain: unknown[];
+  multiAgent: Record<string, unknown>;
+  businessReasoning: Record<string, unknown>;
+};
+
+export type IVXOwnerAIResponse = {
+  requestId: string;
+  conversationId: string;
+  answer: string;
+  model: string;
+  status: 'ok';
+  source?: 'remote_api' | 'local_app_brain' | 'provider_fallback' | 'local_runtime';
+  provider?: 'chatgpt' | 'ivx_daily_improvement' | 'ivx_self_developer_runtime';
+  endpoint?: string;
+  deploymentMarker?: string;
+  assistantMessageId?: string | null;
+  assistantPersisted?: boolean;
+  selectedIntent?: string | null;
+  selectedTool?: string | null;
+  routerDebug?: IVXOwnerAIRouterDebug;
+  toolInput?: Record<string, unknown>[];
+  toolOutput?: unknown[];
+  fallbackUsed?: boolean;
+  toolOutputs?: IVXOwnerAIToolOutput[];
+  runtimeV2?: IVXAgentRuntimeV2Snapshot;
+  continuationToken?: string | null;
+  continuationPart?: number | null;
+  continuationTotalParts?: number | null;
+  continuationNextItemNumber?: number | null;
+  continuationComplete?: boolean;
+  continuationPrompt?: string | null;
+  /**
+   * FINAL IVX IA CHAT EXECUTION MODE (owner mandate 2026-07-19):
+   * Present on every execution-mode response (fix/build/deploy/audit/QA/
+   * refactor/migration/create module/create app/senior developer). Carries
+   * the 9 owner-required fields: taskId, status, stage, liveProgress,
+   * filesChanged, tests, commitSha, deploymentId, evidence. Absent on normal
+   * conversation/explanation responses.
+   */
+  executionStatus?: IVXExecutionStatusPayload;
+};
+
+/**
+ * Execution-mode status payload — the strict 9-field schema the owner mandates
+ * for every developer request. Mirrors the backend
+ * `IVXExecutionStatusPayload` in backend/services/ivx-execution-status-schema.ts.
+ */
+export type IVXExecutionStatusPayload = {
+  taskId: string;
+  status: string;
+  stage: string;
+  liveProgress: number;
+  filesChanged: string[];
+  tests: {
+    run: boolean;
+    passed: boolean;
+    command: string | null;
+  };
+  commitSha: string | null;
+  deploymentId: string | null;
+  evidence: IVXExecutionEvidence | null;
+  httpStatus: 200 | 202;
+  category: string | null;
+  statusUrl: string;
+  generatedAt: string;
+};
+
+export type IVXExecutionEvidence = {
+  deployedToProduction: boolean;
+  liveCommit: string | null;
+  commitMatch: boolean;
+  healthOk: boolean;
+  typecheck: {
+    run: boolean;
+    passed: boolean;
+  };
+  buildRun: boolean;
+  finalStatus: string;
+  error: string | null;
+  answerBlock: string;
+};
+
+export type IVXOwnerAICanonicalResponse = {
+  requestId: string;
+  conversationId: string;
+  answer: string;
+  model: string;
+  status: 'ok';
+  source: 'remote_api' | 'local_app_brain';
+  provider?: 'chatgpt';
+  deploymentMarker?: string;
+  assistantMessageId?: string | null;
+  assistantPersisted?: boolean;
+  selectedIntent?: string | null;
+  selectedTool?: string | null;
+  routerDebug?: IVXOwnerAIRouterDebug;
+  toolInput?: Record<string, unknown>[];
+  toolOutput?: unknown[];
+  fallbackUsed?: boolean;
+  toolOutputs?: IVXOwnerAIToolOutput[];
+  runtimeV2?: IVXAgentRuntimeV2Snapshot;
+  /**
+   * FINAL IVX IA CHAT EXECUTION MODE (owner mandate 2026-07-19):
+   * Present on execution-mode responses (fix/build/deploy/audit/QA/refactor/
+   * migration/create module/create app/senior developer). Forwarded through
+   * validateCanonicalOwnerAIResponse so the chat can render a live-polling
+   * execution console bubble. Absent on normal conversation/explanation.
+   */
+  executionStatus?: IVXExecutionStatusPayload;
+};
+
+export type IVXOwnerAIRejectedResponse = {
+  reason:
+    | 'non_object_payload'
+    | 'missing_request_id'
+    | 'missing_conversation_id'
+    | 'missing_answer'
+    | 'missing_model'
+    | 'invalid_status'
+    | 'invalid_source'
+    | 'invalid_deployment_marker';
+  payloadType: 'null' | 'array' | 'object' | 'string' | 'number' | 'boolean' | 'undefined';
+};
+
+export type IVXOwnerAIRoomStatus = {
+  storageMode: 'primary_supabase_tables' | 'alternate_room_schema' | 'snapshot_storage' | 'local_device_only';
+  visibility: 'private' | 'shared' | 'local_only';
+  deliveryMethod: 'primary_realtime' | 'primary_polling' | 'alternate_shared' | 'snapshot_fallback' | 'local_only';
+  warning?: string;
+};
+
+export type IVXOwnerAICapabilityId =
+  | 'ai_chat'
+  | 'knowledge_answers'
+  | 'owner_commands'
+  | 'code_aware_support'
+  | 'file_upload'
+  | 'inbox_sync'
+  | 'backend_access'
+  | 'supabase_inspection'
+  | 'supabase_tables'
+  | 'supabase_schema'
+  | 'supabase_columns'
+  | 'supabase_rls';
+
+export type IVXOwnerAICapabilityProof = {
+  success: boolean;
+  executable: boolean;
+  functionName: string;
+  checkedAt: string;
+  proof: Record<string, unknown>;
+  error?: string;
+};
+
+export type IVXOwnerAIHealthProbeResponse = IVXOwnerAIResponse & {
+  probe: true;
+  resolvedSchema: 'ivx' | 'generic' | 'none';
+  roomStatus: IVXOwnerAIRoomStatus;
+  capabilities: Record<IVXOwnerAICapabilityId, boolean>;
+  capabilityProofs: Record<IVXOwnerAICapabilityId, IVXOwnerAICapabilityProof>;
+};
+
+export type IVXApiError = {
+  error: string;
+  statusCode: number;
+};
