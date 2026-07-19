@@ -5886,7 +5886,17 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
     // are answered directly here. This runs BEFORE the Supabase-bearer-guarded
     // main pipeline so owner-token-only requests get a real answer instead of 401.
     // It never blocks and never asks for proof — it is the IVX IA persona.
-    const conversationAnswer = resolveIVXConversationAnswer(prompt);
+    //
+    // CHAT ↔ WORKER SYNC: never let the conversation brain hijack an owner
+    // execution/deploy/commit/audit task block. isOwnerExecutionOrTaskBlock()
+    // now recognizes production-execution signals (commit+github, deploy+render,
+    // verify+/health, bump+version/marker) so a prompt like "Bump the version marker
+    // to ...-2026-07-19 (today's date), commit to GitHub, deploy to Render, verify
+    // /health" routes to the developer_executor worker queue instead of being
+    // answered as a math/conversation question ("The answer is 2019.").
+    const conversationAnswer = isOwnerExecutionOrTaskBlock(prompt)
+      ? null
+      : resolveIVXConversationAnswer(prompt);
     if (conversationAnswer) {
       return ownerOnlyJson({
         ok: true,
