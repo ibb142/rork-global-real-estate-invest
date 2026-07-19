@@ -174,7 +174,23 @@ async function recoverOrphanedTasks(): Promise<void> {
     const isSeniorDev = (t.task_type === 'senior_dev')
       || (typeof t.trace_id === 'string' && t.trace_id.startsWith('senior-dev-'));
     if (!isSeniorDev) continue;
-    if (t.status !== 'RUNNING' && t.status !== 'WAITING_APPROVAL') continue;
+    if (t.status !== 'RUNNING' && t.status !== 'WAITING_APPROVAL' && t.status !== 'COMMITTING') continue;
+    // If the task already has a commit_sha, it did real work — the worker just
+    // got killed (likely by its own Render deploy restarting the runtime) before
+    // reaching VERIFIED. Mark it terminal FAILED with the real evidence it has,
+    // rather than re-running the whole pipeline (which would re-plan, re-implement,
+    // and either no-op or duplicate-commit). This also unblocks single-flight
+    // for the next queued task.
+    if (t.commit_sha) {
+      console.log('[IVX-SENIOR-DEV-01] Orphaned task already committed — marking terminal', { taskId: t.id, commitSha: t.commit_sha, status: t.status });
+      await patchTask(t.id, {
+        status: 'FAILED',
+        checkpoint: 'FAILED (orphaned after commit — worker killed by self-deploy restart before LIVE_VERIFYING)',
+        error_message: `Worker restarted mid-task after commit ${t.commit_sha}. The commit is real and on GitHub; the task just did not reach VERIFIED because the worker process was killed by its own Render deploy triggering a runtime restart. File(s) changed: ${JSON.stringify(t.files_changed ?? [])}.`,
+        checkpoint_history: appendCheckpoint(null, `ORPHAN_TERMINATED_WITH_COMMIT at ${new Date().toISOString()} (commitSha=${t.commit_sha})`),
+      });
+      continue;
+    }
     const hb = t.heartbeat_at ? new Date(t.heartbeat_at).getTime() : 0;
     if (now - hb > TASK_CLAIM_TIMEOUT_MS) stale.push(t);
   }
