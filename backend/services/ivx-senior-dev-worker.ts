@@ -116,6 +116,18 @@ export async function startSeniorDevWorker(): Promise<void> {
 }
 
 async function tick(): Promise<void> {
+  // ─── Orphan-task recovery ──────────────────────────────────────────
+  // If the worker restarts mid-loop (e.g. Render redeploy), a task can be
+  // left in RUNNING/TESTING with a stale heartbeat. Requeue any senior-dev
+  // task whose heartbeat is older than TASK_CLAIM_TIMEOUT_MS so it gets
+  // re-picked instead of sitting orphaned forever (root cause of the
+  // 20f65308 task stuck in TESTING for 26+ min across a restart).
+  try {
+    await recoverOrphanedTasks();
+  } catch (error) {
+    console.log('[IVX-SENIOR-DEV-01] Orphan recovery error (non-fatal):', error instanceof Error ? error.message : 'unknown');
+  }
+
   const tasks = await listTasks(50);
   const candidates = tasks.filter((t) => {
     // Mark senior_dev tasks via trace_id (always "senior-dev-..." from the
@@ -151,6 +163,28 @@ async function tick(): Promise<void> {
   } finally {
     state.currentTaskId = null;
     state.currentPhase = null;
+  }
+}
+
+async function recoverOrphanedTasks(): Promise<void> {
+  const tasks = await listTasks(100);
+  const now = Date.now();
+  const stale: IVXOwnerAITaskRow[] = [];
+  for (const t of tasks) {
+    const isSeniorDev = (t.task_type === 'senior_dev')
+      || (typeof t.trace_id === 'string' && t.trace_id.startsWith('senior-dev-'));
+    if (!isSeniorDev) continue;
+    if (t.status !== 'RUNNING' && t.status !== 'WAITING_APPROVAL') continue;
+    const hb = t.heartbeat_at ? new Date(t.heartbeat_at).getTime() : 0;
+    if (now - hb > TASK_CLAIM_TIMEOUT_MS) stale.push(t);
+  }
+  for (const s of stale) {
+    console.log('[IVX-SENIOR-DEV-01] Requeuing orphaned task', { taskId: s.id, status: s.status, heartbeatAt: s.heartbeat_at });
+    await patchTask(s.id, {
+      status: 'RETRYING',
+      checkpoint: 'RETRYING (orphan recovered — stale heartbeat)',
+      checkpoint_history: appendCheckpoint(null, `ORPHAN_RECOVERED at ${new Date().toISOString()}`),
+    });
   }
 }
 
@@ -467,6 +501,10 @@ async function executeSeniorDevTask(task: IVXOwnerAITaskRow): Promise<void> {
   await updateProofLedger(runId, { status: 'verified' });
   await logCheckpoint(task.id, runId, 'VERIFIED', { commitSha: lastCommitSha, deployId, runtimeSha, versionMatch });
   console.log('[IVX-SENIOR-DEV-01] Task VERIFIED', { taskId: task.id, commitSha: lastCommitSha, deployId, runtimeSha });
+  // Post the verified result back to owner chat so the owner sees real evidence.
+  await postProofToOwnerChat(task, 'VERIFIED', lastCommitSha, deployId, runtimeSha, runId, plan.summary, changedFiles).catch((e) => {
+    console.log('[IVX-SENIOR-DEV-01] Proof post-back failed (non-fatal):', e instanceof Error ? e.message : 'unknown');
+  });
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────
@@ -503,6 +541,69 @@ async function failTask(taskId: string, message: string): Promise<void> {
     error_message: message,
     checkpoint_history: appendCheckpoint(null, `FAILED: ${message}`),
   });
+  // Post the failure back to owner chat so the owner sees honest evidence.
+  const t = await getTask(taskId);
+  if (t) {
+    await postProofToOwnerChat(t, 'FAILED', null, null, null, t.proof_ledger_id ?? null, message, t.files_changed ?? []).catch((e) => {
+      console.log('[IVX-SENIOR-DEV-01] Failure post-back failed (non-fatal):', e instanceof Error ? e.message : 'unknown');
+    });
+  }
+}
+
+/**
+ * Post proof (VERIFIED or FAILED) back to the owner's chat conversation so the
+ * owner sees real evidence in the IVX AI Chat, not just in the worker API.
+ * Uses the same Supabase messages table the chat UI reads from.
+ */
+async function postProofToOwnerChat(
+  task: IVXOwnerAITaskRow,
+  outcome: 'VERIFIED' | 'FAILED',
+  commitSha: string | null,
+  deployId: string | null,
+  runtimeSha: string | null,
+  proofLedgerId: string | null,
+  summary: string,
+  filesChanged: string[],
+): Promise<void> {
+  const supabaseUrl = (process.env.SUPABASE_URL ?? '').trim();
+  const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim();
+  const conversationId = task.conversation_id ?? null;
+  if (!supabaseUrl || !serviceKey || !conversationId) return;
+
+  const icon = outcome === 'VERIFIED' ? '✅' : '❌';
+  const lines: string[] = [
+    `${icon} IVX-SENIOR-DEV-01 task ${outcome}`,
+    `Task: ${task.id}`,
+    `Summary: ${summary.slice(0, 200)}`,
+    `Files changed: ${filesChanged.length > 0 ? filesChanged.join(', ') : '(none)'}`,
+  ];
+  if (commitSha) lines.push(`Commit: ${commitSha.slice(0, 12)}`);
+  if (deployId) lines.push(`Deploy: ${deployId}`);
+  if (runtimeSha) lines.push(`Runtime SHA: ${runtimeSha.slice(0, 12)}`);
+  if (proofLedgerId) lines.push(`Proof Ledger: ${proofLedgerId.slice(0, 8)}`);
+  if (outcome === 'FAILED') lines.push(`Error: ${summary.slice(0, 300)}`);
+  const text = lines.join('\n');
+
+  const res = await fetch(`${supabaseUrl}/rest/v1/messages`, {
+    method: 'POST',
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal',
+    },
+    body: JSON.stringify({
+      conversation_id: conversationId,
+      sender_id: 'ivx-senior-dev-01',
+      text,
+      body: text,
+      read_by: [],
+    }),
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    console.log('[IVX-SENIOR-DEV-01] Chat post-back failed:', res.status, errText.slice(0, 200));
+  }
 }
 
 interface TestRunResults {
