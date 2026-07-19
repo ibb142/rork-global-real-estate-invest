@@ -7163,7 +7163,20 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
     }
 
     // --- Self-Developer Execution: real senior developer runtime via the persistent worker queue ---
-    if (plannerDecision.route === 'self_developer') {
+    // CHAT ↔ WORKER SYNC: trigger on EITHER the legacy planner's self_developer
+    // route OR the unified 5-branch router's developer_executor branch. The
+    // unified router (routeIVXChatIntent) classifies audit/verify/smoke-test/
+    // build/fix/deploy/QA/recovery/database/production-verification prompts as
+    // developer_executor even when the legacy keyword planner does not map them
+    // to self_developer. Without this OR, those prompts fall through to the
+    // narrative GPT path — which is exactly the bug this fix closes.
+    if (plannerDecision.route === 'self_developer' || unifiedRoute.branch === 'developer_executor') {
+      // When the unified router selected developer_executor but the legacy
+      // planner did not, log the routing reconciliation so the audit trail is
+      // explicit about which classifier fired the execution branch.
+      if (plannerDecision.route !== 'self_developer' && unifiedRoute.branch === 'developer_executor') {
+        console.log('[IVXOwnerAIBackend] chat→worker: unified router fired developer_executor (legacy planner route=' + plannerDecision.route + ', intent=' + unifiedRoute.intent + ')');
+      }
       // Owner Execution Mode: non-destructive owner commands execute end-to-end
       // (patch → test → commit → deploy → verify) without an approval prompt.
       // Guarded actions (delete data, prod schema, secrets, billing, security,
