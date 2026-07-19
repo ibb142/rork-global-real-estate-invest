@@ -2077,6 +2077,16 @@ function parseTimezoneFromPrompt(prompt: string, fallback?: string | null): stri
 }
 
 function resolveOwnerBackendCommand(prompt: string): IVXOwnerBackendCommand | null {
+  // CHAT ↔ WORKER SYNC: never let the /time-now short-circuit hijack an owner
+  // execution/deploy/commit/audit task block. isOwnerExecutionOrTaskBlock()
+  // now recognizes production-execution signals (commit+github, deploy+render,
+  // verify+/health, bump+version/marker) so a prompt like "Bump the version marker
+  // to ...-2026-07-19 (today's date), commit to GitHub, deploy to Render, verify
+  // /health" routes to the developer_executor worker queue instead of returning
+  // a time-query answer ("The answer is 2019.").
+  if (isOwnerExecutionOrTaskBlock(prompt)) {
+    return null;
+  }
   const normalized = prompt.trim().toLowerCase();
   const command = normalized.split(/\s+/)[0] ?? '';
   if ((IVX_OWNER_BACKEND_COMMANDS as readonly string[]).includes(command)) {
