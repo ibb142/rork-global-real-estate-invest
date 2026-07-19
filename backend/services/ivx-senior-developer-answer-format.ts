@@ -19,6 +19,7 @@
  */
 import type { IVXSeniorDeveloperRunProof } from './ivx-senior-developer-runtime';
 import type { IVXOwnerExecutionDecision } from './ivx-owner-execution-mode';
+import type { IVXWorkerJob, IVXWorkerJobResult } from './ivx-senior-developer-worker';
 
 function trimmed(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
@@ -180,5 +181,126 @@ export function buildSeniorDeveloperExecutionAnswer(
     `TYPECHECK RESULT:\n${typecheckResult}`,
     `STATUS:\n${status}`,
     `PROOF:\n${proofLines.join('\n')}`,
+  ].join('\n\n');
+}
+
+/**
+ * Build the strict execution answer from a completed worker-queue job result.
+ *
+ * This is the chat-side renderer for jobs created via the persistent worker
+ * queue (`enqueueOrAttachSeniorDeveloperJob`). It mirrors the runtime-proof
+ * renderer above but reads from the secret-safe `IVXWorkerJobResult` summary
+ * that the worker writes to the durable proof ledger. It never fabricates
+ * evidence: if a field is missing it surfaces the exact honest line.
+ */
+export function buildSeniorDeveloperWorkerJobAnswer(
+  job: IVXWorkerJob,
+  decision: IVXOwnerExecutionDecision,
+): string {
+  const result = job.result;
+  const guarded = decision.requiresApproval;
+
+  // ── Guarded action: blocked before execution, require owner confirmation ──
+  if (guarded) {
+    const categories = decision.approvalCategories.join(', ') || 'a guarded action';
+    return [
+      `TASK UNDERSTOOD:\n${firstSentence(job.input.goal)}`,
+      'FILES INSPECTED:\n(none — guarded action halted before repo inspection)',
+      'FILES CHANGED:\nNO CODE CHANGED — no development was completed.',
+      'COMMANDS RUN:\nnone — guarded action requires explicit owner confirmation before execution.',
+      'TEST RESULT:\nNOT VERIFIED — tests were not run.',
+      'TYPECHECK RESULT:\nNOT VERIFIED — typecheck was not run.',
+      'STATUS:\nBLOCKED',
+      `PROOF:\nBLOCKED — requires owner confirmation: ${categories}. Reply with the exact action and confirmation text to execute.`,
+      `TASK ID:\n${job.jobId}`,
+      `STATUS URL:\n/api/ivx/senior-developer/worker/jobs/${job.jobId}`,
+    ].join('\n\n');
+  }
+
+  // ── Job still running — show live progress from the real queue state ──
+  if (!result || job.status === 'queued' || job.status === 'running'
+      || job.status === 'patching' || job.status === 'testing'
+      || job.status === 'committing' || job.status === 'deploying'
+      || job.status === 'verifying') {
+    return [
+      `TASK UNDERSTOOD:\n${firstSentence(job.input.goal)}`,
+      'FILES INSPECTED:\n(inspection in progress)',
+      'FILES CHANGED:\n(no changes yet — job still executing)',
+      `COMMANDS RUN:\n(phase: ${job.stage} — ${job.stageDetail})`,
+      'TEST RESULT:\nNOT VERIFIED — tests have not completed.',
+      'TYPECHECK RESULT:\nNOT VERIFIED — typecheck has not completed.',
+      `STATUS:\nRUNNING (${job.status}, ${job.progressPercent}%)`,
+      `PROOF:\nLive progress from durable queue. stage=${job.stage} progress=${job.progressPercent}% detail="${job.stageDetail}" attempts=${job.attempts}`,
+      `TASK ID:\n${job.jobId}`,
+      `STATUS URL:\n/api/ivx/senior-developer/worker/jobs/${job.jobId}`,
+    ].join('\n\n');
+  }
+
+  // ── Terminal: render the real result summary ──
+  const changedFiles = result.changedFiles.length > 0
+    ? result.changedFiles.join('\n')
+    : (result.finalStatus === 'BLOCKED'
+        ? 'BLOCKED — I do not have code write access.'
+        : 'NO CODE CHANGED — no development was completed.');
+
+  const commandsRun: string[] = [];
+  if (result.commitCreated) {
+    commandsRun.push(`$ git commit/push → ${result.commitSha ? `committed ${result.commitSha}` : 'attempted (no sha)'}`);
+  }
+  if (result.deployId) {
+    commandsRun.push(`$ render deploy → ${result.deployStatus ?? 'triggered'} (${result.deployId})`);
+  }
+  if (result.testsRun) {
+    commandsRun.push(`$ bun test → ${result.testsPassed ? 'PASS' : 'FAIL'}`);
+  }
+  if (result.typecheckRun) {
+    commandsRun.push(`$ tsc --noEmit → ${result.testsPassed ? 'PASS' : 'see logs'}`);
+  }
+  const commandsLine = commandsRun.length > 0 ? commandsRun.join('\n') : 'NONE — no commands were executed.';
+
+  const testLine = result.testsRun
+    ? (result.testsPassed ? 'PASS — tests completed successfully.' : 'FAIL — one or more tests failed.')
+    : 'NOT VERIFIED — tests were not run.';
+  const typecheckLine = result.typecheckRun
+    ? (result.testsPassed ? 'PASS — typecheck completed.' : 'FAIL — typecheck reported errors.')
+    : 'NOT VERIFIED — typecheck was not run.';
+
+  let status: string;
+  if (job.status === 'blocked') {
+    status = 'BLOCKED';
+  } else if (result.endToEndProductionComplete && result.commitMatch && result.healthOk) {
+    status = 'DEPLOYED';
+  } else if (result.commitSha && !result.commitMatch) {
+    status = 'UNVERIFIED';
+  } else if (result.commitSha) {
+    status = 'LOCAL ONLY';
+  } else {
+    status = result.finalStatus === 'BLOCKED' ? 'BLOCKED' : (job.status === 'failed' ? 'FAILED' : 'LOCAL ONLY');
+  }
+
+  const proofLines: string[] = [];
+  if (result.changedFiles.length > 0) {
+    proofLines.push('git diff --stat (applied patch):');
+    for (const f of result.changedFiles) proofLines.push(` ${f} | modified`);
+  } else {
+    proofLines.push('git diff --stat: (no changes)');
+  }
+  if (result.commitSha) proofLines.push(`commit: ${result.commitSha}${result.branch ? ` (${result.branch})` : ''}`);
+  if (result.deployId) proofLines.push(`deploy: ${result.deployId} (${result.deployStatus ?? 'unknown'})`);
+  proofLines.push(`production /health: ${result.healthOk ? 'healthy' : 'not confirmed'}; commit match: ${result.commitMatch ? 'true' : 'false'}`);
+  if (result.error) proofLines.push(`error: ${result.error}`);
+  proofLines.push(`job: ${job.jobId}`);
+
+  return [
+    `TASK UNDERSTOOD:\n${firstSentence(job.input.goal)}`,
+    `FILES INSPECTED:\n(inspected by worker during execution)`,
+    `FILES CHANGED:\n${changedFiles}`,
+    `COMMANDS RUN:\n${commandsLine}`,
+    `TEST RESULT:\n${testLine}`,
+    `TYPECHECK RESULT:\n${typecheckLine}`,
+    `STATUS:\n${status}`,
+    `PROOF:\n${proofLines.join('\n')}`,
+    `TASK ID:\n${job.jobId}`,
+    `STATUS URL:\n/api/ivx/senior-developer/worker/jobs/${job.jobId}`,
   ].join('\n\n');
 }
