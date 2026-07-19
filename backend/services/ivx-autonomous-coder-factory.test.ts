@@ -444,6 +444,8 @@ describe('IVX Factory Engine — create_tool', () => {
         version: '1.0.0',
         capability: 'Test tool — echoes its input back.',
         handlerName: 'echo-handler',
+        registeredAt: new Date().toISOString(),
+        approvedBy: 'iperez4242@gmail.com',
       },
       reason: 'register a new test tool',
     };
@@ -467,7 +469,7 @@ describe('IVX Factory Engine — create_tool', () => {
     const toolName = `ivx-dup-tool-${Date.now()}`;
     const op: IVXFactoryOperation = {
       kind: 'create_tool',
-      tool: { name: toolName, version: '1.0.0', capability: 'dup' },
+      tool: { name: toolName, version: '1.0.0', capability: 'dup', registeredAt: new Date().toISOString(), approvedBy: 'iperez4242@gmail.com' },
       reason: 'first registration',
     };
     const proof1 = await runIVXFactoryJob({
@@ -503,6 +505,7 @@ describe('IVX Factory Engine — upgrade_self', () => {
         label: 'Custom capability added via self-upgrade',
         version: '1.0.0',
         operations: ['create_directory'],
+        addedAt: new Date().toISOString(),
       },
       reason: 'extend the engine capability set',
     };
@@ -527,6 +530,7 @@ describe('IVX Factory Engine — upgrade_self', () => {
         label: 'Patch existing files',
         version: '1.0.0',
         operations: [],
+        addedAt: new Date().toISOString(),
       },
       reason: 'duplicate capability',
     };
