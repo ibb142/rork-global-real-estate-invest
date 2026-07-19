@@ -470,11 +470,11 @@ export function buildStructuredStatusAnswer(job: IVXIAJobEvidence): string {
  * Priority (lowest confidence wins so a contradiction never overclaims):
  *  1. If a structured job record is provided, trust it exclusively. Validate
  *     its fields and return the structured status. No text scanning.
- *  2. If both success and failure text assertions are present → contradiction →
- *     resolve to the failure side (BLOCKED / FAILED / WAITING_OWNER).
- *  3. If a success assertion is present but evidence is missing → UNVERIFIED is
- *     NOT a positive state; the gate rewrites the answer, and the state is
- *     BLOCKED (the missing evidence is the blocker).
+ *  2. Text-based contradiction detection is REMOVED. The only valid contradiction
+ *     is a structured record that is internally inconsistent (e.g. COMPLETED + blockedReason).
+ *  3. If a success assertion is present but evidence is missing → BLOCKED (the
+ *     missing evidence is the blocker). Status words inside quoted text, logs,
+ *     previous messages, or error descriptions are ignored.
  *  4. If only success assertions + full evidence → VERIFIED.
  *  5. If only failure assertions → BLOCKED / FAILED / WAITING_OWNER depending on
  *     the exact label.
@@ -517,39 +517,19 @@ export function resolveSingleState(
   // ── Fallback: text-based scanning (only when no structured job provided). ──
   // Strip quoted / code-fenced text so words like "completed" or "blocked"
   // inside logs, quoted user messages, or error descriptions do not trigger
-  // false contradictions.
-  const answerForContradiction = stripQuotedText(answer);
-  const successAssertions = findSuccessStateAssertions(answerForContradiction);
-  const failureAssertions = findFailureStateAssertions(answerForContradiction);
-  const bannedPromises = findBannedGenericPromises(answer);
+  // false positives. NOTE: text-based contradiction detection has been removed;
+  // the only valid contradiction is an inconsistent structured job record.
+  const answerForScanning = stripQuotedText(answer);
+  const successAssertions = findSuccessStateAssertions(answerForScanning);
+  const failureAssertions = findFailureStateAssertions(answerForScanning);
+  const bannedPromises = findBannedGenericPromises(answerForScanning);
   const missingEvidence = successAssertions.length > 0
-    ? findMissingEvidence(answer, evidence)
+    ? findMissingEvidence(answerForScanning, evidence)
     : [];
 
-  // Contradiction: success + failure in the same message.
+  // No text-based contradiction detection. The only contradictions are from
+  // structured validation (COMPLETED + blockedReason, etc.) handled above.
   const contradictions: string[] = [];
-  if (successAssertions.length > 0 && failureAssertions.length > 0) {
-    for (const s of successAssertions) {
-      for (const f of failureAssertions) {
-        contradictions.push(`${s} + ${f}`);
-      }
-    }
-  }
-
-  if (contradictions.length > 0) {
-    // Resolve to the failure side — never overclaim.
-    const lowerFailure = failureAssertions.map((f) => lower(f));
-    const isWaiting = lowerFailure.some((f) => f.includes('waiting') || f.includes('awaiting') || f.includes('approval'));
-    const isFailed = lowerFailure.some((f) => f.includes('failed') || f.includes('could not') || f.includes('unable'));
-    const state: IVXIAState = isWaiting ? 'WAITING_OWNER' : isFailed ? 'FAILED' : 'BLOCKED';
-    return {
-      state,
-      contradictions,
-      bannedPromises,
-      missingEvidence,
-      reason: `Contradictory states detected (${contradictions.join('; ')}). Resolved to ${state} — a success claim was retracted because a failure/waiting state appeared in the same reply.`,
-    };
-  }
 
   if (successAssertions.length > 0 && missingEvidence.length > 0) {
     return {
