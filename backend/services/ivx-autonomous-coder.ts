@@ -32,6 +32,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { requestIVXAIText } from '../ivx-ai-runtime';
+import { resolveRuntimeCommand } from './ivx-runtime-resolver';
 
 const execFileAsync = promisify(execFile);
 
@@ -342,18 +343,39 @@ async function revertPatchOperation(
 
 async function runCommand(cwd: string, command: string): Promise<IVXAutonomousCoderTestResult> {
   const started = Date.now();
+  // Resolve the runtime: the Render container runs under node+tsx, not bun.
+  // `bun test` and `bun x tsc` fail with ENOENT on the production container, so
+  // we resolve the runtime via resolveRuntimeCommand and translate the command
+  // to its node-based equivalent when bun is not available.
   const parts = command.split(/\s+/);
-  const cmd = parts[0];
-  const args = parts.slice(1);
+  const requestedRuntime = parts[0] as 'bun' | 'bunx' | 'node' | 'npx';
+  const resolution = resolveRuntimeCommand(requestedRuntime);
+  let effectiveCmd = resolution.resolvedPath ?? resolution.effectiveCommand;
+  let effectiveArgs = parts.slice(1);
+  let displayCommand = command;
+  // When bun falls back to node, translate `bun test <file>` → `node --test <file>`
+  // (node:test runner) and `bun x tsc --noEmit` → `npx tsc --noEmit` (or node tsc).
+  if (resolution.usedFallback && requestedRuntime === 'bun') {
+    if (effectiveArgs[0] === 'test') {
+      effectiveArgs = ['--test', ...effectiveArgs.slice(1)];
+      displayCommand = `node --test ${effectiveArgs.slice(1).join(' ')}`;
+    } else if (effectiveArgs[0] === 'x') {
+      // `bun x tsc` → use npx instead
+      const npxRes = resolveRuntimeCommand('npx');
+      effectiveCmd = npxRes.resolvedPath ?? npxRes.effectiveCommand;
+      effectiveArgs = effectiveArgs.slice(1); // drop the 'x'
+      displayCommand = `npx ${effectiveArgs.join(' ')}`;
+    }
+  }
   try {
-    const result = await execFileAsync(cmd, args, {
+    const result = await execFileAsync(effectiveCmd, effectiveArgs, {
       cwd,
       timeout: COMMAND_TIMEOUT_MS,
       maxBuffer: 1024 * 1024 * 4,
       env: { ...process.env, CI: '1', FORCE_COLOR: '0' },
     });
     return {
-      command,
+      command: displayCommand,
       ok: true,
       exitCode: 0,
       stdoutTail: truncate(typeof result.stdout === 'string' ? result.stdout : '', 2000),
@@ -363,7 +385,7 @@ async function runCommand(cwd: string, command: string): Promise<IVXAutonomousCo
   } catch (error) {
     const err = error as { code?: number; stdout?: string; stderr?: string; signal?: string };
     return {
-      command,
+      command: displayCommand,
       ok: false,
       exitCode: typeof err.code === 'number' ? err.code : null,
       stdoutTail: truncate(typeof err.stdout === 'string' ? err.stdout : '', 2000),
