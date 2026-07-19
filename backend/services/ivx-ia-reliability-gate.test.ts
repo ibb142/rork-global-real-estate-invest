@@ -109,18 +109,19 @@ describe('findMissingEvidence', () => {
   });
 });
 
-describe('resolveSingleState — contradiction detection', () => {
-  it('resolves a Done + Blocked contradiction to the failure side', () => {
+describe('resolveSingleState — no text-based contradiction detection', () => {
+  it('does not flag Done + Blocked words as a contradiction; blocks for missing evidence instead', () => {
     const res = resolveSingleState('Task completed. BLOCKED — no owner session.', null);
     expect(res.state).toBe('BLOCKED');
-    expect(res.contradictions.length).toBeGreaterThan(0);
-    expect(res.reason).toContain('Contradictory');
+    expect(res.contradictions).toEqual([]);
+    expect(res.reason).toContain('without required evidence');
   });
 
-  it('resolves a Verified + Waiting for owner contradiction to WAITING_OWNER', () => {
+  it('does not flag Verified + Waiting as a contradiction; blocks for missing evidence instead', () => {
     const res = resolveSingleState('Verified. Waiting for owner approval.', null);
-    expect(res.state).toBe('WAITING_OWNER');
-    expect(res.contradictions.length).toBeGreaterThan(0);
+    expect(res.state).toBe('BLOCKED');
+    expect(res.contradictions).toEqual([]);
+    expect(res.reason).toContain('without required evidence');
   });
 });
 
@@ -384,7 +385,7 @@ describe('applyIVXIAReliabilityGate', () => {
     expect(result.answer).toBe(answer);
   });
 
-  it('gates the exact contradictory example from the owner spec', () => {
+  it('gates the mixed-status example without inventing a text contradiction', () => {
     // The owner reported an answer that mixed "Task completed", "Task blocked",
     // "I'll inspect now", and "Open Developer Workspace" in one reply.
     const contradictory = [
@@ -396,11 +397,12 @@ describe('applyIVXIAReliabilityGate', () => {
     const result = applyIVXIAReliabilityGate({ message: 'finish the task', answer: contradictory });
     expect(result.gated).toBe(true);
     expect(result.state).toBe('BLOCKED');
-    expect(result.contradictions.length).toBeGreaterThan(0);
+    expect(result.contradictions).toEqual([]);
     expect(result.bannedPromises).toContain("i'll inspect");
     expect(result.answer).toContain('STATE: BLOCKED');
-    expect(result.answer).toContain('CONTRADICTION DETECTED');
     expect(result.answer).toContain('GENERIC PROMISE WITHOUT EVIDENCE');
+    expect(result.answer).toContain('MISSING EVIDENCE');
+    expect(result.answer).not.toContain('CONTRADICTION DETECTED');
     expect(result.answer).not.toContain('Task completed.');
   });
 
