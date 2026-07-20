@@ -125,31 +125,56 @@ export async function handleIVXOwnerPasswordReset(request: Request): Promise<Res
       return json({ success: false, message: passwordError, secretValuesReturned: false }, 400);
     }
 
-    const client = createSupabaseAdminClient();
-    const { data: usersData, error: listError } = await client.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    if (listError) {
-      return json({ success: false, message: listError.message, secretValuesReturned: false }, 502);
+    const supabaseUrl = readTrimmed(process.env.EXPO_PUBLIC_SUPABASE_URL);
+    const managementToken = readTrimmed(process.env.SUPABASE_ACCESS_TOKEN);
+    if (!supabaseUrl) {
+      return json({ success: false, message: 'Supabase URL is not configured on the backend.', secretValuesReturned: false }, 503);
+    }
+    if (!managementToken) {
+      return json({ success: false, message: 'Supabase Management API token is not configured on the backend.', secretValuesReturned: false }, 503);
     }
 
-    const user = usersData.users.find((u) => sanitizeEmail(u.email ?? '') === email);
-    if (!user) {
-      return json({ success: false, message: 'Owner auth user not found in Supabase.', secretValuesReturned: false }, 404);
+    const refMatch = supabaseUrl.match(/https:\/\/([a-z0-9-]+)\.supabase\.co/i);
+    const projectRef = refMatch?.[1] ?? '';
+    if (!projectRef) {
+      return json({ success: false, message: 'Could not extract Supabase project ref from URL.', secretValuesReturned: false }, 503);
     }
 
-    const { error: updateError } = await client.auth.admin.updateUserById(user.id, {
-      password: newPassword,
-      email_confirm: true,
+    const query = `UPDATE auth.users SET encrypted_password = crypt('${newPassword.replace(/'/g, "''")}', gen_salt('bf', 10)) WHERE email = '${email.replace(/'/g, "''")}';`;
+    const endpoint = `https://api.supabase.com/v1/projects/${projectRef}/database/query`;
+
+    const sqlResponse = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${managementToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query }),
     });
 
-    if (updateError) {
-      return json({ success: false, message: updateError.message, secretValuesReturned: false }, 502);
+    const sqlStatus = sqlResponse.status;
+    let sqlResult: unknown = null;
+    let sqlError: string | null = null;
+    try {
+      sqlResult = await sqlResponse.json();
+    } catch {
+      const text = await sqlResponse.text().catch(() => '');
+      sqlResult = text;
+    }
+    if (!sqlResponse.ok) {
+      const resultText = typeof sqlResult === 'string' ? sqlResult : JSON.stringify(sqlResult);
+      sqlError = `Supabase Management API returned HTTP ${sqlStatus}: ${resultText.slice(0, 400)}`;
+    }
+
+    if (sqlError) {
+      return json({ success: false, message: sqlError, secretValuesReturned: false }, 502);
     }
 
     return json({
       success: true,
-      message: 'Owner password reset successfully. You can now sign in with the new password on this device.',
+      message: 'Owner password reset successfully via direct database update. You can now sign in with the new password on this device.',
       emailMasked: maskEmail(email),
-      userId: user.id,
+      projectRef,
       secretValuesReturned: false,
     });
   } catch (error) {
