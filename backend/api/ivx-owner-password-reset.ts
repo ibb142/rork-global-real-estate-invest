@@ -102,6 +102,24 @@ function maskEmail(email: string): string {
   return `${visibleLocal}@${domain}`;
 }
 
+
+function extractSupabaseProjectRefFromUrl(url: string): string | null {
+  const match = url.match(/https:\/\/([a-z0-9-]+)\.supabase\.co/i);
+  return match?.[1] ?? null;
+}
+
+function extractSupabaseProjectRefFromAnonKey(anonKey: string): string | null {
+  const payloadSegment = anonKey.split('.')[1];
+  if (!payloadSegment) return null;
+  try {
+    const padded = payloadSegment.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(payloadSegment.length / 4) * 4, '=');
+    const parsed = JSON.parse(Buffer.from(padded, 'base64').toString('utf8')) as { ref?: unknown };
+    return typeof parsed.ref === 'string' ? parsed.ref : null;
+  } catch {
+    return null;
+  }
+}
+
 export function ownerPasswordResetOptions(): Response {
   return new Response(null, { status: 204, headers: HEADERS });
 }
