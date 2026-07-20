@@ -57,6 +57,7 @@ export async function realMigrationRunner(
 ): Promise<{ ok: boolean; output: string; error: string | null }> {
   const url = supabaseUrl();
   const key = supabaseServiceRoleKey();
+  const accessToken = readEnv('SUPABASE_ACCESS_TOKEN');
   if (!url || !key) {
     return {
       ok: false,
@@ -64,64 +65,94 @@ export async function realMigrationRunner(
       error: 'SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing at runtime — cannot apply migration.',
     };
   }
+  // Extract the project ref from the Supabase URL (e.g. https://kvclcdjmjghndxsngfzb.supabase.co → kvclcdjmjghndxsngfzb)
+  const refMatch = url.match(/https:\/\/([a-z0-9]+)\.supabase\.co/);
+  const projectRef = refMatch?.[1] ?? '';
   try {
-    // Primary path: /pg/exec endpoint (Supabase SQL execution)
-    const res = await fetch(`${url}/pg/exec`, {
-      method: 'POST',
-      headers: {
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ query: sql }),
-      signal: AbortSignal.timeout(30000),
-    });
-    const bodyText = await res.text().catch(() => '');
-    if (!res.ok) {
-      return {
-        ok: false,
-        output: `HTTP ${res.status}`,
-        error: `Supabase /pg/exec failed: ${res.status} ${bodyText.slice(0, 300)}`,
-      };
+    // PRIMARY PATH: Supabase Management API — POST /v1/projects/{ref}/database/query
+    // This is the canonical SQL execution endpoint, requires SUPABASE_ACCESS_TOKEN.
+    if (accessToken && projectRef) {
+      const mgmtRes = await fetch(`https://api.supabase.com/v1/projects/${projectRef}/database/query`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query: sql }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const mgmtBody = await mgmtRes.text().catch(() => '');
+      if (mgmtRes.ok) {
+        return {
+          ok: true,
+          output: `Migration ${name} applied via Supabase Management API /database/query (${sql.length} bytes SQL). Response: ${mgmtBody.slice(0, 200) || '(empty = success)'}`,
+          error: null,
+        };
+      }
+      // If management API fails, fall through to the REST RPC path
     }
-    return {
-      ok: true,
-      output: `Migration ${name} applied via Supabase /pg/exec (${sql.length} bytes SQL). Response: ${bodyText.slice(0, 200) || '(empty = success)'}`,
-      error: null,
-    };
-  } catch (err) {
-    // Fallback: try the REST /rpc path with a do$$ wrapper
+    // FALLBACK PATH 1: Supabase REST /rest/v1/rpc/exec_sql (requires a pre-existing function)
     try {
-      const wrappedSql = `do$$ BEGIN ${sql} END $$;`;
-      const res2 = await fetch(`${url}/rest/v1/rpc/exec_sql`, {
+      const rpcRes = await fetch(`${url}/rest/v1/rpc/exec_sql`, {
         method: 'POST',
         headers: {
           apikey: key,
           Authorization: `Bearer ${key}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ sql_text: wrappedSql }),
+        body: JSON.stringify({ sql_text: sql }),
         signal: AbortSignal.timeout(30000),
       });
-      if (res2.ok) {
+      const rpcBody = await rpcRes.text().catch(() => '');
+      if (rpcRes.ok) {
         return {
           ok: true,
-          output: `Migration ${name} applied via Supabase /rest/v1/rpc/exec_sql fallback.`,
+          output: `Migration ${name} applied via Supabase /rest/v1/rpc/exec_sql (${sql.length} bytes SQL).`,
+          error: null,
+        };
+      }
+      // If exec_sql RPC doesn't exist (404), fall through to the pgdirect path
+    } catch {
+      // fall through
+    }
+    // FALLBACK PATH 2: Supabase pgdirect — POST /pg/query (available on some projects)
+    try {
+      const pgRes = await fetch(`${url}/pg/query`, {
+        method: 'POST',
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query: sql }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const pgBody = await pgRes.text().catch(() => '');
+      if (pgRes.ok) {
+        return {
+          ok: true,
+          output: `Migration ${name} applied via Supabase /pg/query (${sql.length} bytes SQL).`,
           error: null,
         };
       }
       return {
         ok: false,
-        output: '',
-        error: `Supabase migration failed (both /pg/exec and /rpc fallback): ${err instanceof Error ? err.message : 'unknown'}`,
+        output: `HTTP ${pgRes.status}`,
+        error: `Supabase migration failed: Management API ${accessToken ? 'returned' : 'no token'} / RPC / /pg/query all unavailable. Last: ${pgRes.status} ${pgBody.slice(0, 200)}`,
       };
-    } catch (err2) {
+    } catch (err3) {
       return {
         ok: false,
         output: '',
-        error: `Supabase migration runner error: ${err2 instanceof Error ? err2.message : 'unknown'}`,
+        error: `Supabase migration runner error: ${err3 instanceof Error ? err3.message : 'unknown'}`,
       };
     }
+  } catch (err) {
+    return {
+      ok: false,
+      output: '',
+      error: `Supabase migration runner error: ${err instanceof Error ? err.message : 'unknown'}`,
+    };
   }
 }
 
