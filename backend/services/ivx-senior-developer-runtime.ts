@@ -1959,7 +1959,7 @@ function isMobileDeployGoal(goal: string): boolean {
   );
 }
 
-async function verifyLatestApkLive(): Promise<IVXApkVerification> {
+async function verifyLatestApkLive(projectRoot: string): Promise<IVXApkVerification> {
   const appConfigPath = path.join(projectRoot, 'expo', 'app.config.ts');
   let version: string | null = null;
   let versionCode: number | null = null;
@@ -2407,7 +2407,7 @@ export async function runIVXSeniorDeveloperTask(input: IVXSeniorDeveloperRunInpu
   if (hasRealChange) {
     gitDeployOperator = await buildGitDeployOperator(input, projectRoot, changedFiles, validationsOk);
   } else if (mobileDeployRequested) {
-    apkVerification = await verifyLatestApkLive();
+    apkVerification = await verifyLatestApkLive(projectRoot);
     if (apkVerification.ok) {
       gitDeployOperator = makeGitDeployProof({
         status: 'executed',
