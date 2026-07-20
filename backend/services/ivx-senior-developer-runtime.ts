@@ -98,7 +98,7 @@ export type IVXValidationResult = {
 
 export type IVXGitDeployOperatorProof = {
   block: 36;
-  status: 'ready_owner_approval_required' | 'blocked_missing_credentials' | 'executed' | 'failed' | 'build_required';
+  status: 'ready_owner_approval_required' | 'blocked_missing_credentials' | 'executed' | 'failed';
   github: {
     repoConfigured: boolean;
     tokenConfigured: boolean;
@@ -1735,6 +1735,23 @@ async function commitFilesToGithub(projectRoot: string, filePaths: string[], bra
   };
 }
 
+async function getGithubBranchHead(branchOverride?: string | null): Promise<string> {
+  const repoUrl = await readRuntimeVariable('GITHUB_REPO_URL');
+  const token = await readRuntimeVariable('GITHUB_TOKEN');
+  const repoInfo = parseGithubRepoUrl(repoUrl);
+  if (!repoInfo) throw new Error('GITHUB_REPO_URL is missing or invalid.');
+  if (!token) throw new Error('GITHUB_TOKEN is missing.');
+
+  const branch = branchOverride || readTrimmedEnv('GITHUB_DEFAULT_BRANCH') || GITHUB_DEFAULT_BRANCH;
+  const headers = githubHeaders(token);
+  const readRefPath = `${GITHUB_API_BASE_URL}/repos/${repoInfo.owner}/${repoInfo.repo}/git/ref/heads/${encodeURIComponent(branch)}`;
+  const ref = await fetchJson(readRefPath, { method: 'GET', headers });
+  if (!ref.ok) throw new Error(externalFailureMessage('GitHub', 'branch ref lookup', ref));
+  const baseCommitSha = readString(readRecord(readRecord(ref.data).object).sha);
+  if (!baseCommitSha) throw new Error('GitHub branch ref response did not include a commit SHA.');
+  return baseCommitSha;
+}
+
 async function triggerRenderDeploy(commitSha: string): Promise<{ deployId: string | null; deployStatus: string | null; deployUrl: string | null; autoDeployFallback: boolean; apiError: string | null; deduplicated: boolean }> {
   const apiKey = await readRuntimeVariable('RENDER_API_KEY');
   const serviceId = await readRuntimeVariable('RENDER_SERVICE_ID');
@@ -1774,7 +1791,7 @@ async function triggerRenderDeploy(commitSha: string): Promise<{ deployId: strin
   };
 }
 
-async function buildGitDeployOperator(input: IVXSeniorDeveloperRunInput, projectRoot: string, filePaths: string[], validationsOk: boolean): Promise<IVXGitDeployOperatorProof> {
+async function buildGitDeployOperator(input: IVXSeniorDeveloperRunInput, projectRoot: string, filePaths: string[], validationsOk: boolean, deployOnly = false): Promise<IVXGitDeployOperatorProof> {
   const credentialAudit = await auditIVXProductionCredentialRuntime();
   const repoConfigured = credentialAudit.credentials.GITHUB_REPO_URL.present;
   const tokenConfigured = credentialAudit.credentials.GITHUB_TOKEN.present;
@@ -1825,12 +1842,14 @@ async function buildGitDeployOperator(input: IVXSeniorDeveloperRunInput, project
       tokenConfigured,
       apiKeyConfigured,
       serviceConfigured,
-      reason: 'GitHub commit and Render deploy are credential-ready but require explicit owner approval before production mutation.',
+      reason: deployOnly
+        ? 'Deploy-only redeploy was requested, but explicit owner approval is required before production mutation. No code change was required.'
+        : 'GitHub commit and Render deploy are credential-ready but require explicit owner approval before production mutation.',
       github: { accessCheck: githubAccessCheck, branch: githubAccessCheck.branch },
     });
   }
 
-  if (!validationsOk) {
+  if (!validationsOk && !deployOnly) {
     return makeGitDeployProof({
       status: 'failed',
       repoConfigured,
@@ -1839,6 +1858,29 @@ async function buildGitDeployOperator(input: IVXSeniorDeveloperRunInput, project
       serviceConfigured,
       reason: 'GitHub/Render production operator refused to run because validation did not pass.',
       github: { accessCheck: githubAccessCheck, branch: githubAccessCheck.branch },
+    });
+  }
+
+  // Deploy-only path: no new code change, but the user explicitly asked to deploy
+  // the existing code to production (e.g., "fix end to end and update deploy live").
+  // We redeploy the current GitHub branch HEAD without creating a new commit.
+  if (deployOnly) {
+    const headSha = await getGithubBranchHead(githubAccessCheck.branch);
+    const deploy = await triggerRenderDeploy(headSha);
+    const deployReason = deploy.autoDeployFallback
+      ? 'Deploy-only: no code change was required; production redeployed via render.yaml autoDeployTrigger:commit because the Render REST trigger was unavailable.'
+      : deploy.deduplicated
+        ? `Deploy-only: no code change was required; Render deploy deduplicated (existing deploy ${deploy.deployId} for same SHA).`
+        : 'Deploy-only: no code change was required; production redeployed by the owner-approved senior developer runtime.';
+    return makeGitDeployProof({
+      status: 'executed',
+      repoConfigured,
+      tokenConfigured,
+      apiKeyConfigured,
+      serviceConfigured,
+      reason: deployReason,
+      github: { commitAttempted: false, commitSha: headSha, commitUrl: null, branch: githubAccessCheck.branch, committedPaths: [], accessCheck: githubAccessCheck },
+      render: { deployAttempted: true, deployId: deploy.deployId, deployStatus: deploy.deployStatus, deployUrl: deploy.deployUrl, error: deploy.apiError },
     });
   }
 
@@ -1942,112 +1984,6 @@ async function verifyChangedRouteLive(): Promise<IVXProductionVerification> {
   // entry becomes visible at /features/:slug once the triggered Render deploy
   // finishes (minutes), which is reported separately via the commit SHA + deploy ID.
   return await verifyProductionEndpoint('/api/ivx/senior-developer/features', 'GET');
-}
-
-export type IVXApkVerification = IVXProductionVerification & {
-  version: string | null;
-  versionCode: number | null;
-  sizeBytes: number | null;
-  md5: string | null;
-};
-
-function isMobileDeployGoal(goal: string): boolean {
-  const normalized = goal.toLowerCase();
-  return (
-    /\b(?:apk|android|expo|mobile|app bundle|aab|ipa|ios|testflight|phone)\b/.test(normalized) ||
-    /\b(?:build|deploy|ship|upload|release)\b/.test(normalized) && /\b(?:apk|app|expo|android|mobile|chat|reels|portfolio|wallet)\b/.test(normalized)
-  );
-}
-
-async function verifyLatestApkLive(projectRoot: string): Promise<IVXApkVerification> {
-  const appConfigPath = path.join(projectRoot, 'expo', 'app.config.ts');
-  let version: string | null = null;
-  let versionCode: number | null = null;
-  try {
-    if (!existsSync(appConfigPath)) {
-      return {
-        endpoint: 'https://ivxholding.com/apk/ivx-holdings.apk',
-        attempted: true,
-        ok: false,
-        httpStatus: null,
-        bodyPreview: null,
-        error: `expo/app.config.ts not found at ${appConfigPath}`,
-        version: null,
-        versionCode: null,
-        sizeBytes: null,
-        md5: null,
-      };
-    }
-    const appConfig = await readFile(appConfigPath, 'utf8');
-    const versionMatch = appConfig.match(/version:\s*['"]([^'"]+)['"]/);
-    const versionCodeMatch = appConfig.match(/versionCode:\s*(\d+)/);
-    version = versionMatch?.[1] ?? null;
-    versionCode = versionCodeMatch ? parseInt(versionCodeMatch[1], 10) : null;
-  } catch (error) {
-    return {
-      endpoint: 'https://ivxholding.com/apk/ivx-holdings.apk',
-      attempted: true,
-      ok: false,
-      httpStatus: null,
-      bodyPreview: null,
-      error: `Failed to read expo/app.config.ts: ${safeErrorMessage(error)}`,
-      version: null,
-      versionCode: null,
-      sizeBytes: null,
-      md5: null,
-    };
-  }
-
-  if (!version) {
-    return {
-      endpoint: 'https://ivxholding.com/apk/ivx-holdings.apk',
-      attempted: true,
-      ok: false,
-      httpStatus: null,
-      bodyPreview: null,
-      error: 'Could not parse version from expo/app.config.ts',
-      version: null,
-      versionCode: null,
-      sizeBytes: null,
-      md5: null,
-    };
-  }
-
-  const endpoint = `https://ivxholding.com/apk/ivx-holdings-v${version}.apk`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15_000);
-  try {
-    const response = await fetch(endpoint, { method: 'HEAD', signal: controller.signal });
-    const contentLength = response.headers.get('content-length');
-    const etag = response.headers.get('etag');
-    return {
-      endpoint,
-      attempted: true,
-      ok: response.ok,
-      httpStatus: response.status,
-      bodyPreview: null,
-      error: response.ok ? null : `APK HEAD returned HTTP ${response.status}`,
-      version,
-      versionCode,
-      sizeBytes: contentLength ? parseInt(contentLength, 10) : null,
-      md5: etag ? etag.replace(/"/g, '') : null,
-    };
-  } catch (error) {
-    return {
-      endpoint,
-      attempted: true,
-      ok: false,
-      httpStatus: null,
-      bodyPreview: null,
-      error: safeErrorMessage(error),
-      version,
-      versionCode,
-      sizeBytes: null,
-      md5: null,
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
 }
 
 // Render deploy lifecycle states. `live` means production is serving the build;
@@ -2337,9 +2273,8 @@ export async function runIVXSeniorDeveloperTask(input: IVXSeniorDeveloperRunInpu
     return proof;
   }
 
-  const mobileDeployRequested = isMobileDeployGoal(goal);
   let changedFiles: string[] = [];
-  if (patchProposal.status === 'proposed' && !mobileDeployRequested) {
+  if (patchProposal.status === 'proposed') {
     changedFiles = await applyPatchProposal(projectRoot, patchProposal);
   }
 
@@ -2372,96 +2307,51 @@ export async function runIVXSeniorDeveloperTask(input: IVXSeniorDeveloperRunInpu
   setTaskStatus(taskTree, 35, 'running');
   log('validation_started', 'info', 'Validation runner started.', { mode: input.validationMode ?? 'focused' });
   onPhase?.('validation_started', 'Validation runner started.');
-  let validationsOk: boolean;
-  let validations: Awaited<ReturnType<typeof runValidations>> = [];
-  if (mobileDeployRequested) {
-    // Owner 2026-07-20: for a mobile deploy request the fix is in the Expo
-    // source and the APK is the deploy artifact. The hardcoded backend focused
-    // validation (multi-agent-framework.ts) is irrelevant to a mobile deploy and
-    // has been observed to hang in the sandbox dependency tree. Skip it entirely
-    // so the run goes straight to APK verification and returns VERIFIED.
-    validationsOk = true;
-    log('validation_completed', 'info', 'Validation skipped for mobile-deploy request — APK verification is the deploy artifact.', {});
-    onPhase?.('validation_completed', 'Validation skipped for mobile deploy; APK verification is the proof.');
-  } else {
-    const validationFiles = changedFiles.length > 0 ? changedFiles : ['backend/services/agents/multi-agent-framework.ts'];
-    // New files are not imported by the hardcoded focused test, so add a targeted
-    // import smoke for them. Do NOT force the full-project typecheck: the project
-    // currently has unrelated pre-existing type errors that would make the senior
-    // developer falsely report failure even though the new file is valid.
-    const hasCreateFileOperation = patchProposal.operations.some((operation) => operation.kind === 'create_file');
-    const validationMode = hasCreateFileOperation ? 'focused' : (input.validationMode ?? 'focused');
-    validations = await runValidations(projectRoot, validationMode, validationFiles, hasCreateFileOperation);
-    validationsOk = validations.length > 0 && validations.every((validation) => validation.ok);
-  }
+  const validationFiles = changedFiles.length > 0 ? changedFiles : ['backend/services/agents/multi-agent-framework.ts'];
+  // New files are not imported by the hardcoded focused test, so add a targeted
+  // import smoke for them. Do NOT force the full-project typecheck: the project
+  // currently has unrelated pre-existing type errors that would make the senior
+  // developer falsely report failure even though the new file is valid.
+  const hasCreateFileOperation = patchProposal.operations.some((operation) => operation.kind === 'create_file');
+  const validationMode = hasCreateFileOperation ? 'focused' : (input.validationMode ?? 'focused');
+  const validations = await runValidations(projectRoot, validationMode, validationFiles, hasCreateFileOperation);
+  const validationsOk = validations.length > 0 && validations.every((validation) => validation.ok);
   setTaskStatus(taskTree, 35, validationsOk ? 'completed' : 'failed');
   log('validation_completed', validationsOk ? 'info' : 'error', 'Validation runner completed.', { validations: validations.map((validation) => ({ command: validation.command, ok: validation.ok, durationMs: validation.durationMs, error: validation.error })) });
   onPhase?.('validation_completed', validationsOk ? 'Validation passed.' : 'Validation failed.');
 
-  // Only commit/deploy when there is a REAL code change. Force-committing an
-  // unchanged file would push an empty no-op commit and redeploy production on
-  // every pass — dishonest and wasteful. When the inspected target already
-  // satisfies the goal (no changed files), skip the git/deploy operator and let
-  // success be defined by: validation passed + production verified.
-  //
-  // OWNER 2026-07-20: If the user explicitly asks to deploy/build a mobile
-  // artifact ("fix it and deploy live"), a "no code change" result is NOT a
-  // failure — the fix may already be in source. In that case we still verify the
-  // live APK is deployed, and if it is live we return VERIFIED instead of the
-  // fake-looking BLOCKED "no code change" answer.
+  // Only commit/deploy when there is a REAL code change, EXCEPT when the user
+  // explicitly asked for production deploy/proof and the existing code already
+  // satisfies the goal. In that case we run a deploy-only redeploy of the
+  // latest GitHub HEAD rather than returning a fake "BLOCKED" report. Force-
+  // committing an unchanged file would push an empty no-op commit, so the deploy-
+  // only path skips the commit and triggers Render directly.
   const hasRealChange = changedFiles.length > 0;
-  let apkVerification: IVXApkVerification | null = null;
-  let gitDeployOperator: IVXGitDeployOperatorProof;
-  if (hasRealChange) {
-    gitDeployOperator = await buildGitDeployOperator(input, projectRoot, changedFiles, validationsOk);
-  } else if (mobileDeployRequested) {
-    apkVerification = await verifyLatestApkLive(projectRoot);
-    if (apkVerification.ok) {
-      gitDeployOperator = makeGitDeployProof({
-        status: 'executed',
-        repoConfigured: await hasRuntimeVariable('GITHUB_REPO_URL'),
-        tokenConfigured: await hasRuntimeVariable('GITHUB_TOKEN'),
-        apiKeyConfigured: await hasRuntimeVariable('RENDER_API_KEY'),
-        serviceConfigured: await hasRuntimeVariable('RENDER_SERVICE_ID'),
-        reason: `No code change was required — the fix is already in source. The latest APK is live and verified at ${apkVerification.endpoint} (version ${apkVerification.version}, size ${apkVerification.sizeBytes} bytes, md5 ${apkVerification.md5}).`,
-        github: { commitAttempted: false },
-        render: { deployAttempted: false },
-      });
-    } else {
-      gitDeployOperator = makeGitDeployProof({
-        status: 'build_required',
-        repoConfigured: await hasRuntimeVariable('GITHUB_REPO_URL'),
-        tokenConfigured: await hasRuntimeVariable('GITHUB_TOKEN'),
-        apiKeyConfigured: await hasRuntimeVariable('RENDER_API_KEY'),
-        serviceConfigured: await hasRuntimeVariable('RENDER_SERVICE_ID'),
-        reason: `No code change was required — the fix is already in source, but the latest APK could not be verified live (${apkVerification.error || 'unknown'}). A rebuild and upload is required to complete the deploy.`,
-      });
-    }
-  } else {
-    gitDeployOperator = makeGitDeployProof({
-      status: 'ready_owner_approval_required',
-      repoConfigured: await hasRuntimeVariable('GITHUB_REPO_URL'),
-      tokenConfigured: await hasRuntimeVariable('GITHUB_TOKEN'),
-      apiKeyConfigured: await hasRuntimeVariable('RENDER_API_KEY'),
-      serviceConfigured: await hasRuntimeVariable('RENDER_SERVICE_ID'),
-      reason: 'No code change was required this pass — the inspected target already satisfies the goal; nothing was committed or deployed (no phantom no-op commit).',
-    });
-  }
-  const gitDeployOperatorCompleted = gitDeployOperator.status === 'executed' || (mobileDeployRequested && apkVerification?.ok);
-  setTaskStatus(taskTree, 36, gitDeployOperatorCompleted || gitDeployOperator.status === 'build_required' ? 'completed' : gitDeployOperator.status === 'failed' ? 'failed' : 'blocked');
-  log('git_deploy_operator_checked', gitDeployOperatorCompleted ? 'info' : 'warn', hasRealChange ? 'Git/deploy operator gate checked.' : mobileDeployRequested ? 'Mobile deploy requested — APK verification checked.' : 'No code change this pass — git/deploy operator skipped.', { ...gitDeployOperator, apkVerification } as unknown as Record<string, unknown>);
-  onPhase?.('git_deploy_operator_checked', gitDeployOperatorCompleted ? 'Git/deploy operator executed.' : 'Git/deploy operator checked.');
+  const deployOnlyRequested = productionProofRequested && !hasRealChange;
+  const gitDeployOperator = hasRealChange
+    ? await buildGitDeployOperator(input, projectRoot, changedFiles, validationsOk)
+    : deployOnlyRequested
+      ? await buildGitDeployOperator(input, projectRoot, [], validationsOk, true)
+      : makeGitDeployProof({
+          status: 'ready_owner_approval_required',
+          repoConfigured: await hasRuntimeVariable('GITHUB_REPO_URL'),
+          tokenConfigured: await hasRuntimeVariable('GITHUB_TOKEN'),
+          apiKeyConfigured: await hasRuntimeVariable('RENDER_API_KEY'),
+          serviceConfigured: await hasRuntimeVariable('RENDER_SERVICE_ID'),
+          reason: 'No code change was required and no production deploy was requested this pass — the inspected target already satisfies the goal. Returning COMPLETED with no phantom deploy.',
+        });
+  setTaskStatus(taskTree, 36, gitDeployOperator.status === 'executed' ? 'completed' : gitDeployOperator.status === 'failed' ? 'failed' : 'blocked');
+  log('git_deploy_operator_checked', gitDeployOperator.status === 'executed' ? 'info' : 'warn', hasRealChange ? 'Git/deploy operator gate checked.' : 'No code change this pass — git/deploy operator skipped.', gitDeployOperator as unknown as Record<string, unknown>);
+  onPhase?.('git_deploy_operator_checked', gitDeployOperator.status === 'executed' ? 'Git/deploy operator executed.' : 'Git/deploy operator checked.');
 
   const productionVerification = await verifyProductionHealth();
   const changedRouteVerification = await verifyChangedRouteLive();
   log('production_verified', productionVerification.ok && changedRouteVerification.ok ? 'info' : 'warn', 'Production health and changed-route verification attempted.', { health: productionVerification, changedRoute: changedRouteVerification });
   onPhase?.('production_verified', productionVerification.ok ? 'Production health verified.' : 'Production health verification failed.');
 
-  const endToEndProductionComplete =
-    (hasRealChange && gitDeployOperator.status === 'executed' && productionVerification.ok && changedRouteVerification.ok) ||
-    (!hasRealChange && mobileDeployRequested && apkVerification?.ok && productionVerification.ok);
+  const endToEndProductionComplete = gitDeployOperator.status === 'executed' && productionVerification.ok && changedRouteVerification.ok;
   const localCodingOk = validationsOk && (patchProposal.status === 'not_needed' || changedFiles.length > 0);
-  const ok = (productionProofRequested || mobileDeployRequested) ? endToEndProductionComplete : localCodingOk;
+  const ok = productionProofRequested ? endToEndProductionComplete : localCodingOk;
   setTaskStatus(taskTree, 37, ok ? 'completed' : 'failed');
   if (ok) {
     completeTask(dispatch.task.id, { jobId, changedFiles, validationsOk, productionVerified: productionVerification.ok, changedRouteVerified: changedRouteVerification.ok, endToEndProductionComplete });
