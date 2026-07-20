@@ -85,6 +85,15 @@ describe('FINAL IVX IA CHAT EXECUTION MODE', () => {
       expect(c.category).toBe('senior_developer');
     });
 
+    test('execution-imperative override: "audit ... fix ... deploy live" is FIX, not audit', () => {
+      const c = classifyExecutionModeIntent(
+        'Can you audit this chat why is a lot loading fix it end to end and update deploy live',
+      );
+      expect(c.isExecutionMode).toBe(true);
+      expect(c.category).toBe('fix');
+      expect(c.reason).toContain('execution-imperative override');
+    });
+
     test('exposes the 10 categories via listExecutionModeCategories', () => {
       const cats = listExecutionModeCategories();
       expect(cats).toHaveLength(10);
