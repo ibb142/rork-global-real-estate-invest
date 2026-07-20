@@ -2396,12 +2396,6 @@ export async function runIVXSeniorDeveloperTask(input: IVXSeniorDeveloperRunInpu
   // live APK is deployed, and if it is live we return VERIFIED instead of the
   // fake-looking BLOCKED "no code change" answer.
   const hasRealChange = changedFiles.length > 0;
-  // Owner 2026-07-20: when the user asks to fix a mobile feature (chat, reels,
-  // portfolio, wallet) and deploy live, the APK is the deploy artifact even if
-  // they did not provide the explicit deploy-approval phrase. In that case we
-  // still verify the live APK and return VERIFIED if it matches, instead of the
-  // fake-looking BLOCKED "no code change" answer.
-  const mobileDeployRequested = isMobileDeployGoal(goal);
   let apkVerification: IVXApkVerification | null = null;
   let gitDeployOperator: IVXGitDeployOperatorProof;
   if (hasRealChange) {
