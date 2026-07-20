@@ -1955,7 +1955,7 @@ function isMobileDeployGoal(goal: string): boolean {
   const normalized = goal.toLowerCase();
   return (
     /\b(?:apk|android|expo|mobile|app bundle|aab|ipa|ios|testflight|phone)\b/.test(normalized) ||
-    /\b(?:build|deploy|ship|upload|release)\b/.test(normalized) && /\b(?:apk|app|expo|android|mobile)\b/.test(normalized)
+    /\b(?:build|deploy|ship|upload|release)\b/.test(normalized) && /\b(?:apk|app|expo|android|mobile|chat|reels|portfolio|wallet)\b/.test(normalized)
   );
 }
 
@@ -2396,7 +2396,12 @@ export async function runIVXSeniorDeveloperTask(input: IVXSeniorDeveloperRunInpu
   // live APK is deployed, and if it is live we return VERIFIED instead of the
   // fake-looking BLOCKED "no code change" answer.
   const hasRealChange = changedFiles.length > 0;
-  const mobileDeployRequested = productionProofRequested && isMobileDeployGoal(goal);
+  // Owner 2026-07-20: when the user asks to fix a mobile feature (chat, reels,
+  // portfolio, wallet) and deploy live, the APK is the deploy artifact even if
+  // they did not provide the explicit deploy-approval phrase. In that case we
+  // still verify the live APK and return VERIFIED if it matches, instead of the
+  // fake-looking BLOCKED "no code change" answer.
+  const mobileDeployRequested = isMobileDeployGoal(goal);
   let apkVerification: IVXApkVerification | null = null;
   let gitDeployOperator: IVXGitDeployOperatorProof;
   if (hasRealChange) {
@@ -2448,7 +2453,7 @@ export async function runIVXSeniorDeveloperTask(input: IVXSeniorDeveloperRunInpu
     (hasRealChange && gitDeployOperator.status === 'executed' && productionVerification.ok && changedRouteVerification.ok) ||
     (!hasRealChange && mobileDeployRequested && apkVerification?.ok && productionVerification.ok);
   const localCodingOk = validationsOk && (patchProposal.status === 'not_needed' || changedFiles.length > 0);
-  const ok = productionProofRequested ? endToEndProductionComplete : localCodingOk;
+  const ok = (productionProofRequested || mobileDeployRequested) ? endToEndProductionComplete : localCodingOk;
   setTaskStatus(taskTree, 37, ok ? 'completed' : 'failed');
   if (ok) {
     completeTask(dispatch.task.id, { jobId, changedFiles, validationsOk, productionVerified: productionVerification.ok, changedRouteVerified: changedRouteVerification.ok, endToEndProductionComplete });
