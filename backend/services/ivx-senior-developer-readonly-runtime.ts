@@ -129,10 +129,10 @@ const CHAT_TARGET_FILES = [
 
 /** Diagnostic commands for chat-loading goals. */
 const CHAT_DIAGNOSTIC_COMMANDS = [
-  { kind: 'search_code' as const, command: 'grep -n "60_000\\|600_000\\|timeout" expo/src/modules/chat/services/useChatSendQueue.ts', description: 'send-queue safety timeout' },
-  { kind: 'search_code' as const, command: 'grep -n "limit(120)\\|limit(160)\\|limit(INITIAL_PAGE_LIMIT)\\|DISPLAY_WINDOW\\|order(\\'created_at\\'" expo/src/modules/ivx-owner-ai/services/ivxChatService.ts', description: 'message query bounds and ordering' },
-  { kind: 'search_code' as const, command: 'grep -n "STALE_TIME_MS\\|GC_TIME_MS" expo/src/modules/chat/hooks/useChatMessages.ts', description: 'message cache stale/gc times' },
-  { kind: 'search_code' as const, command: 'grep -n "scrollToEnd\\|scrollToIndex\\|pendingInitialScroll\\|initialScrollPending\\|onContentSizeChange" expo/app/ivx/chat.tsx', description: 'scroll-to-latest behavior' },
+  { kind: 'search_code' as const, command: `grep -n "60_000\\|600_000\\|timeout" expo/src/modules/chat/services/useChatSendQueue.ts`, description: 'send-queue safety timeout' },
+  { kind: 'search_code' as const, command: `grep -n "limit(120)\\|limit(160)\\|limit(INITIAL_PAGE_LIMIT)\\|DISPLAY_WINDOW\\|order('created_at'" expo/src/modules/ivx-owner-ai/services/ivxChatService.ts`, description: 'message query bounds and ordering' },
+  { kind: 'search_code' as const, command: `grep -n "STALE_TIME_MS\\|GC_TIME_MS" expo/src/modules/chat/hooks/useChatMessages.ts`, description: 'message cache stale/gc times' },
+  { kind: 'search_code' as const, command: `grep -n "scrollToEnd\\|scrollToIndex\\|pendingInitialScroll\\|initialScrollPending\\|onContentSizeChange" expo/app/ivx/chat.tsx`, description: 'scroll-to-latest behavior' },
 ];
 
 /** Dirs never inspected (secrets, build artifacts, vcs, logs). */
