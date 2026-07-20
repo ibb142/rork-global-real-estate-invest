@@ -1,6 +1,9 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { assertIVXRegisteredOwnerBearer } from './owner-only';
-import { sanitizeEmail } from '../../expo/lib/auth-helpers';
+// Local email sanitizer to avoid backend build dependency on expo/lib/auth-helpers.
+function sanitizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
 
 type OwnerPasswordResetPayload = {
   newPassword?: unknown;
