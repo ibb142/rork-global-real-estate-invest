@@ -126,19 +126,24 @@ export async function handleIVXOwnerPasswordReset(request: Request): Promise<Res
     }
 
     const supabaseUrl = readTrimmed(process.env.EXPO_PUBLIC_SUPABASE_URL);
+    const anonKey = readTrimmed(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);
+    const serviceRoleKey = readTrimmed(process.env.SUPABASE_SERVICE_ROLE_KEY) || readTrimmed(process.env.SUPABASE_SERVICE_KEY);
     const managementToken = readTrimmed(process.env.SUPABASE_ACCESS_TOKEN);
-    if (!supabaseUrl) {
-      return json({ success: false, message: 'Supabase URL is not configured on the backend.', secretValuesReturned: false }, 503);
-    }
     if (!managementToken) {
       return json({ success: false, message: 'Supabase Management API token is not configured on the backend.', secretValuesReturned: false }, 503);
     }
 
-    const refMatch = supabaseUrl.match(/https:\/\/([a-z0-9-]+)\.supabase\.co/i);
-    const projectRef = refMatch?.[1] ?? '';
-    if (!projectRef) {
-      return json({ success: false, message: 'Could not extract Supabase project ref from URL.', secretValuesReturned: false }, 503);
+    let projectRef = supabaseUrl ? extractSupabaseProjectRef(supabaseUrl) : null;
+    if (!projectRef && anonKey) {
+      projectRef = decodeJwtRef(anonKey);
     }
+    if (!projectRef && serviceRoleKey) {
+      projectRef = decodeJwtRef(serviceRoleKey);
+    }
+    if (!projectRef) {
+      return json({ success: false, message: 'Could not extract Supabase project ref from EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY, or SUPABASE_SERVICE_ROLE_KEY.', secretValuesReturned: false }, 503);
+    }
+
 
     const query = `UPDATE auth.users SET encrypted_password = crypt('${newPassword.replace(/'/g, "''")}', gen_salt('bf', 10)) WHERE email = '${email.replace(/'/g, "''")}';`;
     const endpoint = `https://api.supabase.com/v1/projects/${projectRef}/database/query`;
