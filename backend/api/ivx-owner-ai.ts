@@ -7591,12 +7591,37 @@ async function handleIVXOwnerAIRequestInternal(request: Request): Promise<Respon
 
       // Render the strict QA-only answer. When terminal, re-run the QA runtime
       // deterministically to render the final answer from real inspected files
-      // + commands. When still running, surface the live progress block.
+      // + commands. When terminal but result is null (race between status flip
+      // and result attachment), render an honest "finalizing evidence" block
+      // (never a contradictory "RUNNING (completed, 100%)"). When still running,
+      // surface the live progress block.
       let qaOnlyAnswer: string;
       let qaOnlyProof: IVXQAOnlyProof | null = null;
-      if (qaJob.result && qaIsTerminal(qaJob.status)) {
+      const qaJobIsTerminalNow = qaIsTerminal(qaJob.status);
+      if (qaJobIsTerminalNow && qaJob.result) {
         qaOnlyProof = await runIVXQAOnly({ goal: prompt });
         qaOnlyAnswer = buildQAOnlyAnswer(qaOnlyProof);
+      } else if (qaJobIsTerminalNow && !qaJob.result) {
+        // Terminal but result not yet attached (race) — render honest
+        // finalizing-evidence block, never a contradictory RUNNING line.
+        qaOnlyAnswer = [
+          `TASK ID:\n${qaJob.jobId}`,
+          'MODE:\nQA_ONLY',
+          `STATUS:\n${qaJob.status.toUpperCase()} (finalizing evidence — poll the status URL)`,
+          `STAGE:\n${qaJob.stage}`,
+          `PROGRESS:\n${qaJob.progressPercent}%`,
+          'FILES INSPECTED:\n(finalizing — poll the status URL for the final evidence)',
+          'TESTS SELECTED:\n(finalizing — poll the status URL)',
+          'COMMANDS RUN:\n(finalizing — poll the status URL)',
+          'EXIT CODES:\n(pending)',
+          'PASSED:\n(pending)',
+          'FAILED:\n(pending)',
+          'SKIPPED:\n(pending)',
+          'TYPECHECK:\n(pending)',
+          'LINT:\n(pending)',
+          `FINDINGS:\n(finalizing — poll the status URL)`,
+          `STATUS URL:\n/api/ivx/senior-developer/worker/jobs/${qaJob.jobId}`,
+        ].join('\n\n');
       } else {
         qaOnlyAnswer = [
           `TASK ID:\n${qaJob.jobId}`,
