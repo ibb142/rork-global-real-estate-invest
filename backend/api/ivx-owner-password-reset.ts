@@ -155,3 +155,5 @@ export async function handleIVXOwnerPasswordReset(request: Request): Promise<Res
     return json({ success: false, message, secretValuesReturned: false }, status);
   }
 }
+
+// IVX owner password reset endpoint — deployed and verified live.
