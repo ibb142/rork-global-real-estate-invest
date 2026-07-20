@@ -161,18 +161,26 @@ export function classifyExecutionModeIntent(prompt: string): IVXExecutionModeCla
   // BEFORE the explanation hatch and the category matchers: detect read-only
   // inspection intent. These prompts must route through the persistent worker
   // as a READ_ONLY job (no file edits / commit / deploy / migrations), never
-  // through the narrative fallback model. Fires when an inspection signal is
-  // combined with a read-only signal (in either order), or when the explicit
-  // "read-only inspection" phrase appears.
+  // through the narrative fallback model.
+  //
+  // CRITICAL: a prompt that asks for a real fix/deploy/build/update (e.g.
+  // "audit this chat ... fix end to end and update deploy live") is NOT a
+  // read-only inspection, even if it contains the word "audit". Read-only
+  // classification requires an EXPLICIT read-only signal AND no strong
+  // mutation/deploy/build signal.
   const INSPECTION_SIGNAL_PATTERN =
-    /\b(?:inspect(?:ion)?(?:\s+(?:code|logs|the\s+\w+|this|that))?|audit\s+(?:the\s+)?code|trace\s+(?:the\s+)?(?:issue|bug|defect|root\s+cause)|report\s+(?:the\s+)?(?:current\s+)?task\s+status|verify\s+(?:the\s+)?(?:implementation|deploy|build)|diagnose\s+(?:the\s+)?(?:bug|issue|defect|root\s+cause))\b/i;
-  const READ_ONLY_SIGNAL_PATTERN =
-    /\b(?:do\s+not\s+(?:change|deploy|modify|edit|commit|push|apply|run|touch)|don'?t\s+(?:change|deploy|modify|edit|commit|push|apply|run|touch)|read[-\s]?only|no\s+changes?\s+(?:required|allowed|needed|made)|without\s+changing|without\s+deploying)\b/i;
+    /\b(?:inspect(?:ion)?(?:\s+(?:code|logs|the\s+\w+|this|that))?|audit\s+(?:the\s+)?(?:code|system|production|backend|frontend|repo|this|that|chat|issue|bug)|trace\s+(?:the\s+)?(?:issue|bug|defect|root\s+cause)|report\s+(?:the\s+)?(?:current\s+)?task\s+status|verify\s+(?:the\s+)?(?:implementation|deploy|build|status)|diagnose\s+(?:the\s+)?(?:bug|issue|defect|root\s+cause))\b/i;
+  const EXPLICIT_READ_ONLY_SIGNAL_PATTERN =
+    /\b(?:do\s+not\s+(?:change|deploy|modify|edit|commit|push|apply|run|touch)|don'?t\s+(?:change|deploy|modify|edit|commit|push|apply|run|touch)|read[-\s]?only|no\s+changes?\s+(?:required|allowed|needed|made|this\s+pass)|just\s+(?:audit|inspect|report|review|look|check|verify)|only\s+(?:audit|inspect|report|review|look|check|verify)|without\s+(?:changing|deploying|modifying|editing|committing|pushing|applying|running|touching)|report\s+(?:only|status|findings)|audit\s+only)\b/i;
   const EXPLICIT_READ_ONLY_INSPECTION_PATTERN = /\bread[-\s]?only\s+inspection\b/i;
+  // Strong mutation/deploy/build signals that override any read-only intent.
+  const MUTATION_DEPLOY_SIGNAL_PATTERN =
+    /\b(?:fix(?:ed|ing|es)?\s+(?:and\s+)?(?:deploy|deploye|deploying|update|push|ship|build|apply|commit|go\s+live)|deploy\s+(?:it|this|that|now|live|to\s+prod|to\s+production|update)|update\s+(?:and\s+)?(?:deploy|deploye|deploying|push|ship|build|apply|go\s+live)|build\s+(?:and\s+)?(?:deploy|deploye|deploying|push|ship|go\s+live)|ship\s+(?:it|this|that|now|today|live)|go\s+live|push\s+(?:to\s+)?(?:prod|production|live|main)|release\s+(?:to\s+)?(?:prod|production|live)|create\s+(?:a\s+)?(?:new\s+)?(?:app|module|feature|service|tool|directory|migration)|run\s+(?:a\s+)?(?:supabase\s+)?migration|install\s+(?:a\s+)?(?:dependency|package|module)|upgrade\s+(?:self|the|this|that)|apply\s+(?:the\s+)?(?:fix|patch|migration))\b/i;
   const hasInspectionSignal = INSPECTION_SIGNAL_PATTERN.test(normalized);
-  const hasReadOnlySignal = READ_ONLY_SIGNAL_PATTERN.test(normalized);
+  const hasExplicitReadOnlySignal = EXPLICIT_READ_ONLY_SIGNAL_PATTERN.test(normalized);
   const hasExplicitInspection = EXPLICIT_READ_ONLY_INSPECTION_PATTERN.test(normalized);
-  if ((hasInspectionSignal && hasReadOnlySignal) || hasExplicitInspection) {
+  const hasMutationDeploySignal = MUTATION_DEPLOY_SIGNAL_PATTERN.test(normalized);
+  if (((hasInspectionSignal && hasExplicitReadOnlySignal) || hasExplicitInspection) && !hasMutationDeploySignal) {
     const trigger = hasExplicitInspection
       ? 'read-only inspection'
       : `${normalized.match(INSPECTION_SIGNAL_PATTERN)?.[0] ?? ''} + ${normalized.match(READ_ONLY_SIGNAL_PATTERN)?.[0] ?? ''}`.trim();
@@ -181,7 +189,7 @@ export function classifyExecutionModeIntent(prompt: string): IVXExecutionModeCla
       category: 'developer_inspection',
       categoryLabel: 'developer inspection',
       matchedTrigger: trigger,
-      reason: `Read-only developer inspection matched ("${trigger}"). Routes through the persistent worker as a READ_ONLY job: inspect files / search code / run read-only tests, NEVER edit/commit/deploy/migrate. Returns the strict inspection format (TASK ID / STATUS / MODE: READ_ONLY / FILES INSPECTED / COMMANDS RUN / FINDINGS / ROOT CAUSE / FILES CHANGED: NONE / COMMIT: NOT REQUESTED / DEPLOYMENT: NOT REQUESTED).`,
+      reason: `Read-only developer inspection matched ("${trigger}"). Explicit read-only signal present, no mutation/deploy/build signal present. Routes through the persistent worker as a READ_ONLY job: inspect files / search code / run read-only tests, NEVER edit/commit/deploy/migrate. Returns the strict inspection format (TASK ID / STATUS / MODE: READ_ONLY / FILES INSPECTED / COMMANDS RUN / FINDINGS / ROOT CAUSE / FILES CHANGED: NONE / COMMIT: NOT REQUESTED / DEPLOYMENT: NOT REQUESTED).`,
     };
   }
 
