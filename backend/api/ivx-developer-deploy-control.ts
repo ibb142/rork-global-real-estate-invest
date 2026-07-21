@@ -49,6 +49,7 @@ type DeveloperDeployAction =
   | 'supabase_revoke_owner_sessions'
   | 'supabase_audit_owner_auth_user'
   | 'send_owner_password_reset_email_via_ses'
+  | 'generate_owner_password_reset_link'
   | 'verify_ses_email_identity'
   | 'list_ses_identities';
 
@@ -115,6 +116,7 @@ function normalizeAction(value: unknown): DeveloperDeployAction {
     || normalized === 'supabase_revoke_owner_sessions'
     || normalized === 'supabase_audit_owner_auth_user'
     || normalized === 'send_owner_password_reset_email_via_ses'
+    || normalized === 'generate_owner_password_reset_link'
     || normalized === 'verify_ses_email_identity'
     || normalized === 'list_ses_identities'
  ) {
@@ -337,6 +339,25 @@ If you did not request this reset, you can safely ignore this email.
     messageId: sendResult.messageId ?? null,
     sesRegion: sendResult.region ?? null,
     sesFrom: sendResult.from ?? null,
+    timestamp: nowIso(),
+    secretValuesReturned: false as const,
+  };
+}
+
+async function runGenerateOwnerPasswordResetLink(input: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const email = readTrimmed(input.email).toLowerCase();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('A valid owner email is required for generate_owner_password_reset_link.');
+  }
+  const redirectTo = readTrimmed(input.redirectTo) || DEFAULT_PASSWORD_RESET_REDIRECT_URL;
+  const actionLink = await generatePasswordResetLinkViaAdminApi(email, redirectTo);
+  return {
+    provider: 'supabase',
+    action: 'generate_owner_password_reset_link',
+    email,
+    redirectTo,
+    actionLink,
+    actionLinkMasked: `${actionLink.slice(0, 60)}...`,
     timestamp: nowIso(),
     secretValuesReturned: false as const,
   };
@@ -1211,6 +1232,9 @@ async function runAction(action: DeveloperDeployAction, input: Record<string, un
   if (action === 'send_owner_password_reset_email_via_ses') {
     return await runSendOwnerPasswordResetEmailViaSES(input);
   }
+  if (action === 'generate_owner_password_reset_link') {
+    return await runGenerateOwnerPasswordResetLink(input);
+  }
   if (action === 'verify_ses_email_identity') {
     return await runVerifySesEmailIdentity(input);
   }
@@ -1231,7 +1255,7 @@ async function auditDeveloperDeployAction(ownerContext: IVXOwnerRequestContext, 
     renderSubdomainPolicy: action === 'render_update_subdomain_policy' ? normalizeRenderSubdomainPolicy(input.renderSubdomainPolicy ?? input.policy) : undefined,
     renderSourceBranch: action === 'render_update_source' ? readTrimmed(input.branch) || 'main' : undefined,
     sqlLength: action === 'supabase_execute_sql' ? readTrimmed(input.sql).length : undefined,
-    resetEmail: action === 'supabase_reset_owner_password' || action === 'send_owner_password_reset_email_via_ses' ? readTrimmed(input.email) : undefined,
+    resetEmail: action === 'supabase_reset_owner_password' || action === 'send_owner_password_reset_email_via_ses' || action === 'generate_owner_password_reset_link' ? readTrimmed(input.email) : undefined,
     resultProvider: readTrimmed(result.provider),
     timestamp: nowIso(),
   });
