@@ -141,6 +141,33 @@ function tryReadBrandAsset(filename: string): Buffer | null {
   return null;
 }
 
+async function fetchBrandAssetFromGitHub(filename: string): Promise<Buffer | null> {
+  const repoUrl = readEnv('GITHUB_REPO_URL') || 'https://github.com/ibb142/rork-global-real-estate-invest';
+  const token = readEnv('GITHUB_TOKEN') || '';
+  const repoPath = repoUrl.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '');
+  const apiUrl = `https://api.github.com/repos/${repoPath}/contents/expo/assets/images/${encodeURIComponent(filename)}?ref=main`;
+  try {
+    const headers: Record<string, string> = {
+      Accept: 'application/vnd.github.raw',
+      'User-Agent': 'ivx-landing-deploy',
+    };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    const response = await fetch(apiUrl, { headers });
+    if (!response.ok) {
+      console.log(`[LandingFullDeploy] GitHub fetch ${filename} failed: HTTP ${response.status}`);
+      return null;
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'github fetch failed';
+    console.log(`[LandingFullDeploy] GitHub fetch ${filename} error: ${message}`);
+    return null;
+  }
+}
+
 /** List all files in the landing directory */
 function listLandingFiles(): string[] {
   const dirCandidates = [
@@ -288,9 +315,13 @@ export async function handleLandingFullDeploy(request: Request): Promise<Respons
     { filename: 'favicon-192.png', key: 'favicon-192.png' },
   ];
   for (const asset of brandAssets) {
-    const buffer = tryReadBrandAsset(asset.filename);
+    let buffer = tryReadBrandAsset(asset.filename);
     if (!buffer) {
-      uploads.push({ key: asset.key, contentType: getContentType(asset.key), bytes: 0, ok: false, error: 'Brand asset not readable' });
+      console.log(`[LandingFullDeploy] Brand asset not found locally, fetching ${asset.filename} from GitHub...`);
+      buffer = await fetchBrandAssetFromGitHub(asset.filename);
+    }
+    if (!buffer) {
+      uploads.push({ key: asset.key, contentType: getContentType(asset.key), bytes: 0, ok: false, error: 'Brand asset not readable and GitHub fetch failed' });
       continue;
     }
     const contentType = getContentType(asset.key);
