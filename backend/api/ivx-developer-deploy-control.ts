@@ -299,6 +299,7 @@ async function runSendOwnerPasswordResetEmailViaSES(input: Record<string, unknow
     throw new Error('A valid owner email is required for send_owner_password_reset_email_via_ses.');
   }
   const redirectTo = readTrimmed(input.redirectTo) || DEFAULT_PASSWORD_RESET_REDIRECT_URL;
+  const fromEmail = readTrimmed(input.fromEmail) || readEnv('IVX_SES_FROM_EMAIL') || readEnv('OWNER_REPAIR_EMAIL') || readEnv('EXPO_PUBLIC_OWNER_EMAIL') || 'security@ivxholding.com';
   const actionLink = await generatePasswordResetLinkViaAdminApi(email, redirectTo);
   const subject = 'Reset your IVX Holdings password';
   const body = `Hello,
@@ -317,6 +318,7 @@ If you did not request this reset, you can safely ignore this email.
     to: email,
     subject,
     body,
+    from: fromEmail,
   });
   if (!sendResult.ok) {
     const missing = Array.isArray(sendResult.missingEnvNames) ? sendResult.missingEnvNames.join(', ') : 'unknown';
