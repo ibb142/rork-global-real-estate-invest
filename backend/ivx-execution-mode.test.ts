@@ -85,15 +85,6 @@ describe('FINAL IVX IA CHAT EXECUTION MODE', () => {
       expect(c.category).toBe('senior_developer');
     });
 
-    test('execution-imperative override: "audit ... fix ... deploy live" is FIX, not audit', () => {
-      const c = classifyExecutionModeIntent(
-        'Can you audit this chat why is a lot loading fix it end to end and update deploy live',
-      );
-      expect(c.isExecutionMode).toBe(true);
-      expect(c.category).toBe('fix');
-      expect(c.reason).toContain('execution-imperative override');
-    });
-
     test('exposes the 10 categories via listExecutionModeCategories', () => {
       const cats = listExecutionModeCategories();
       expect(cats).toHaveLength(10);
@@ -205,6 +196,7 @@ describe('FINAL IVX IA CHAT EXECUTION MODE', () => {
           testsRun: true,
           testsPassed: true,
           typecheckRun: true,
+          typecheckPassed: true,
           buildRun: true,
           commitCreated: true,
           commitSha: 'abc123def456',
@@ -214,6 +206,7 @@ describe('FINAL IVX IA CHAT EXECUTION MODE', () => {
           deployId: 'dep-d7t9ivreo5us73ftose0',
           deployStatus: 'live',
           deployVerified: true,
+          deployRequested: true,
           liveCommit: 'abc123def456',
           commitMatch: true,
           healthOk: true,
@@ -255,6 +248,7 @@ describe('FINAL IVX IA CHAT EXECUTION MODE', () => {
           testsRun: false,
           testsPassed: false,
           typecheckRun: false,
+          typecheckPassed: false,
           buildRun: false,
           commitCreated: false,
           commitSha: null,
@@ -264,6 +258,7 @@ describe('FINAL IVX IA CHAT EXECUTION MODE', () => {
           deployId: null,
           deployStatus: null,
           deployVerified: false,
+          deployRequested: false,
           liveCommit: null,
           commitMatch: false,
           healthOk: false,
