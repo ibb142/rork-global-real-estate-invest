@@ -266,12 +266,57 @@ async function runSupabaseAuditOwnerAuthUser(input: Record<string, unknown>): Pr
 
 const DEFAULT_PASSWORD_RESET_REDIRECT_URL = 'https://ivxholding.com/reset-password';
 
+async function ensureSupabaseAuthRedirectUrl(supabaseUrl: string, redirectTo: string): Promise<void> {
+  const managementToken = readEnv('SUPABASE_ACCESS_TOKEN');
+  if (!managementToken) {
+    console.log('[ensureSupabaseAuthRedirectUrl] SUPABASE_ACCESS_TOKEN not configured; skipping redirect URL registration.');
+    return;
+  }
+  const projectRefMatch = supabaseUrl.match(/https:\/\/([a-z0-9-]+)\.supabase\.co/);
+  const projectRef = projectRefMatch?.[1];
+  if (!projectRef) {
+    console.log('[ensureSupabaseAuthRedirectUrl] Could not extract project ref from Supabase URL:', supabaseUrl);
+    return;
+  }
+  try {
+    const getUrl = `https://api.supabase.com/v1/projects/${projectRef}/config/auth`;
+    const getResp = await fetch(getUrl, { headers: { Authorization: `Bearer ${managementToken}`, Accept: 'application/json' } });
+    const getText = await getResp.text();
+    if (!getResp.ok) {
+      console.log(`[ensureSupabaseAuthRedirectUrl] GET auth config failed: ${getResp.status} ${getText.slice(0, 200)}`);
+      return;
+    }
+    const config = JSON.parse(getText) as { redirect_urls?: string[]; };
+    const existingUrls = Array.isArray(config.redirect_urls) ? config.redirect_urls : [];
+    if (existingUrls.includes(redirectTo)) {
+      console.log('[ensureSupabaseAuthRedirectUrl] Redirect URL already allowed:', redirectTo);
+      return;
+    }
+    const patchUrl = `https://api.supabase.com/v1/projects/${projectRef}/config/auth`;
+    const patchBody = JSON.stringify({ redirect_urls: [...existingUrls, redirectTo] });
+    const patchResp = await fetch(patchUrl, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${managementToken}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: patchBody,
+    });
+    const patchText = await patchResp.text();
+    if (!patchResp.ok) {
+      console.log(`[ensureSupabaseAuthRedirectUrl] PATCH auth config failed: ${patchResp.status} ${patchText.slice(0, 200)}`);
+      return;
+    }
+    console.log('[ensureSupabaseAuthRedirectUrl] Added redirect URL:', redirectTo);
+  } catch (err) {
+    console.log('[ensureSupabaseAuthRedirectUrl] Error:', err instanceof Error ? err.message : String(err));
+  }
+}
+
 async function generatePasswordResetLinkViaAdminApi(email: string, redirectTo: string): Promise<string> {
   const supabaseUrl = readEnv('EXPO_PUBLIC_SUPABASE_URL') || readEnv('SUPABASE_URL');
   const serviceRoleKey = readEnv('SUPABASE_SERVICE_ROLE_KEY') || readEnv('SUPABASE_SERVICE_KEY');
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error('Supabase URL or service role key is not configured on the backend.');
   }
+  await ensureSupabaseAuthRedirectUrl(supabaseUrl, redirectTo);
   const url = `${supabaseUrl.replace(/\/$/, '')}/auth/v1/admin/generate_link`;
   const response = await fetch(url, {
     method: 'POST',
