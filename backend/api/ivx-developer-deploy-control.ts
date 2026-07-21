@@ -319,7 +319,8 @@ If you did not request this reset, you can safely ignore this email.
     body,
   });
   if (!sendResult.ok) {
-    throw new Error(`SES send failed: ${sendResult.status}${sendResult.error ? ` — ${sendResult.error}` : ''}`);
+    const missing = Array.isArray(sendResult.missingEnvNames) ? sendResult.missingEnvNames.join(', ') : 'unknown';
+    throw new Error(`SES send failed: ${sendResult.status}${sendResult.error ? ` — ${sendResult.error}` : ''} (missing: ${missing})`);
   }
   return {
     provider: 'ses',
