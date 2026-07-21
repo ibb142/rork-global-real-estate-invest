@@ -408,9 +408,13 @@ async function runDisableSupabaseMfaAal2Enforcement(): Promise<Record<string, un
   }
   const beforeConfig = JSON.parse(getText) as Record<string, unknown>;
 
+  // Supabase controls whether an AAL1 session can perform sensitive operations
+  // (update password/email) when MFA is enrolled via `mfa_allow_low_aal`.
+  // Setting it to true makes MFA optional: enrolled users are not forced to
+  // re-authenticate with AAL2 for password/email updates. TOTP enrollment
+  // remains available as an optional setting in the app.
   const targetSettings = {
-    security_update_password_require_aal2: false,
-    security_update_email_require_aal2: false,
+    mfa_allow_low_aal: true,
   };
 
   const patchBody = JSON.stringify(targetSettings);
@@ -431,26 +435,26 @@ async function runDisableSupabaseMfaAal2Enforcement(): Promise<Record<string, un
   }
   const afterConfig = JSON.parse(getText2) as Record<string, unknown>;
 
-  const passwordAal2Before = beforeConfig.security_update_password_require_aal2;
-  const emailAal2Before = beforeConfig.security_update_email_require_aal2;
-  const passwordAal2After = afterConfig.security_update_password_require_aal2;
-  const emailAal2After = afterConfig.security_update_email_require_aal2;
+  const mfaAllowLowAalBefore = beforeConfig.mfa_allow_low_aal;
+  const mfaAllowLowAalAfter = afterConfig.mfa_allow_low_aal;
+  const mfaTotpEnrollEnabledAfter = afterConfig.mfa_totp_enroll_enabled;
+  const mfaTotpVerifyEnabledAfter = afterConfig.mfa_totp_verify_enabled;
 
-  const allDisabled = passwordAal2After === false && emailAal2After === false;
+  const aal2EnforcementDisabled = mfaAllowLowAalAfter === true;
 
   return {
     provider: 'supabase',
     action: 'disable_supabase_mfa_aal2_enforcement',
     projectRef,
-    passwordAal2Before,
-    emailAal2Before,
-    passwordAal2After,
-    emailAal2After,
-    aal2EnforcementDisabled: allDisabled,
+    mfaAllowLowAalBefore,
+    mfaAllowLowAalAfter,
+    mfaTotpEnrollEnabledAfter,
+    mfaTotpVerifyEnabledAfter,
+    aal2EnforcementDisabled,
     patchStatus: patchResp.status,
-    message: allDisabled
-      ? 'Supabase AAL2 enforcement for password and email updates is now disabled. MFA remains available as an optional setting.'
-      : 'PATCH accepted but AAL2 settings are not both false after re-read.',
+    message: aal2EnforcementDisabled
+      ? 'Supabase AAL2 enforcement is now disabled. MFA (TOTP) remains available as an optional setting in the app.'
+      : 'PATCH accepted but mfa_allow_low_aal is not true after re-read.',
     timestamp: nowIso(),
     secretValuesReturned: false,
   };
