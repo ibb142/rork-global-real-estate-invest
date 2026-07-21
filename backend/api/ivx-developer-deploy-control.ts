@@ -300,8 +300,9 @@ async function ensureSupabaseAuthRedirectUrl(supabaseUrl: string, redirectTo: st
     if (!getResp.ok) {
       return { ok: false, tokenPresent: true, projectRef, getStatus: getResp.status, getError: getText.slice(0, 300), message: `GET auth config failed: HTTP ${getResp.status}` };
     }
-    const getConfig = JSON.parse(getText) as { redirect_urls?: string[]; redirect_url?: string; site_url?: string; };
-    const redirectUrls = Array.isArray(getConfig.redirect_urls) ? getConfig.redirect_urls : (getConfig.redirect_url ? [getConfig.redirect_url] : []);
+    const getConfig = JSON.parse(getText) as { uri_allow_list?: string; site_url?: string; };
+    const rawAllowList = typeof getConfig.uri_allow_list === 'string' ? getConfig.uri_allow_list : '';
+    const redirectUrls = rawAllowList.split(/[\s,]+/).map((u) => u.trim()).filter(Boolean);
     const beforeUrls = [...redirectUrls];
 
     if (redirectUrls.includes(redirectTo)) {
@@ -309,9 +310,10 @@ async function ensureSupabaseAuthRedirectUrl(supabaseUrl: string, redirectTo: st
     }
 
     const nextUrls = [...redirectUrls, redirectTo];
+    const nextAllowList = nextUrls.join(' ');
 
-    // Try PATCH first
-    const patchBody = JSON.stringify({ redirect_urls: nextUrls, site_url: getConfig.site_url || 'https://ivxholding.com' });
+    // PATCH using the correct Supabase field name uri_allow_list
+    const patchBody = JSON.stringify({ uri_allow_list: nextAllowList, site_url: 'https://ivxholding.com' });
     const patchResp = await fetch(authUrl, {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${managementToken}`, 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -326,34 +328,16 @@ async function ensureSupabaseAuthRedirectUrl(supabaseUrl: string, redirectTo: st
     // Re-read to verify
     const getResp2 = await fetch(authUrl, { headers: { Authorization: `Bearer ${managementToken}`, Accept: 'application/json' } });
     const getText2 = await getResp2.text();
-    const afterConfig = JSON.parse(getText2) as { redirect_urls?: string[]; redirect_url?: string; };
-    const afterUrls = Array.isArray(afterConfig.redirect_urls) ? afterConfig.redirect_urls : (afterConfig.redirect_url ? [afterConfig.redirect_url] : []);
+    const afterConfig = JSON.parse(getText2) as { uri_allow_list?: string; };
+    const afterUrls = typeof afterConfig.uri_allow_list === 'string'
+      ? afterConfig.uri_allow_list.split(/[\s,]+/).map((u) => u.trim()).filter(Boolean)
+      : [];
 
     if (afterUrls.includes(redirectTo)) {
       return { ok: true, tokenPresent: true, projectRef, getResponse: getText.slice(0, 400), beforeUrls, afterUrls, patchStatus: patchResp.status, patchBody, message: 'Added redirect URL to Supabase auth config (verified by re-read).' };
     }
 
-    // PATCH reported OK but URL not present — try PUT with full config
-    const putBody = JSON.stringify({ ...afterConfig, redirect_urls: nextUrls, site_url: getConfig.site_url || 'https://ivxholding.com' });
-    const putResp = await fetch(authUrl, {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${managementToken}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: putBody,
-    });
-    const putText = await putResp.text();
-    if (!putResp.ok) {
-      return { ok: false, tokenPresent: true, projectRef, getResponse: getText.slice(0, 400), beforeUrls, afterUrls, patchStatus: patchResp.status, patchBody, putStatus: putResp.status, putError: putText.slice(0, 300), putBody, message: `PATCH accepted but URL missing; PUT failed: HTTP ${putResp.status}` };
-    }
-
-    const getResp3 = await fetch(authUrl, { headers: { Authorization: `Bearer ${managementToken}`, Accept: 'application/json' } });
-    const getText3 = await getResp3.text();
-    const finalConfig = JSON.parse(getText3) as { redirect_urls?: string[]; redirect_url?: string; };
-    const finalUrls = Array.isArray(finalConfig.redirect_urls) ? finalConfig.redirect_urls : (finalConfig.redirect_url ? [finalConfig.redirect_url] : []);
-
-    if (finalUrls.includes(redirectTo)) {
-      return { ok: true, tokenPresent: true, projectRef, getResponse: getText.slice(0, 400), beforeUrls, afterUrls: finalUrls, patchStatus: patchResp.status, patchBody, putStatus: putResp.status, putBody, message: 'Added redirect URL via PUT after PATCH did not persist.' };
-    }
-    return { ok: false, tokenPresent: true, projectRef, getResponse: getText.slice(0, 400), beforeUrls, afterUrls: finalUrls, patchStatus: patchResp.status, patchBody, putStatus: putResp.status, putError: putText.slice(0, 300), putBody, message: 'PATCH and PUT both accepted but URL still not present in config.' };
+    return { ok: false, tokenPresent: true, projectRef, getResponse: getText.slice(0, 400), beforeUrls, afterUrls, patchStatus: patchResp.status, patchError: patchText.slice(0, 300), patchBody, message: 'PATCH accepted but URL not present in uri_allow_list after re-read.' };
   } catch (err) {
     return { ok: false, tokenPresent: true, projectRef, message: err instanceof Error ? err.message : String(err) };
   }
