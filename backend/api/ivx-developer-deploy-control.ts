@@ -280,7 +280,7 @@ async function generatePasswordResetLinkViaAdminApi(email: string, redirectTo: s
       'apikey': serviceRoleKey,
       'Authorization': `Bearer ${serviceRoleKey}`,
     },
-    body: JSON.stringify({ type: 'recovery', email, options: { redirectTo } }),
+    body: JSON.stringify({ type: 'recovery', email, options: { redirect_to: redirectTo } }),
   });
   const text = await response.text();
   if (!response.ok) {
