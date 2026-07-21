@@ -260,22 +260,46 @@ async function runSupabaseAuditOwnerAuthUser(input: Record<string, unknown>): Pr
 
 const DEFAULT_PASSWORD_RESET_REDIRECT_URL = 'https://ivxholding.com/reset-password';
 
+async function generatePasswordResetLinkViaAdminApi(email: string, redirectTo: string): Promise<string> {
+  const supabaseUrl = readEnv('EXPO_PUBLIC_SUPABASE_URL') || readEnv('SUPABASE_URL');
+  const serviceRoleKey = readEnv('SUPABASE_SERVICE_ROLE_KEY') || readEnv('SUPABASE_SERVICE_KEY');
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('Supabase URL or service role key is not configured on the backend.');
+  }
+  const url = `${supabaseUrl.replace(/\/$/, '')}/auth/v1/admin/generate_link`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': serviceRoleKey,
+      'Authorization': `Bearer ${serviceRoleKey}`,
+    },
+    body: JSON.stringify({ type: 'recovery', email, options: { redirectTo } }),
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`Supabase admin generate_link failed: HTTP ${response.status} ${text.slice(0, 400)}`);
+  }
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    throw new Error('Supabase admin generate_link returned invalid JSON.');
+  }
+  const actionLink = parsed.action_link || parsed.action_link;
+  if (typeof actionLink !== 'string' || !actionLink) {
+    throw new Error('Supabase admin generate_link response did not contain a valid action_link.');
+  }
+  return actionLink;
+}
+
 async function runSendOwnerPasswordResetEmailViaSES(input: Record<string, unknown>): Promise<Record<string, unknown>> {
   const email = readTrimmed(input.email).toLowerCase();
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new Error('A valid owner email is required for send_owner_password_reset_email_via_ses.');
   }
   const redirectTo = readTrimmed(input.redirectTo) || DEFAULT_PASSWORD_RESET_REDIRECT_URL;
-  const admin = resolveSupabaseAdminClient();
-  const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
-    type: 'recovery',
-    email,
-    options: { redirectTo },
-  });
-  if (linkError || !linkData || !(linkData as any).action_link) {
-    throw new Error(`Supabase generateLink failed: ${linkError?.message ?? 'no action_link returned'}`);
-  }
-  const actionLink = (linkData as any).action_link as string;
+  const actionLink = await generatePasswordResetLinkViaAdminApi(email, redirectTo);
   const subject = 'Reset your IVX Holdings password';
   const body = `Hello,
 
