@@ -306,6 +306,7 @@ export async function handleLandingFullDeploy(request: Request): Promise<Respons
   console.log('[LandingFullDeploy] Uploading brand assets from expo/assets/images/');
   const brandAssets = [
     { filename: 'ivx-logo.png', key: 'ivx-logo.png' },
+    { filename: 'ivx-logo-master.png', key: 'ivx-logo-master.png' },
     { filename: 'ivx-symbol.png', key: 'ivx-symbol.png' },
     { filename: 'ivx-og-image.png', key: 'ivx-og-image.png' },
     { filename: 'favicon.png', key: 'favicon.png' },
