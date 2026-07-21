@@ -2,6 +2,7 @@ import { gunzipSync } from 'node:zlib';
 import { createClient } from '@supabase/supabase-js';
 import { buildIVXCredentialRequestManifestSnapshot, IVX_REQUESTED_PRODUCTION_ACCESS_ENV_NAMES } from '../config/ivx-credential-request-manifest';
 import { getIVXOwnerVariableRuntimeValue, hasIVXOwnerVariableRuntimeValue } from './ivx-owner-variables';
+import { sendSesEmail } from '../services/ivx-ses-email';
 import { assertIVXOwnerOnly, ownerOnlyJson, ownerOnlyOptions, type IVXOwnerRequestContext } from './owner-only';
 import { checkPreExecutionGate } from '../services/ivx-pre-execution-gate-middleware';
 
@@ -46,7 +47,8 @@ type DeveloperDeployAction =
   | 'supabase_execute_sql'
   | 'supabase_reset_owner_password'
   | 'supabase_revoke_owner_sessions'
-  | 'supabase_audit_owner_auth_user';
+  | 'supabase_audit_owner_auth_user'
+  | 'send_owner_password_reset_email_via_ses';
 
 type DeveloperDeployRequest = {
   action?: unknown;
@@ -110,6 +112,7 @@ function normalizeAction(value: unknown): DeveloperDeployAction {
     || normalized === 'supabase_reset_owner_password'
     || normalized === 'supabase_revoke_owner_sessions'
     || normalized === 'supabase_audit_owner_auth_user'
+    || normalized === 'send_owner_password_reset_email_via_ses'
  ) {
     return normalized;
   }
@@ -250,6 +253,59 @@ async function runSupabaseAuditOwnerAuthUser(input: Record<string, unknown>): Pr
     identitiesCount: Array.isArray(user.identities) ? user.identities.length : 0,
     appMetadata: user.app_metadata ?? {},
     userMetadata: user.user_metadata ?? {},
+    timestamp: nowIso(),
+    secretValuesReturned: false as const,
+  };
+}
+
+const DEFAULT_PASSWORD_RESET_REDIRECT_URL = 'https://ivxholding.com/reset-password';
+
+async function runSendOwnerPasswordResetEmailViaSES(input: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const email = readTrimmed(input.email).toLowerCase();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('A valid owner email is required for send_owner_password_reset_email_via_ses.');
+  }
+  const redirectTo = readTrimmed(input.redirectTo) || DEFAULT_PASSWORD_RESET_REDIRECT_URL;
+  const admin = resolveSupabaseAdminClient();
+  const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
+    type: 'recovery',
+    email,
+    options: { redirectTo },
+  });
+  if (linkError || !linkData || !(linkData as any).action_link) {
+    throw new Error(`Supabase generateLink failed: ${linkError?.message ?? 'no action_link returned'}`);
+  }
+  const actionLink = (linkData as any).action_link as string;
+  const subject = 'Reset your IVX Holdings password';
+  const body = `Hello,
+
+You requested a password reset for your IVX Holdings account.
+
+Tap or click the link below to choose a new password. This link expires in 60 minutes:
+
+${actionLink}
+
+If you did not request this reset, you can safely ignore this email.
+
+— IVX Holdings Security`;
+
+  const sendResult = await sendSesEmail({
+    to: email,
+    subject,
+    body,
+  });
+  if (!sendResult.ok) {
+    throw new Error(`SES send failed: ${sendResult.status}${sendResult.error ? ` — ${sendResult.error}` : ''}`);
+  }
+  return {
+    provider: 'ses',
+    action: 'send_owner_password_reset_email_via_ses',
+    email,
+    redirectTo,
+    sentAt: sendResult.sentAt,
+    messageId: sendResult.messageId ?? null,
+    sesRegion: sendResult.region ?? null,
+    sesFrom: sendResult.from ?? null,
     timestamp: nowIso(),
     secretValuesReturned: false as const,
   };
@@ -1083,6 +1139,9 @@ async function runAction(action: DeveloperDeployAction, input: Record<string, un
   if (action === 'supabase_audit_owner_auth_user') {
     return await runSupabaseAuditOwnerAuthUser(input);
   }
+  if (action === 'send_owner_password_reset_email_via_ses') {
+    return await runSendOwnerPasswordResetEmailViaSES(input);
+  }
   return await runSupabaseExecuteSql(input);
 }
 
@@ -1097,7 +1156,7 @@ async function auditDeveloperDeployAction(ownerContext: IVXOwnerRequestContext, 
     renderSubdomainPolicy: action === 'render_update_subdomain_policy' ? normalizeRenderSubdomainPolicy(input.renderSubdomainPolicy ?? input.policy) : undefined,
     renderSourceBranch: action === 'render_update_source' ? readTrimmed(input.branch) || 'main' : undefined,
     sqlLength: action === 'supabase_execute_sql' ? readTrimmed(input.sql).length : undefined,
-    resetEmail: action === 'supabase_reset_owner_password' ? readTrimmed(input.email) : undefined,
+    resetEmail: action === 'supabase_reset_owner_password' || action === 'send_owner_password_reset_email_via_ses' ? readTrimmed(input.email) : undefined,
     resultProvider: readTrimmed(result.provider),
     timestamp: nowIso(),
   });
