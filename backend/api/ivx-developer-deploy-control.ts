@@ -266,7 +266,23 @@ async function runSupabaseAuditOwnerAuthUser(input: Record<string, unknown>): Pr
 
 const DEFAULT_PASSWORD_RESET_REDIRECT_URL = 'https://ivxholding.com/reset-password';
 
-async function ensureSupabaseAuthRedirectUrl(supabaseUrl: string, redirectTo: string): Promise<{ ok: boolean; tokenPresent: boolean; projectRef: string | null; getStatus?: number; getError?: string; existingUrls?: string[]; patchStatus?: number; patchError?: string; message: string; }> {
+async function ensureSupabaseAuthRedirectUrl(supabaseUrl: string, redirectTo: string): Promise<{
+  ok: boolean;
+  tokenPresent: boolean;
+  projectRef: string | null;
+  getStatus?: number;
+  getError?: string;
+  getResponse?: string;
+  beforeUrls?: string[];
+  afterUrls?: string[];
+  patchStatus?: number;
+  patchError?: string;
+  patchBody?: string;
+  putStatus?: number;
+  putError?: string;
+  putBody?: string;
+  message: string;
+}> {
   const managementToken = readEnv('SUPABASE_ACCESS_TOKEN');
   if (!managementToken) {
     return { ok: false, tokenPresent: false, projectRef: null, message: 'SUPABASE_ACCESS_TOKEN not configured in runtime.' };
@@ -277,29 +293,67 @@ async function ensureSupabaseAuthRedirectUrl(supabaseUrl: string, redirectTo: st
     return { ok: false, tokenPresent: true, projectRef, message: `Could not extract project ref from Supabase URL: ${supabaseUrl}` };
   }
   try {
-    const getUrl = `https://api.supabase.com/v1/projects/${projectRef}/config/auth`;
-    const getResp = await fetch(getUrl, { headers: { Authorization: `Bearer ${managementToken}`, Accept: 'application/json' } });
+    const authUrl = `https://api.supabase.com/v1/projects/${projectRef}/config/auth`;
+
+    const getResp = await fetch(authUrl, { headers: { Authorization: `Bearer ${managementToken}`, Accept: 'application/json' } });
     const getText = await getResp.text();
     if (!getResp.ok) {
       return { ok: false, tokenPresent: true, projectRef, getStatus: getResp.status, getError: getText.slice(0, 300), message: `GET auth config failed: HTTP ${getResp.status}` };
     }
-    const config = JSON.parse(getText) as { redirect_urls?: string[]; };
-    const existingUrls = Array.isArray(config.redirect_urls) ? config.redirect_urls : [];
-    if (existingUrls.includes(redirectTo)) {
-      return { ok: true, tokenPresent: true, projectRef, existingUrls, message: 'Redirect URL already allowed.' };
+    const getConfig = JSON.parse(getText) as { redirect_urls?: string[]; redirect_url?: string; site_url?: string; };
+    const redirectUrls = Array.isArray(getConfig.redirect_urls) ? getConfig.redirect_urls : (getConfig.redirect_url ? [getConfig.redirect_url] : []);
+    const beforeUrls = [...redirectUrls];
+
+    if (redirectUrls.includes(redirectTo)) {
+      return { ok: true, tokenPresent: true, projectRef, getResponse: getText.slice(0, 400), beforeUrls, afterUrls: beforeUrls, message: 'Redirect URL already allowed.' };
     }
-    const patchUrl = `https://api.supabase.com/v1/projects/${projectRef}/config/auth`;
-    const patchBody = JSON.stringify({ redirect_urls: [...existingUrls, redirectTo] });
-    const patchResp = await fetch(patchUrl, {
+
+    const nextUrls = [...redirectUrls, redirectTo];
+
+    // Try PATCH first
+    const patchBody = JSON.stringify({ redirect_urls: nextUrls, site_url: getConfig.site_url || 'https://ivxholding.com' });
+    const patchResp = await fetch(authUrl, {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${managementToken}`, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: patchBody,
     });
     const patchText = await patchResp.text();
+
     if (!patchResp.ok) {
-      return { ok: false, tokenPresent: true, projectRef, existingUrls, patchStatus: patchResp.status, patchError: patchText.slice(0, 300), message: `PATCH auth config failed: HTTP ${patchResp.status}` };
+      return { ok: false, tokenPresent: true, projectRef, getResponse: getText.slice(0, 400), beforeUrls, patchStatus: patchResp.status, patchError: patchText.slice(0, 300), patchBody, message: `PATCH auth config failed: HTTP ${patchResp.status}` };
     }
-    return { ok: true, tokenPresent: true, projectRef, existingUrls, message: 'Added redirect URL to Supabase auth config.' };
+
+    // Re-read to verify
+    const getResp2 = await fetch(authUrl, { headers: { Authorization: `Bearer ${managementToken}`, Accept: 'application/json' } });
+    const getText2 = await getResp2.text();
+    const afterConfig = JSON.parse(getText2) as { redirect_urls?: string[]; redirect_url?: string; };
+    const afterUrls = Array.isArray(afterConfig.redirect_urls) ? afterConfig.redirect_urls : (afterConfig.redirect_url ? [afterConfig.redirect_url] : []);
+
+    if (afterUrls.includes(redirectTo)) {
+      return { ok: true, tokenPresent: true, projectRef, getResponse: getText.slice(0, 400), beforeUrls, afterUrls, patchStatus: patchResp.status, patchBody, message: 'Added redirect URL to Supabase auth config (verified by re-read).' };
+    }
+
+    // PATCH reported OK but URL not present — try PUT with full config
+    const putBody = JSON.stringify({ ...afterConfig, redirect_urls: nextUrls, site_url: getConfig.site_url || 'https://ivxholding.com' });
+    const putResp = await fetch(authUrl, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${managementToken}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: putBody,
+    });
+    const putText = await putResp.text();
+    if (!putResp.ok) {
+      return { ok: false, tokenPresent: true, projectRef, getResponse: getText.slice(0, 400), beforeUrls, afterUrls, patchStatus: patchResp.status, patchBody, putStatus: putResp.status, putError: putText.slice(0, 300), putBody, message: `PATCH accepted but URL missing; PUT failed: HTTP ${putResp.status}` };
+    }
+
+    const getResp3 = await fetch(authUrl, { headers: { Authorization: `Bearer ${managementToken}`, Accept: 'application/json' } });
+    const getText3 = await getResp3.text();
+    const finalConfig = JSON.parse(getText3) as { redirect_urls?: string[]; redirect_url?: string; };
+    const finalUrls = Array.isArray(finalConfig.redirect_urls) ? finalConfig.redirect_urls : (finalConfig.redirect_url ? [finalConfig.redirect_url] : []);
+
+    if (finalUrls.includes(redirectTo)) {
+      return { ok: true, tokenPresent: true, projectRef, getResponse: getText.slice(0, 400), beforeUrls, afterUrls: finalUrls, patchStatus: patchResp.status, patchBody, putStatus: putResp.status, putBody, message: 'Added redirect URL via PUT after PATCH did not persist.' };
+    }
+    return { ok: false, tokenPresent: true, projectRef, getResponse: getText.slice(0, 400), beforeUrls, afterUrls: finalUrls, patchStatus: patchResp.status, patchBody, putStatus: putResp.status, putError: putText.slice(0, 300), putBody, message: 'PATCH and PUT both accepted but URL still not present in config.' };
   } catch (err) {
     return { ok: false, tokenPresent: true, projectRef, message: err instanceof Error ? err.message : String(err) };
   }
