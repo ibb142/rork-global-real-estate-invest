@@ -312,7 +312,7 @@ async function ensureSupabaseAuthRedirectUrl(supabaseUrl: string, redirectTo: st
     const nextUrls = [...redirectUrls, redirectTo];
     const nextAllowList = nextUrls.join(' ');
 
-    // PATCH using the correct Supabase field name uri_allow_list
+    // PATCH using the correct Supabase field name uri_allow_list; keep site_url as the app base URL.
     const patchBody = JSON.stringify({ uri_allow_list: nextAllowList, site_url: 'https://ivxholding.com' });
     const patchResp = await fetch(authUrl, {
       method: 'PATCH',
@@ -370,11 +370,22 @@ async function generatePasswordResetLinkViaAdminApi(email: string, redirectTo: s
   } catch {
     throw new Error('Supabase admin generate_link returned invalid JSON.');
   }
-  const actionLink = parsed.action_link || parsed.action_link;
+  let actionLink = parsed.action_link || parsed.action_link;
   if (typeof actionLink !== 'string' || !actionLink) {
     throw new Error('Supabase admin generate_link response did not contain a valid action_link.');
   }
+  actionLink = replaceRedirectUrlInSupabaseActionLink(actionLink, redirectTo);
   return { actionLink, redirectUrlStatus };
+}
+
+function replaceRedirectUrlInSupabaseActionLink(actionLink: string, redirectTo: string): string {
+  try {
+    const url = new URL(actionLink);
+    url.searchParams.set('redirect_to', redirectTo);
+    return url.toString();
+  } catch {
+    return actionLink;
+  }
 }
 
 async function runSendOwnerPasswordResetEmailViaSES(input: Record<string, unknown>): Promise<Record<string, unknown>> {
