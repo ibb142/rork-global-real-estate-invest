@@ -481,13 +481,17 @@ async function runDisableSupabaseMfaAal2Enforcement(): Promise<Record<string, un
   }
   const beforeConfig = JSON.parse(getText) as Record<string, unknown>;
 
-  // Supabase controls whether an AAL1 session can perform sensitive operations
-  // (update password/email) when MFA is enrolled via `mfa_allow_low_aal`.
-  // Setting it to true makes MFA optional: enrolled users are not forced to
-  // re-authenticate with AAL2 for password/email updates. TOTP enrollment
-  // remains available as an optional setting in the app.
+  // The Supabase auth config PATCH endpoint appears to ignore isolated
+  // mfa_allow_low_aal changes. We include the existing site_url and uri_allow_list
+  // in the same PATCH body (same pattern that successfully changed uri_allow_list)
+  // and also include the related MFA fields so the change is accepted.
   const targetSettings = {
+    site_url: 'https://ivxholding.com',
+    uri_allow_list: 'https://ivxholding.com/reset-password.html',
     mfa_allow_low_aal: true,
+    mfa_max_enrolled_factors: 10,
+    mfa_totp_enroll_enabled: true,
+    mfa_totp_verify_enabled: true,
   };
 
   const patchBody = JSON.stringify(targetSettings);
@@ -512,6 +516,8 @@ async function runDisableSupabaseMfaAal2Enforcement(): Promise<Record<string, un
   const mfaAllowLowAalAfter = afterConfig.mfa_allow_low_aal;
   const mfaTotpEnrollEnabledAfter = afterConfig.mfa_totp_enroll_enabled;
   const mfaTotpVerifyEnabledAfter = afterConfig.mfa_totp_verify_enabled;
+  const mfaMaxEnrolledFactorsAfter = afterConfig.mfa_max_enrolled_factors;
+  const uriAllowListAfter = afterConfig.uri_allow_list;
 
   const aal2EnforcementDisabled = mfaAllowLowAalAfter === true;
 
@@ -521,13 +527,16 @@ async function runDisableSupabaseMfaAal2Enforcement(): Promise<Record<string, un
     projectRef,
     mfaAllowLowAalBefore,
     mfaAllowLowAalAfter,
+    mfaMaxEnrolledFactorsAfter,
     mfaTotpEnrollEnabledAfter,
     mfaTotpVerifyEnabledAfter,
+    uriAllowListAfter,
     aal2EnforcementDisabled,
     patchStatus: patchResp.status,
+    patchResponsePreview: patchText.slice(0, 300),
     message: aal2EnforcementDisabled
       ? 'Supabase AAL2 enforcement is now disabled. MFA (TOTP) remains available as an optional setting in the app.'
-      : 'PATCH accepted but mfa_allow_low_aal is not true after re-read.',
+      : 'PATCH accepted but mfa_allow_low_aal is not true after re-read. Supabase Management API may require this change to be made in the Supabase dashboard.',
     timestamp: nowIso(),
     secretValuesReturned: false,
   };
