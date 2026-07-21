@@ -53,7 +53,8 @@ type DeveloperDeployAction =
   | 'verify_ses_email_identity'
   | 'list_ses_identities'
   | 'get_supabase_auth_config'
-  | 'disable_supabase_mfa_aal2_enforcement';
+  | 'disable_supabase_mfa_aal2_enforcement'
+  | 'unenroll_owner_mfa_factor';
 
 type DeveloperDeployRequest = {
   action?: unknown;
@@ -123,6 +124,7 @@ function normalizeAction(value: unknown): DeveloperDeployAction {
     || normalized === 'list_ses_identities'
     || normalized === 'get_supabase_auth_config'
     || normalized === 'disable_supabase_mfa_aal2_enforcement'
+    || normalized === 'unenroll_owner_mfa_factor'
  ) {
     return normalized;
   }
@@ -383,6 +385,77 @@ async function getSupabaseAuthConfig(): Promise<{
   } catch (err) {
     return { ok: false, projectRef, config: null, message: err instanceof Error ? err.message : String(err) };
   }
+}
+
+async function runUnenrollOwnerMfaFactor(input: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const email = readTrimmed(input.email).toLowerCase() || 'iperez4242@gmail.com';
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('A valid owner email is required for unenroll_owner_mfa_factor.');
+  }
+  const supabaseUrl = readEnv('EXPO_PUBLIC_SUPABASE_URL') || readEnv('SUPABASE_URL');
+  const serviceRoleKey = readEnv('SUPABASE_SERVICE_ROLE_KEY') || readEnv('SUPABASE_SERVICE_KEY');
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('Supabase URL or service role key is not configured on the backend.');
+  }
+  const adminUrl = `${supabaseUrl.replace(/\/$/, '')}/auth/v1/admin`;
+  const adminHeaders = {
+    'Content-Type': 'application/json',
+    'apikey': serviceRoleKey,
+    'Authorization': `Bearer ${serviceRoleKey}`,
+  };
+
+  // Find the user by email.
+  const listResp = await fetch(`${adminUrl}/users?per_page=1000&page=1`, { headers: adminHeaders });
+  const listText = await listResp.text();
+  if (!listResp.ok) {
+    throw new Error(`Supabase listUsers failed: HTTP ${listResp.status} ${listText.slice(0, 300)}`);
+  }
+  const listData = JSON.parse(listText) as { users?: Array<{ id: string; email?: string | null }> };
+  const user = (listData.users ?? []).find((u) => (u.email ?? '').toLowerCase() === email);
+  if (!user) {
+    throw new Error(`No Supabase auth user found for email ${email}.`);
+  }
+  const userId = user.id;
+
+  // List MFA factors for this user.
+  const factorsResp = await fetch(`${adminUrl}/users/${userId}/factors`, { headers: adminHeaders });
+  const factorsText = await factorsResp.text();
+  if (!factorsResp.ok) {
+    throw new Error(`Supabase list factors failed: HTTP ${factorsResp.status} ${factorsText.slice(0, 300)}`);
+  }
+  const factorsData = JSON.parse(factorsText) as { factors?: Array<{ id: string; factor_type: string; status: string; friendly_name?: string }> };
+  const factors = factorsData.factors ?? [];
+
+  // Unenroll every factor.
+  const unenrolled: Array<{ factorId: string; factorType: string; status: string; ok: boolean; httpStatus?: number; error?: string }> = [];
+  for (const factor of factors) {
+    const factorId = factor.id;
+    const delResp = await fetch(`${adminUrl}/users/${userId}/factors/${factorId}`, {
+      method: 'DELETE',
+      headers: adminHeaders,
+    });
+    const delText = await delResp.text();
+    unenrolled.push({
+      factorId,
+      factorType: factor.factor_type,
+      status: factor.status,
+      ok: delResp.ok,
+      httpStatus: delResp.status,
+      error: delResp.ok ? undefined : delText.slice(0, 200),
+    });
+  }
+
+  return {
+    provider: 'supabase',
+    action: 'unenroll_owner_mfa_factor',
+    email,
+    userId,
+    factorsBeforeCount: factors.length,
+    factorsUnenrolled: unenrolled,
+    allUnenrolled: unenrolled.every((f) => f.ok),
+    timestamp: nowIso(),
+    secretValuesReturned: false,
+  };
 }
 
 async function runDisableSupabaseMfaAal2Enforcement(): Promise<Record<string, unknown>> {
@@ -1454,6 +1527,9 @@ async function runAction(action: DeveloperDeployAction, input: Record<string, un
   }
   if (action === 'disable_supabase_mfa_aal2_enforcement') {
     return await runDisableSupabaseMfaAal2Enforcement();
+  }
+  if (action === 'unenroll_owner_mfa_factor') {
+    return await runUnenrollOwnerMfaFactor(input);
   }
   return await runSupabaseExecuteSql(input);
 }
