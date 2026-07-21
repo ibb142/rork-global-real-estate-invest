@@ -51,7 +51,9 @@ type DeveloperDeployAction =
   | 'send_owner_password_reset_email_via_ses'
   | 'generate_owner_password_reset_link'
   | 'verify_ses_email_identity'
-  | 'list_ses_identities';
+  | 'list_ses_identities'
+  | 'get_supabase_auth_config'
+  | 'disable_supabase_mfa_aal2_enforcement';
 
 type DeveloperDeployRequest = {
   action?: unknown;
@@ -119,6 +121,8 @@ function normalizeAction(value: unknown): DeveloperDeployAction {
     || normalized === 'generate_owner_password_reset_link'
     || normalized === 'verify_ses_email_identity'
     || normalized === 'list_ses_identities'
+    || normalized === 'get_supabase_auth_config'
+    || normalized === 'disable_supabase_mfa_aal2_enforcement'
  ) {
     return normalized;
   }
@@ -127,7 +131,7 @@ function normalizeAction(value: unknown): DeveloperDeployAction {
 
 /** Read-only actions that inspect state without mutating anything; no owner confirmation required. */
 function isReadOnlyAction(action: DeveloperDeployAction): boolean {
-  return action === 'github_pull_request_status';
+  return action === 'github_pull_request_status' || action === 'get_supabase_auth_config';
 }
 
 function requiredConfirmationText(action: DeveloperDeployAction): string {
@@ -344,6 +348,112 @@ async function ensureSupabaseAuthRedirectUrl(supabaseUrl: string, redirectTo: st
   } catch (err) {
     return { ok: false, tokenPresent: true, projectRef, message: err instanceof Error ? err.message : String(err) };
   }
+}
+
+async function getSupabaseAuthConfig(): Promise<{
+  ok: boolean;
+  projectRef: string | null;
+  config: Record<string, unknown> | null;
+  getStatus?: number;
+  getError?: string;
+  message: string;
+}> {
+  const managementToken = readEnv('SUPABASE_ACCESS_TOKEN');
+  const supabaseUrl = readEnv('EXPO_PUBLIC_SUPABASE_URL') || readEnv('SUPABASE_URL');
+  if (!managementToken) {
+    return { ok: false, projectRef: null, config: null, message: 'SUPABASE_ACCESS_TOKEN not configured in runtime.' };
+  }
+  if (!supabaseUrl) {
+    return { ok: false, projectRef: null, config: null, message: 'Supabase URL is not configured.' };
+  }
+  const projectRefMatch = supabaseUrl.match(/https:\/\/([a-z0-9-]+)\.supabase\.co/);
+  const projectRef = projectRefMatch?.[1] ?? null;
+  if (!projectRef) {
+    return { ok: false, projectRef, config: null, message: `Could not extract project ref from Supabase URL: ${supabaseUrl}` };
+  }
+  try {
+    const authUrl = `https://api.supabase.com/v1/projects/${projectRef}/config/auth`;
+    const getResp = await fetch(authUrl, { headers: { Authorization: `Bearer ${managementToken}`, Accept: 'application/json' } });
+    const getText = await getResp.text();
+    if (!getResp.ok) {
+      return { ok: false, projectRef, config: null, getStatus: getResp.status, getError: getText.slice(0, 300), message: `GET auth config failed: HTTP ${getResp.status}` };
+    }
+    const config = JSON.parse(getText) as Record<string, unknown>;
+    return { ok: true, projectRef, config, getStatus: getResp.status, message: 'Supabase auth config retrieved.' };
+  } catch (err) {
+    return { ok: false, projectRef, config: null, message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+async function runDisableSupabaseMfaAal2Enforcement(): Promise<Record<string, unknown>> {
+  const managementToken = readEnv('SUPABASE_ACCESS_TOKEN');
+  const supabaseUrl = readEnv('EXPO_PUBLIC_SUPABASE_URL') || readEnv('SUPABASE_URL');
+  if (!managementToken) {
+    throw new Error('SUPABASE_ACCESS_TOKEN not configured in runtime.');
+  }
+  if (!supabaseUrl) {
+    throw new Error('Supabase URL is not configured.');
+  }
+  const projectRefMatch = supabaseUrl.match(/https:\/\/([a-z0-9-]+)\.supabase\.co/);
+  const projectRef = projectRefMatch?.[1] ?? null;
+  if (!projectRef) {
+    throw new Error(`Could not extract project ref from Supabase URL: ${supabaseUrl}`);
+  }
+  const authUrl = `https://api.supabase.com/v1/projects/${projectRef}/config/auth`;
+
+  const getResp = await fetch(authUrl, { headers: { Authorization: `Bearer ${managementToken}`, Accept: 'application/json' } });
+  const getText = await getResp.text();
+  if (!getResp.ok) {
+    throw new Error(`GET Supabase auth config failed: HTTP ${getResp.status} ${getText.slice(0, 300)}`);
+  }
+  const beforeConfig = JSON.parse(getText) as Record<string, unknown>;
+
+  const targetSettings = {
+    security_update_password_require_aal2: false,
+    security_update_email_require_aal2: false,
+  };
+
+  const patchBody = JSON.stringify(targetSettings);
+  const patchResp = await fetch(authUrl, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${managementToken}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: patchBody,
+  });
+  const patchText = await patchResp.text();
+  if (!patchResp.ok) {
+    throw new Error(`PATCH Supabase auth config failed: HTTP ${patchResp.status} ${patchText.slice(0, 300)}`);
+  }
+
+  const getResp2 = await fetch(authUrl, { headers: { Authorization: `Bearer ${managementToken}`, Accept: 'application/json' } });
+  const getText2 = await getResp2.text();
+  if (!getResp2.ok) {
+    throw new Error(`Re-read Supabase auth config failed: HTTP ${getResp2.status} ${getText2.slice(0, 300)}`);
+  }
+  const afterConfig = JSON.parse(getText2) as Record<string, unknown>;
+
+  const passwordAal2Before = beforeConfig.security_update_password_require_aal2;
+  const emailAal2Before = beforeConfig.security_update_email_require_aal2;
+  const passwordAal2After = afterConfig.security_update_password_require_aal2;
+  const emailAal2After = afterConfig.security_update_email_require_aal2;
+
+  const allDisabled = passwordAal2After === false && emailAal2After === false;
+
+  return {
+    provider: 'supabase',
+    action: 'disable_supabase_mfa_aal2_enforcement',
+    projectRef,
+    passwordAal2Before,
+    emailAal2Before,
+    passwordAal2After,
+    emailAal2After,
+    aal2EnforcementDisabled: allDisabled,
+    patchStatus: patchResp.status,
+    message: allDisabled
+      ? 'Supabase AAL2 enforcement for password and email updates is now disabled. MFA remains available as an optional setting.'
+      : 'PATCH accepted but AAL2 settings are not both false after re-read.',
+    timestamp: nowIso(),
+    secretValuesReturned: false,
+  };
 }
 
 async function generatePasswordResetLinkViaAdminApi(email: string, redirectTo: string): Promise<{ actionLink: string; redirectUrlStatus: Awaited<ReturnType<typeof ensureSupabaseAuthRedirectUrl>> }> {
@@ -1334,6 +1444,12 @@ async function runAction(action: DeveloperDeployAction, input: Record<string, un
   }
   if (action === 'list_ses_identities') {
     return await runListSesIdentities();
+  }
+  if (action === 'get_supabase_auth_config') {
+    return await getSupabaseAuthConfig();
+  }
+  if (action === 'disable_supabase_mfa_aal2_enforcement') {
+    return await runDisableSupabaseMfaAal2Enforcement();
   }
   return await runSupabaseExecuteSql(input);
 }
