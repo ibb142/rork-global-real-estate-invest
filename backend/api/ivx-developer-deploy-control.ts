@@ -1,7 +1,7 @@
 import { gunzipSync } from 'node:zlib';
 import { createClient } from '@supabase/supabase-js';
 import { buildIVXCredentialRequestManifestSnapshot, IVX_REQUESTED_PRODUCTION_ACCESS_ENV_NAMES } from '../config/ivx-credential-request-manifest';
-import { getIVXOwnerVariableRuntimeValue, hasIVXOwnerVariableRuntimeValue } from './ivx-owner-variables';
+import { getIVXOwnerVariableRuntimeValue, hasIVXOwnerVariableRuntimeValue, getRawOwnerVariableValue } from './ivx-owner-variables';
 import { sendSesEmail, verifySesEmailIdentity, listSesIdentities } from '../services/ivx-ses-email';
 import { createCloudFrontInvalidation } from '../services/ivx-cloudfront-invalidation';
 import { assertIVXOwnerOnly, ownerOnlyJson, ownerOnlyOptions, type IVXOwnerRequestContext } from './owner-only';
@@ -1514,11 +1514,27 @@ async function runCloudFrontInvalidate(input: Record<string, unknown>): Promise<
   if (paths.length === 0) {
     paths.push('/index.html', '/ivx-invest.js', '/ivx-portal.js', '/');
   }
-  const distributionIdOverride = readTrimmed(input.distributionId) || undefined;
+  // Resolve credentials: process.env first, then Owner Variables table (same pattern as landing-full-deploy)
+  let distributionId = readTrimmed(input.distributionId) || readEnv('CLOUDFRONT_DISTRIBUTION_ID');
+  if (!distributionId) {
+    distributionId = await getRawOwnerVariableValue('CLOUDFRONT_DISTRIBUTION_ID');
+  }
+  // Temporarily inject resolved credentials into process.env so createCloudFrontInvalidation picks them up
+  if (distributionId && !readEnv('CLOUDFRONT_DISTRIBUTION_ID')) {
+    process.env.CLOUDFRONT_DISTRIBUTION_ID = distributionId;
+  }
+  if (!readEnv('AWS_ACCESS_KEY_ID')) {
+    const ak = await getRawOwnerVariableValue('AWS_ACCESS_KEY_ID');
+    if (ak) process.env.AWS_ACCESS_KEY_ID = ak;
+  }
+  if (!readEnv('AWS_SECRET_ACCESS_KEY')) {
+    const sk = await getRawOwnerVariableValue('AWS_SECRET_ACCESS_KEY');
+    if (sk) process.env.AWS_SECRET_ACCESS_KEY = sk;
+  }
   const result = await createCloudFrontInvalidation({
     paths,
     callerReference: readTrimmed(input.callerReference) || undefined,
-    distributionId: distributionIdOverride,
+    distributionId: distributionId || undefined,
   });
   return {
     provider: 'cloudfront',
