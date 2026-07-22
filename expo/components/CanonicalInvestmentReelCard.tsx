@@ -219,6 +219,12 @@ const CanonicalInvestmentReelCard = memo(function CanonicalInvestmentReelCard({
   const [isInViewport, setIsInViewport] = useState<boolean>(false);
   const lastTapRef = useRef<number>(0);
   const viewRef = useRef<View>(null);
+  // Stable progress handler — avoids creating a new arrow function on
+  // every render, which would cause ReelVideoPlayer/SafeVideo to
+  // re-render ~10x/second during playback.
+  const handleProgress = useCallback((p: number) => {
+    setProgress(p);
+  }, []);
 
   const isReel = mode === 'reel';
   const cardHeight = isReel ? screenHeight : feedHeight;
@@ -360,7 +366,7 @@ const CanonicalInvestmentReelCard = memo(function CanonicalInvestmentReelCard({
               previewBlurUri={data.previewBlurUrl}
               shouldPlay={shouldPlay}
               isMuted={isMuted}
-              onProgress={(p) => setProgress(p)}
+              onProgress={handleProgress}
               testID={`${testIDPrefix}-player-${data.reelId}`}
             />
           );
@@ -529,14 +535,16 @@ const CanonicalInvestmentReelCard = memo(function CanonicalInvestmentReelCard({
         )}
       </View>
 
-      {/* Bottom info + CTAs */}
-      <View pointerEvents="box-none" style={[styles.info, { bottom: infoBottom }]}>
-        <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.82)']}
-          locations={[0, 0.35, 1]}
-          style={styles.bottomGradient}
-        />
+      {/* Full-bleed transparent bottom scrim — Instagram style, no boxy card */}
+      <LinearGradient
+        pointerEvents="none"
+        colors={['transparent', 'rgba(0,0,0,0.35)', 'rgba(0,0,0,0.72)']}
+        locations={[0, 0.45, 1]}
+        style={styles.bottomScrim}
+      />
 
+      {/* Bottom info + CTAs — fully transparent background over the scrim */}
+      <View pointerEvents="box-none" style={[styles.info, { bottom: infoBottom }]}>
         {/* Badges */}
         <View style={styles.badgeRow}>
           {hasDeal && <Text style={styles.badgeInvestment}>INVESTMENT</Text>}
@@ -908,13 +916,13 @@ const styles = StyleSheet.create({
     right: 84,
     zIndex: 20,
   },
-  bottomGradient: {
+  bottomScrim: {
     position: 'absolute' as const,
     left: 0,
     right: 0,
-    bottom: -40,
-    height: 320,
-    zIndex: -1,
+    bottom: 0,
+    height: 340,
+    zIndex: 10,
   },
   badgeRow: {
     flexDirection: 'row' as const,
