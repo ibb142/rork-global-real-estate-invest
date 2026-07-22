@@ -173,8 +173,8 @@
 
   async function handleInvestAuth(e) {
     e.preventDefault();
-    var SUPABASE_URL = window.IVX_SUPABASE_URL || '';
-    var SUPABASE_ANON_KEY = window.IVX_SUPABASE_ANON_KEY || '';
+    var SUPABASE_URL = window.IVX_SUPABASE_URL || window.SUPABASE_URL || '';
+    var SUPABASE_ANON_KEY = window.IVX_SUPABASE_ANON_KEY || window.SUPABASE_ANON_KEY || '';
     var errEl = document.getElementById('invest-auth-error');
     var btn = document.getElementById('invest-auth-btn');
     if (errEl) errEl.style.display = 'none';
@@ -253,8 +253,8 @@
   }
 
   async function submitInvestment() {
-    var SUPABASE_URL = window.IVX_SUPABASE_URL || '';
-    var SUPABASE_ANON_KEY = window.IVX_SUPABASE_ANON_KEY || '';
+    var SUPABASE_URL = window.IVX_SUPABASE_URL || window.SUPABASE_URL || '';
+    var SUPABASE_ANON_KEY = window.IVX_SUPABASE_ANON_KEY || window.SUPABASE_ANON_KEY || '';
     if (!_investState.termsAgreed || !_investState.userToken || isPlaceholder(SUPABASE_URL)) {
       var errEl = document.getElementById('invest-step-error');
       if (errEl) { errEl.textContent = 'Authentication or terms not completed.'; errEl.style.display = 'block'; }
