@@ -95,10 +95,10 @@ export async function createCloudFrontInvalidation(input: {
   const paths = normalizePaths(input.paths);
 
   const missingEnvNames: string[] = [];
-  if (!distributionId) missingEnvNames.push('CLOUDFRONT_DISTRIBUTION_ID');
   if (!accessKey) missingEnvNames.push('AWS_ACCESS_KEY_ID');
   if (!secretKey) missingEnvNames.push('AWS_SECRET_ACCESS_KEY');
 
+  // If AWS creds are missing, we can't do anything (not even auto-discovery).
   if (missingEnvNames.length > 0) {
     return {
       ok: false,
@@ -107,7 +107,7 @@ export async function createCloudFrontInvalidation(input: {
       distributionId: distributionId || undefined,
       missingEnvNames,
       createdAt,
-      error: 'CloudFront credentials not configured.',
+      error: 'CloudFront AWS credentials not configured.',
     };
   }
   if (paths.length === 0) {
