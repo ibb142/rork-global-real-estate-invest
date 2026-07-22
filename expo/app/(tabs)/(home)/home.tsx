@@ -515,9 +515,11 @@ export default function HomeScreen() {
             />
           }
         >
-          {jvDealsLoading && jvDeals.length === 0 && !refreshing ? (
+          {jvDealsLoading && jvDeals.length === 0 && !refreshing && (
             <HomeSkeleton />
-          ) : (
+          )}
+
+          {(!jvDealsLoading || jvDeals.length > 0) && (
             <>
               <View style={[styles.welcomeSection, { paddingHorizontal: isXs ? 16 : 20 }]}>
                 <InlineTrustBadges t={t} />
@@ -535,7 +537,7 @@ export default function HomeScreen() {
                 />
               </JVErrorBoundary>
             </>
-          )
+          )}
 
           <View style={{ paddingHorizontal: isXs ? 16 : 20, marginBottom: 24 }}>
             <TrustBadge
