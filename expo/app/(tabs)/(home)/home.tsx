@@ -35,6 +35,7 @@ import Colors from '@/constants/colors';
 import { getResponsiveSize, isCompactScreen, isExtraSmallScreen } from '@/lib/responsive';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { resolvePrimaryDealPhoto, usePublishedJVDeals, triggerManualJVRefresh } from '@/lib/parse-deal';
+import { HomeSkeleton } from '@/components/SkeletonLoader';
 import { supabase } from '@/lib/supabase';
 import { useJVRealtime, usePublicationWatchdog } from '@/lib/jv-realtime';
 import { useTranslation } from '@/lib/i18n-context';
@@ -514,21 +515,27 @@ export default function HomeScreen() {
             />
           }
         >
-          <View style={[styles.welcomeSection, { paddingHorizontal: isXs ? 16 : 20 }]}>
-            <InlineTrustBadges t={t} />
-          </View>
+          {jvDealsLoading && jvDeals.length === 0 && !refreshing ? (
+            <HomeSkeleton />
+          ) : (
+            <>
+              <View style={[styles.welcomeSection, { paddingHorizontal: isXs ? 16 : 20 }]}>
+                <InlineTrustBadges t={t} />
+              </View>
 
-          <ExploreDealsSection router={router} />
+              <ExploreDealsSection router={router} />
 
-          <JVErrorBoundary>
-            <InvestorFirstFeed
-              jvDeals={jvDeals}
-              jvDealsLoading={jvDealsLoading}
-              isXs={isXs}
-              cardWidth={width}
-              openQuickBuy={openQuickBuy}
-            />
-          </JVErrorBoundary>
+              <JVErrorBoundary>
+                <InvestorFirstFeed
+                  jvDeals={jvDeals}
+                  jvDealsLoading={jvDealsLoading}
+                  isXs={isXs}
+                  cardWidth={width}
+                  openQuickBuy={openQuickBuy}
+                />
+              </JVErrorBoundary>
+            </>
+          )
 
           <View style={{ paddingHorizontal: isXs ? 16 : 20, marginBottom: 24 }}>
             <TrustBadge
