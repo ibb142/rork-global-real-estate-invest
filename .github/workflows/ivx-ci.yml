@@ -55,12 +55,19 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
       - name: Install root dependencies
         run: bun install
       - name: Install expo dependencies
         run: cd expo && bun install
       - name: Build release APK
         run: cd expo/android && ./gradlew assembleRelease --no-daemon -x lint
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME }}
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
       - name: Record APK SHA-256
         run: sha256sum expo/android/app/build/outputs/apk/release/*.apk
       - name: Upload APK artifact
