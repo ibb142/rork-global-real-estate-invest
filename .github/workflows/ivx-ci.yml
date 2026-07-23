@@ -30,7 +30,15 @@ jobs:
       - name: Install dependencies
         run: bun install
       - name: Run env-independent backend tests
-        run: bun test ${{ github.event.inputs.testTarget || 'backend/ivx-registration-orchestrator.test.ts backend/ivx-timezone.test.ts' }}
+        run: |
+          TARGET="${{ github.event.inputs.testTarget || 'backend/ivx-registration-orchestrator.test.ts backend/ivx-timezone.test.ts' }}"
+          if [ "$TARGET" = "default" ] || [ "$TARGET" = "all" ]; then
+            echo "Running full backend test suite (env-independent files)..."
+            bun test backend/ivx-registration-orchestrator.test.ts backend/ivx-timezone.test.ts backend/ivx-senior-developer-capabilities.test.ts backend/ivx-ci-build-runner.test.ts backend/ivx-growth-autonomous-ops.test.ts
+          else
+            echo "Running targeted tests: $TARGET"
+            bun test $TARGET
+          fi
 
   android-apk:
     name: Android release APK
