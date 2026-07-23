@@ -50,11 +50,11 @@ function buildRoleRow(role: string, tableName: string, authUserId: string, email
 
   switch (tableName) {
     case 'investors':
-      // investors table: user_id (uuid), full_name, email, phone, accreditation, investment_tier, status
-      return { user_id: authUserId, email, status: 'active', accreditation: 'pending', investment_tier: 'standard', created_at: now, updated_at: now };
+      // investors table: user_id (uuid), full_name (NOT NULL), email (NOT NULL), accreditation, investment_tier, status
+      return { user_id: authUserId, full_name: email.split('@')[0], email, status: 'active', accreditation: 'pending', investment_tier: 'standard', created_at: now, updated_at: now };
     case 'buyers':
-      // buyers table: id (text), name, email, phone, buyer_type, budget_min, budget_max, status
-      return { id: authUserId, email, status: 'active', buyer_type: 'individual', created_at: now, updated_at: now };
+      // buyers table: id (text, NOT NULL), name (NOT NULL), email, buyer_type, status
+      return { id: authUserId, name: email.split('@')[0], email, status: 'active', buyer_type: 'individual', created_at: now, updated_at: now };
     default:
       // jv_partners, brokers, agents, land_owners, tokenized_investors: auth_user_id (uuid), status, created_at, updated_at
       return { auth_user_id: authUserId, ...base };
