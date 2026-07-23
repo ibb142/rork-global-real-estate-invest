@@ -43,6 +43,32 @@ const ROLE_TABLE_MAP: Record<string, string> = {
   tokenized: 'tokenized_investors',
 };
 
+/** Per-table row builder — each role table has a different schema. */
+function buildRoleRow(role: string, tableName: string, authUserId: string, email: string): Record<string, unknown> {
+  const now = new Date().toISOString();
+  const base = { status: 'active', created_at: now, updated_at: now };
+
+  switch (tableName) {
+    case 'investors':
+      // investors table: user_id (uuid), full_name, email, phone, accreditation, investment_tier, status
+      return { user_id: authUserId, email, status: 'active', accreditation: 'pending', investment_tier: 'standard', created_at: now, updated_at: now };
+    case 'buyers':
+      // buyers table: id (text), name, email, phone, buyer_type, budget_min, budget_max, status
+      return { id: authUserId, email, status: 'active', buyer_type: 'individual', created_at: now, updated_at: now };
+    default:
+      // jv_partners, brokers, agents, land_owners, tokenized_investors: auth_user_id (uuid), status, created_at, updated_at
+      return { auth_user_id: authUserId, ...base };
+  }
+}
+
+function getConflictColumn(tableName: string): string {
+  switch (tableName) {
+    case 'investors': return 'user_id';
+    case 'buyers': return 'id';
+    default: return 'auth_user_id';
+  }
+}
+
 async function insertRoleSpecificRecords(input: {
   authUserId: string;
   email: string;
@@ -51,22 +77,17 @@ async function insertRoleSpecificRecords(input: {
 }): Promise<{ ok: boolean; errors: string[] }> {
   const errors: string[] = [];
   const supabase = getSupabaseAdmin();
-  const now = new Date().toISOString();
 
   for (const role of input.roles) {
     const tableName = ROLE_TABLE_MAP[role];
     if (!tableName) continue; // Skip 'jv_deals' and unknown roles
 
     try {
-      const { error } = await supabase.from(tableName).upsert({
-        auth_user_id: input.authUserId,
-        status: 'active',
-        created_at: now,
-        updated_at: now,
-      }, { onConflict: 'auth_user_id' });
+      const row = buildRoleRow(role, tableName, input.authUserId, input.email);
+      const conflictCol = getConflictColumn(tableName);
+      const { error } = await supabase.from(tableName).upsert(row, { onConflict: conflictCol });
 
       if (error) {
-        // Non-fatal — log but continue with other roles
         console.error(`[RegistrationOrchestrator] ${tableName} upsert failed:`, error.message);
         errors.push(`${role}:${error.message}`);
       }
