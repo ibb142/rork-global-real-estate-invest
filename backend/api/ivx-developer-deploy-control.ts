@@ -2953,7 +2953,7 @@ export async function runTestApiEndpoint(input: Record<string, unknown>): Promis
   };
 }
 
-/** Read-only: Render service logs — fetches recent log lines from the Render service. */
+/** Read-only: Render service logs — fetches recent log lines via Render Logs API (/v1/logs). */
 export async function runRenderGetLogs(input: Record<string, unknown>): Promise<Record<string, unknown>> {
   const renderApiKey = readEnv('RENDER_API_KEY') || await getIVXOwnerVariableRuntimeValue('RENDER_API_KEY');
   if (!renderApiKey) {
@@ -2963,8 +2963,21 @@ export async function runRenderGetLogs(input: Record<string, unknown>): Promise<
   if (!serviceId) {
     throw new Error('RENDER_SERVICE_ID is not configured and no serviceId was provided in input.');
   }
-  const lines = Math.min(Number(input.lines) || 100, 300);
-  const url = `${RENDER_API_BASE_URL}/services/${serviceId}/logs?limit=${lines}`;
+  const ownerId = readTrimmed(input.ownerId) || readEnv('RENDER_OWNER_ID');
+  const logType = readTrimmed(input.type) || 'app';
+  const endTime = Math.floor(Date.now() / 1000);
+  const startTime = Math.floor((Date.now() - 3600_000) / 1000); // last 1 hour
+  // Render Logs API: GET /v1/logs with ownerId + resource query params
+  const params = new URLSearchParams();
+  if (ownerId) {
+    params.set('ownerId', ownerId);
+  }
+  params.set('resource', serviceId);
+  params.set('startTime', String(startTime));
+  params.set('endTime', String(endTime));
+  params.set('direction', 'backward');
+  params.set('type', logType);
+  const url = `${RENDER_API_BASE_URL}/logs?${params.toString()}`;
   const response = await fetch(url, {
     method: 'GET',
     headers: {
@@ -2974,35 +2987,84 @@ export async function runRenderGetLogs(input: Record<string, unknown>): Promise<
   });
   if (!response.ok) {
     const errorText = await response.text();
+    // Fallback: try GET /v1/services/{id} for service info if logs endpoint fails
+    if (response.status === 404 || response.status === 400) {
+      const svcUrl = `${RENDER_API_BASE_URL}/services/${serviceId}`;
+      const svcResp = await fetch(svcUrl, {
+        method: 'GET',
+        headers: { Accept: 'application/json', Authorization: `Bearer ${renderApiKey}` },
+      });
+      if (svcResp.ok) {
+        const svcData = readRecord(await svcResp.json().catch(() => ({})));
+        return {
+          provider: 'render',
+          action: 'render_get_logs',
+          serviceId,
+          ownerId: ownerId || null,
+          logsEndpointAvailable: false,
+          fallback: 'service_info',
+          serviceName: readTrimmed(svcData.name) || null,
+          serviceStatus: readTrimmed(svcData.status) || null,
+          serviceCreatedAt: readTrimmed(svcData.createdAt) || null,
+          message: 'Render logs API requires ownerId parameter. Service info returned as fallback. Pass ownerId in input to fetch actual logs.',
+          readOnly: true,
+          secretValuesReturned: false,
+          timestamp: nowIso(),
+        };
+      }
+    }
     throw new Error(`Render logs fetch failed: HTTP ${response.status} — ${errorText.slice(0, 300)}`);
   }
   const data = await response.text();
-  let logLines: string[] = [];
+  let logEntries: Array<{ timestamp?: string; message?: string; level?: string; raw?: string }> = [];
   try {
     const parsed = JSON.parse(data) as unknown;
     if (Array.isArray(parsed)) {
-      logLines = parsed.map((line: unknown) => typeof line === 'string' ? line : JSON.stringify(line));
+      logEntries = parsed.map((entry: unknown) => {
+        const rec = readRecord(entry);
+        return {
+          timestamp: readTrimmed(rec.timestamp) || readTrimmed(rec.time) || null,
+          message: readTrimmed(rec.message) || readTrimmed(rec.text) || readTrimmed(rec.msg) || null,
+          level: readTrimmed(rec.level) || null,
+          raw: JSON.stringify(entry).slice(0, 500),
+        };
+      });
     } else if (typeof parsed === 'object' && parsed !== null) {
       const record = parsed as Record<string, unknown>;
-      if (Array.isArray(record.logs)) {
-        logLines = record.logs.map((line: unknown) => typeof line === 'string' ? line : JSON.stringify(line));
-      } else if (Array.isArray(record.lines)) {
-        logLines = record.lines.map((line: unknown) => typeof line === 'string' ? line : JSON.stringify(line));
-      }
+      const logsArray = Array.isArray(record.logs) ? record.logs : Array.isArray(record.entries) ? record.entries : Array.isArray(record.data) ? record.data : [];
+      logEntries = logsArray.map((entry: unknown) => {
+        const rec = readRecord(entry);
+        return {
+          timestamp: readTrimmed(rec.timestamp) || readTrimmed(rec.time) || null,
+          message: readTrimmed(rec.message) || readTrimmed(rec.text) || readTrimmed(rec.msg) || null,
+          level: readTrimmed(rec.level) || null,
+          raw: JSON.stringify(entry).slice(0, 500),
+        };
+      });
     }
   } catch {
-    logLines = data.split('\n').filter(Boolean);
+    logEntries = data.split('\n').filter(Boolean).map((line) => ({ raw: line.slice(0, 500) }));
   }
-  const truncated = logLines.length > 200;
-  const resultLines = truncated ? logLines.slice(-200) : logLines;
+  const truncated = logEntries.length > 200;
+  const resultEntries = truncated ? logEntries.slice(0, 200) : logEntries;
+  const logsText = resultEntries.map((e) => {
+    const parts: string[] = [];
+    if (e.timestamp) parts.push(e.timestamp);
+    if (e.level) parts.push(`[${e.level}]`);
+    if (e.message) parts.push(e.message);
+    return parts.length > 0 ? parts.join(' ') : (e.raw || '');
+  }).filter(Boolean).join('\n');
   return {
     provider: 'render',
     action: 'render_get_logs',
     serviceId,
-    linesRequested: lines,
-    linesReturned: resultLines.length,
+    ownerId: ownerId || null,
+    logType,
+    timeRange: `last 1 hour (${startTime} to ${endTime})`,
+    logsEndpointAvailable: true,
+    entriesReturned: resultEntries.length,
     truncated,
-    logs: resultLines.join('\n'),
+    logs: logsText,
     readOnly: true,
     secretValuesReturned: false,
     timestamp: nowIso(),
