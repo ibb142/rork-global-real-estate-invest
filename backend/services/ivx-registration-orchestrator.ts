@@ -85,10 +85,16 @@ async function insertRoleSpecificRecords(input: {
     try {
       const row = buildRoleRow(role, tableName, input.authUserId, input.email);
       const conflictCol = getConflictColumn(tableName);
-      const { error } = await supabase.from(tableName).upsert(row, { onConflict: conflictCol });
+      // Use insert for investors table — PostgREST schema cache may not recognize
+      // the new unique index on user_id. New registrations always create new auth
+      // users, so insert is safe (no conflict expected).
+      const useInsert = tableName === 'investors';
+      const { error } = useInsert
+        ? await supabase.from(tableName).insert(row)
+        : await supabase.from(tableName).upsert(row, { onConflict: conflictCol });
 
       if (error) {
-        console.error(`[RegistrationOrchestrator] ${tableName} upsert failed:`, error.message);
+        console.error(`[RegistrationOrchestrator] ${tableName} ${useInsert ? 'insert' : 'upsert'} failed:`, error.message);
         errors.push(`${role}:${error.message}`);
       }
     } catch (err) {
