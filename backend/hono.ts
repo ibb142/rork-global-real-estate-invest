@@ -5784,4 +5784,282 @@ app.get('/api/ivx/enterprise/metrics', (context) => {
 app.get('/api/ivx/investor-performance', async (context) => handleInvestorPerformanceRequest(context.req.raw));
 app.options('/api/ivx/investor-performance', () => investorPerformanceOptions());
 
+// ============================================================
+// IVX Growth Engine — Prospect Discovery + Compliance + Reporting
+// ============================================================
+
+// Growth engine imports
+const {
+  createProspect: growthCreateProspect,
+  listProspects: growthListProspects,
+  getProspectById: growthGetProspectById,
+  getProspectSummary: growthGetProspectSummary,
+  updateQualificationStatus: growthUpdateQualification,
+  setOwnerReview: growthSetOwnerReview,
+  getDailyTargetResult: growthGetDailyTarget,
+  ALL_PROSPECT_CATEGORIES: growthAllCategories,
+  calculateLeadScore: growthCalcScore,
+  DAILY_TARGETS: growthDailyTargets,
+} = await import('./services/ivx-prospect-engine');
+
+const {
+  validateOutreachMessage: complianceValidateOutreach,
+  isOfferingPromotionAllowed: complianceCheckOffering,
+  createOffering: complianceCreateOffering,
+  listOfferings: complianceListOfferings,
+  addToSuppression: complianceAddSuppression,
+  isSuppressed: complianceIsSuppressed,
+  listSuppressed: complianceListSuppressed,
+  createOwnerApproval: complianceCreateApproval,
+  resolveOwnerApproval: complianceResolveApproval,
+  listPendingApprovals: complianceListPending,
+  containsBannedOutreachPhrases: complianceCheckBanned,
+} = await import('./services/ivx-compliance-gate');
+
+const {
+  validateContent: contentValidate,
+  saveContentRecord: contentSave,
+  listContent: contentList,
+  approveContent: contentApprove,
+  publishContent: contentPublish,
+  createNewsRecord: newsCreate,
+  saveNewsRecord: newsSave,
+  listNews: newsList,
+  matchProspectToOpportunity: matchProspect,
+  getContentPerformanceMetrics: contentMetrics,
+} = await import('./services/ivx-content-news-engine');
+
+const {
+  generateDailyReport: reportDaily,
+  generateTwoHourCheckpoint: reportCheckpoint,
+  getGrowthPerformanceMetrics: reportGrowthMetrics,
+  getGrowthDashboardData: reportDashboard,
+} = await import('./services/ivx-growth-reporting');
+
+// Growth Engine: Prospect endpoints
+app.options('/api/ivx/growth/prospects', () => corsOptions());
+app.get('/api/ivx/growth/prospects', async (c) => {
+  const url = new URL(c.req.url);
+  const category = url.searchParams.get('category') || undefined;
+  const minScore = url.searchParams.get('minScore') ? parseInt(url.searchParams.get('minScore')!) : undefined;
+  const limit = url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!) : undefined;
+  const prospects = await growthListProspects({ category: category as any, minScore, limit });
+  return c.json({ ok: true, count: prospects.length, prospects });
+});
+
+app.options('/api/ivx/growth/prospects/create', () => corsOptions());
+app.post('/api/ivx/growth/prospects/create', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const result = await growthCreateProspect(body);
+  return c.json({ ok: true, prospect: result.prospect, isDuplicate: result.isDuplicate, duplicateOf: result.duplicateOfProspectId });
+});
+
+app.options('/api/ivx/growth/prospects/:id/qualify', () => corsOptions());
+app.post('/api/ivx/growth/prospects/:id/qualify', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  try {
+    const updated = await growthUpdateQualification(id, body.status);
+    return c.json({ ok: true, prospect: updated });
+  } catch (err: any) {
+    return c.json({ ok: false, error: err.message }, 400);
+  }
+});
+
+app.options('/api/ivx/growth/prospects/summary', () => corsOptions());
+app.get('/api/ivx/growth/prospects/summary', async (c) => {
+  const summary = await growthGetProspectSummary();
+  return c.json({ ok: true, summary });
+});
+
+app.options('/api/ivx/growth/daily-target', () => corsOptions());
+app.get('/api/ivx/growth/daily-target', async (c) => {
+  const url = new URL(c.req.url);
+  const date = url.searchParams.get('date') || new Date().toISOString().slice(0, 10);
+  const target = (url.searchParams.get('target') as 'MINIMUM' | 'STANDARD' | 'MAXIMUM') || 'STANDARD';
+  const result = await growthGetDailyTarget(date, target);
+  return c.json({ ok: true, result });
+});
+
+app.options('/api/ivx/growth/categories', () => corsOptions());
+app.get('/api/ivx/growth/categories', (c) => {
+  return c.json({ ok: true, categories: growthAllCategories, count: growthAllCategories.length });
+});
+
+// Growth Engine: Compliance endpoints
+app.options('/api/ivx/growth/compliance/validate-outreach', () => corsOptions());
+app.post('/api/ivx/growth/compliance/validate-outreach', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const result = complianceValidateOutreach(body);
+  return c.json({ ok: result.valid, violations: result.violations, message: result.message });
+});
+
+app.options('/api/ivx/growth/compliance/offerings', () => corsOptions());
+app.get('/api/ivx/growth/compliance/offerings', async (c) => {
+  const offerings = await complianceListOfferings();
+  return c.json({ ok: true, offerings });
+});
+
+app.options('/api/ivx/growth/compliance/suppression', () => corsOptions());
+app.get('/api/ivx/growth/compliance/suppression', async (c) => {
+  const suppressed = await complianceListSuppressed();
+  return c.json({ ok: true, count: suppressed.length, suppressed });
+});
+
+app.options('/api/ivx/growth/compliance/approvals', () => corsOptions());
+app.get('/api/ivx/growth/compliance/approvals', async (c) => {
+  const pending = await complianceListPending();
+  return c.json({ ok: true, count: pending.length, pendingApprovals: pending });
+});
+
+// Growth Engine: Content + News endpoints
+app.options('/api/ivx/growth/content', () => corsOptions());
+app.get('/api/ivx/growth/content', async (c) => {
+  const url = new URL(c.req.url);
+  const status = url.searchParams.get('status') || undefined;
+  const content = await contentList({ status: status as any });
+  return c.json({ ok: true, count: content.length, content });
+});
+
+app.options('/api/ivx/growth/news', () => corsOptions());
+app.get('/api/ivx/growth/news', async (c) => {
+  const url = new URL(c.req.url);
+  const limit = url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!) : 50;
+  const news = await newsList({ limit });
+  return c.json({ ok: true, count: news.length, news });
+});
+
+// Growth Engine: Reporting endpoints
+app.options('/api/ivx/growth/daily-report', () => corsOptions());
+app.get('/api/ivx/growth/daily-report', async (c) => {
+  const url = new URL(c.req.url);
+  const date = url.searchParams.get('date') || undefined;
+  const report = await reportDaily(date);
+  return c.json({ ok: true, report });
+});
+
+app.options('/api/ivx/growth/checkpoint', () => corsOptions());
+app.get('/api/ivx/growth/checkpoint', async (c) => {
+  const checkpoint = await reportCheckpoint();
+  return c.json({ ok: true, checkpoint });
+});
+
+app.options('/api/ivx/growth/metrics', () => corsOptions());
+app.get('/api/ivx/growth/metrics', async (c) => {
+  const url = new URL(c.req.url);
+  const date = url.searchParams.get('date') || undefined;
+  const metrics = await reportGrowthMetrics(date);
+  return c.json({ ok: true, metrics });
+});
+
+app.options('/api/ivx/growth/dashboard', () => corsOptions());
+app.get('/api/ivx/growth/dashboard', async (c) => {
+  const dashboard = await reportDashboard();
+  return c.json({ ok: true, dashboard });
+});
+
+// ============================================================
+// IVX Autonomous Ops — 24/7 Task Queue + Monitoring + Dashboard
+// ============================================================
+
+const {
+  createTask: opsCreateTask,
+  enqueueTask: opsEnqueue,
+  getTask: opsGetTask,
+  updateTask: opsUpdateTask,
+  cancelTask: opsCancelTask,
+  listTasks: opsListTasks,
+  getAutonomousDashboard: opsDashboard,
+  classifyIssue: opsClassify,
+  createApproval: opsCreateApproval,
+  isApprovalValid: opsIsApprovalValid,
+  buildTaskFinalReport: opsBuildReport,
+  checkCredentialStatus: opsCheckCred,
+  ALL_APPROVAL_PHRASES: opsAllPhrases,
+  PRIORITY_ORDER: opsPriorityOrder,
+  DAILY_CYCLE: opsDailyCycle,
+} = await import('./services/ivx-autonomous-ops');
+
+const {
+  runChecksForCadence: monitorRunChecks,
+  getMonitorDashboard: monitorDashboard,
+  CHECK_SCHEDULE: monitorSchedule,
+  freshMonitorState: monitorFreshState,
+} = await import('./services/ivx-production-monitor');
+
+// Autonomous Ops: Task endpoints
+app.options('/api/ivx/autonomous/tasks', () => corsOptions());
+app.get('/api/ivx/autonomous/tasks', async (c) => {
+  const url = new URL(c.req.url);
+  const status = url.searchParams.get('status') || undefined;
+  const priority = url.searchParams.get('priority') as any || undefined;
+  const limit = url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!) : undefined;
+  const tasks = await opsListTasks({ status: status as any, priority, limit });
+  return c.json({ ok: true, count: tasks.length, tasks });
+});
+
+app.options('/api/ivx/autonomous/tasks/create', () => corsOptions());
+app.post('/api/ivx/autonomous/tasks/create', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const task = opsCreateTask(body);
+  await opsEnqueue(task);
+  return c.json({ ok: true, task });
+});
+
+app.options('/api/ivx/autonomous/tasks/:id/cancel', () => corsOptions());
+app.post('/api/ivx/autonomous/tasks/:id/cancel', async (c) => {
+  const id = c.req.param('id');
+  try {
+    const task = await opsCancelTask(id);
+    return c.json({ ok: true, task });
+  } catch (err: any) {
+    return c.json({ ok: false, error: err.message }, 404);
+  }
+});
+
+// Autonomous Ops: Dashboard
+app.options('/api/ivx/autonomous/dashboard', () => corsOptions());
+app.get('/api/ivx/autonomous/dashboard', async (c) => {
+  const dashboard = await opsDashboard();
+  return c.json({ ok: true, dashboard });
+});
+
+// Autonomous Ops: Approval phrases
+app.options('/api/ivx/autonomous/approval-phrases', () => corsOptions());
+app.get('/api/ivx/autonomous/approval-phrases', (c) => {
+  return c.json({ ok: true, phrases: opsAllPhrases, count: opsAllPhrases.length });
+});
+
+// Autonomous Ops: Daily cycle
+app.options('/api/ivx/autonomous/daily-cycle', () => corsOptions());
+app.get('/api/ivx/autonomous/daily-cycle', (c) => {
+  return c.json({ ok: true, cycle: opsDailyCycle });
+});
+
+// Autonomous Ops: Production Monitor
+app.options('/api/ivx/autonomous/monitor/dashboard', () => corsOptions());
+app.get('/api/ivx/autonomous/monitor/dashboard', async (c) => {
+  const state = await monitorDashboard();
+  return c.json({ ok: true, monitor: state });
+});
+
+app.options('/api/ivx/autonomous/monitor/run', () => corsOptions());
+app.post('/api/ivx/autonomous/monitor/run', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const cadence = body.cadence || '5min';
+  const baseUrl = process.env.EXPO_PUBLIC_RORK_API_BASE_URL || 'https://api.ivxholding.com';
+  const results = await monitorRunChecks(cadence, {
+    baseUrl,
+    landingUrl: 'https://ivxholding.com',
+    apkUrl: 'https://ivxholding.com/apk/ivx-holdings-v1.4.36.apk',
+    githubSha: body.githubSha || null,
+  });
+  return c.json({ ok: true, cadence, results });
+});
+
+app.options('/api/ivx/autonomous/monitor/schedule', () => corsOptions());
+app.get('/api/ivx/autonomous/monitor/schedule', (c) => {
+  return c.json({ ok: true, schedule: monitorSchedule });
+});
+
 export default app;
